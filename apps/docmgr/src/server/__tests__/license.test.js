@@ -44,9 +44,29 @@ describe('checkLicense', () => {
     expect(checkLicense()).toBe(false)
   })
 
-  test('returns true after activation', () => {
-    setConfig('LICENSE_ACTIVATED', 'true')
+  test('returns true after proper activation', () => {
+    __ENCODED_SECRET_SALT = _encode('testsalt')
+    const token = _sha256(ScriptApp.getScriptId() + 'testsalt')
+    activateWithToken(token)
     expect(checkLicense()).toBe(true)
+  })
+
+  test('returns false when flag set manually without valid token', () => {
+    __ENCODED_SECRET_SALT = _encode('testsalt')
+    setConfig('LICENSE_ACTIVATED', 'true')
+    // No token stored — should revoke
+    expect(checkLicense()).toBe(false)
+    // Flag should be cleared
+    expect(getConfig('LICENSE_ACTIVATED')).toBeFalsy()
+  })
+
+  test('returns false when token is tampered', () => {
+    __ENCODED_SECRET_SALT = _encode('testsalt')
+    setConfig('LICENSE_ACTIVATED', 'true')
+    setConfig('LICENSE_TOKEN', 'fake-token-value')
+    expect(checkLicense()).toBe(false)
+    expect(getConfig('LICENSE_ACTIVATED')).toBeFalsy()
+    expect(getConfig('LICENSE_TOKEN')).toBeFalsy()
   })
 })
 

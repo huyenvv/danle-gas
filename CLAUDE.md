@@ -41,7 +41,13 @@ App receives callback (doGet with ?activate=token):
   → activateWithToken(token)
   → salt = _decode(__ENCODED_SECRET_SALT)  ← build-time injected
   → expected = SHA256(scriptId + salt)
-  → If token === expected: save LICENSE_ACTIVATED=true to ScriptProperties
+  → If token === expected: save LICENSE_ACTIVATED=true + LICENSE_TOKEN to ScriptProperties
+
+Every API call → checkLicense():
+  → Reads LICENSE_ACTIVATED flag AND LICENSE_TOKEN
+  → Re-computes expected = SHA256(scriptId + salt)
+  → If stored token ≠ expected → revoke (clear both keys) → return false
+  → Prevents bypass by manually setting LICENSE_ACTIVATED=true
 ```
 
 **Key points:**

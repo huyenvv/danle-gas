@@ -15,8 +15,28 @@ function _decode(enc) {
   return Utilities.newBlob(bytes).getDataAsString()
 }
 
+function _verifyToken() {
+  var token = getConfig(LICENSE_TOKEN_KEY)
+  if (!token) return false
+
+  var salt = _decode(__ENCODED_SECRET_SALT)
+  if (!salt) return false
+
+  var expected = _sha256(ScriptApp.getScriptId() + salt)
+  return token === expected
+}
+
 function checkLicense() {
-  return getConfig(LICENSE_KEY) === 'true'
+  if (getConfig(LICENSE_KEY) !== 'true') return false
+
+  // Re-verify stored token against current scriptId + salt
+  if (!_verifyToken()) {
+    // Token invalid or missing — revoke
+    setConfig(LICENSE_KEY, '')
+    setConfig(LICENSE_TOKEN_KEY, '')
+    return false
+  }
+  return true
 }
 
 function activateWithToken(tokenParam) {
