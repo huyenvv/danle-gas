@@ -1,6 +1,6 @@
-# Webapp Quản Lý Tài Liệu, Văn Bản
+# Appscripts Monorepo
 
-Ứng dụng quản lý hồ sơ / tài liệu trên nền tảng Google Apps Script + React.
+Monorepo chứa các ứng dụng Google Apps Script, dùng npm workspaces.
 
 ## Kiến trúc
 
@@ -10,35 +10,53 @@
 | Backend | Google Apps Script (container-bound), Google Sheets DB |
 | File storage | Google Drive |
 | License | GAS License Server riêng (email whitelist + SHA256 token) |
-| CI/CD | GitHub Actions → Jest → Vite build → javascript-obfuscator → clasp push |
+| Build | gas-core concat → app concat → env injection → obfuscation |
+| CI/CD | GitHub Actions → Jest → build → clasp push |
 
 ## Cấu trúc
 
 ```
-src/
-├── client/               # React frontend
-│   ├── components/       # UI components
-│   ├── context/          # AuthContext (login/logout/session)
-│   ├── utils/            # gasClient, writeBuffer, dataCache, format
-│   ├── App.jsx           # Root component (HashRouter)
-│   ├── main.jsx          # Entry point
-│   ├── index.html        # HTML template
-│   └── index.css         # Tailwind directives
-└── server/               # GAS backend
-    ├── config.js          # SHEETS constants, getSheet(), ensureInitialized()
-    ├── cache.js           # CacheService wrapper + version counters
-    ├── utils.js           # UUID, ID generator, rowsToObjects, formatDate
-    ├── sheets.js          # CRUD + referential integrity + batchWrite
-    ├── auth.js            # Login, session, password, lock/unlock
-    ├── drive.js           # Google Drive upload/delete/folder
-    ├── documents.js       # Document CRUD + stats + permission filter
-    ├── license.js         # License check/activate + SHA256
-    ├── main.js            # doGet() + tất cả api_* wrapper
-    └── __tests__/         # Jest tests (35 tests)
+├── packages/
+│   └── gas-core/                # Shared GAS modules (~70% reuse)
+│       ├── config-base.js       # getConfig, setConfig, getSheet, _hashPassword
+│       ├── cache.js             # CacheService wrapper + version counters
+│       ├── utils.js             # UUID, ID generator, rowsToObjects, formatDate
+│       ├── sheets-crud.js       # getSheetData, addRow, updateRow, deleteRow, batchWrite
+│       ├── auth-core.js         # validateSession, requireAuth, changePassword, logout
+│       ├── drive-io.js          # uploadFile, deleteFile, getOrCreateFolder
+│       └── license.js           # checkLicense, activateWithToken, SHA256
+├── apps/
+│   ├── docmgr/                  # Quản Lý Tài Liệu (React + GAS)
+│   │   ├── src/client/          # React frontend
+│   │   ├── src/server/          # App-specific GAS backend
+│   │   │   ├── config.js        # SHEETS, APP_ID, ensureInitialized
+│   │   │   ├── sheets.js        # Referential integrity overrides
+│   │   │   ├── auth.js          # login (app-specific), lockUser, unlockUser
+│   │   │   ├── documents.js     # Document CRUD + stats + permission filter
+│   │   │   ├── main.js          # doGet() + api_* wrappers
+│   │   │   └── __tests__/       # Jest tests (35 tests)
+│   │   └── package.json
+│   └── license-server/          # GAS Web App — kích hoạt license
+│       ├── main.js              # doGet/doPost, email whitelist
+│       ├── dev.js               # Local Node.js dev runner (port 3001)
+│       └── package.json
+├── scripts/
+│   ├── bundle-server.js         # Concat gas-core + app → main.js (--app <name>)
+│   ├── obfuscate.js             # javascript-obfuscator (--app <name>)
+│   └── convert-gs.js            # .js → .gs cho license-server (--app <name>)
+├── package.json                 # Workspaces root
+└── .github/workflows/deploy.yml # CI/CD pipeline
+```
 
-license-server/           # GAS Web App riêng — kích hoạt license
-scripts/obfuscate.js      # javascript-obfuscator wrapper
-.github/workflows/        # CI/CD pipeline
+**Build pipeline:** gas-core files → app server files → concat thành 1 file → inject .env → obfuscate → clasp push.
+
+GAS không có module system nên tất cả file được concat vào chung 1 scope. App mở rộng gas-core bằng override pattern:
+```js
+var _coreDeleteRow = deleteRow
+deleteRow = function(sheet, rowIdx) {
+  checkReferences(sheet, rowIdx)  // app-specific logic
+  _coreDeleteRow(sheet, rowIdx)   // gọi gas-core
+}
 ```
 
 ## Chạy Local (Dev Mode)
@@ -49,10 +67,10 @@ scripts/obfuscate.js      # javascript-obfuscator wrapper
 npm install
 ```
 
-### 2. Chạy dev server
+### 2. Chạy dev server (docmgr)
 
 ```bash
-npm run dev
+npm run dev:docmgr
 ```
 
 Mở trình duyệt tại `http://localhost:5173` (Vite dev server).
@@ -62,51 +80,58 @@ Mở trình duyệt tại `http://localhost:5173` (Vite dev server).
 - Login mặc định: `admin` / `admin123`
 - Dữ liệu mock trả về dữ liệu mẫu cứng (không cần Google Sheet)
 
-### 3. Chạy tests backend
+### 3. Chạy License Server local
 
 ```bash
-npm test
+npm run dev:license
+```
+
+License Server chạy tại `http://localhost:3001`.
+
+### 4. Chạy tests
+
+```bash
+npm run test:docmgr
 ```
 
 Chạy 35 Jest tests cho toàn bộ backend (config, sheets, auth, documents, license).
 
-### 4. Build
+### 5. Build
 
 ```bash
-# Build tất cả (client + server + obfuscate)
-npm run build
+# Build docmgr (client + server + obfuscate)
+npm run build:docmgr
 
-# Hoặc build riêng từng phần
-npm run build:client    # Vite → dist/gas/index.html (single file)
-npm run build:server    # Vite IIFE → dist/gas/main.js
-npm run build:obfuscate # javascript-obfuscator → dist/gas/main.js
+# Build license-server (.js → .gs)
+npm run build:license
 ```
 
 ## Deploy lên Google Apps Script
 
-### Lần đầu
+### Docmgr — lần đầu
 
 1. **Tạo Google Spreadsheet mới**
 2. Mở Extensions → Apps Script → lấy **Script ID**
-3. Cập nhật `.clasp.json`:
+3. Tạo `apps/docmgr/.clasp.json`:
    ```json
    { "scriptId": "YOUR_SCRIPT_ID", "rootDir": "./dist/gas" }
    ```
-4. Login clasp:
+4. Tạo `apps/docmgr/.env`:
+   ```
+   SECRET_SALT=chuoi-bi-mat-dai-random
+   LICENSE_SERVER_URL=https://script.google.com/macros/s/.../exec
+   APP_ID=docmgr
+   APP_VERSION=1.0.0
+   ```
+5. Login clasp:
    ```bash
    npx clasp login
    ```
-5. Thiết lập Script Properties (trong GAS editor → Settings → Script Properties):
-   - `SECRET_SALT` — chuỗi bí mật dài, random
-   - `LICENSE_SERVER_URL` — URL của License Server web app
-   - `ROOT_FOLDER_ID` — ID thư mục Google Drive gốc (hoặc để trống, thiết lập trong Cài đặt)
-
-### Deploy
-
-```bash
-npm run deploy
-# Hoặc riêng: npx clasp push --force && npx clasp deploy
-```
+6. Build & push:
+   ```bash
+   npm run build:docmgr
+   cd apps/docmgr && npx clasp push --force
+   ```
 
 ### CI/CD (GitHub Actions)
 
@@ -114,21 +139,37 @@ Thêm GitHub Secrets:
 - `SECRET_SALT` — chuỗi bí mật
 - `LICENSE_SERVER_URL` — URL license server
 - `CLASP_CREDENTIALS` — nội dung file `~/.clasprc.json`
-- `CLASP_JSON` — nội dung file `.clasp.json`
+- `CLASP_JSON` — nội dung file `apps/docmgr/.clasp.json`
 
-Push lên branch `main` → tự động test → build → deploy.
+Thêm GitHub Variables:
+- `APP_ID` — `docmgr`
+- `APP_VERSION` — `1.0.0`
+
+Push lên branch `main` (thay đổi trong `apps/docmgr/`, `packages/gas-core/`, hoặc `scripts/`) → tự động test → build → deploy.
 
 ## License Server
 
-Xem `license-server/README` — deploy riêng như GAS Web App standalone.
+Deploy riêng như GAS Web App standalone:
 
 1. Tạo GAS project mới (standalone)
-2. Copy code từ `license-server/main.js`
+2. Build & push:
+   ```bash
+   npm run build:license
+   cd apps/license-server && npx clasp push --force
+   ```
 3. Thiết lập Script Properties:
    - `SECRET_SALT` — **cùng giá trị** với app chính
    - `WHITELIST` — danh sách email cho phép kích hoạt, ngăn cách bởi dấu phẩy
 4. Deploy as Web App → `Execute as: User accessing` / `Who has access: Anyone`
-5. Lấy URL → điền vào Script Properties `LICENSE_SERVER_URL` của app chính
+5. Lấy URL → điền vào `apps/docmgr/.env` → `LICENSE_SERVER_URL=...`
+
+### Dev mode
+
+```bash
+npm run dev:license
+```
+
+Chạy local trên port 3001, mock GAS APIs bằng Node.js. Hỗ trợ debug với VS Code (launch config "License Server").
 
 ## Tài khoản mặc định
 
