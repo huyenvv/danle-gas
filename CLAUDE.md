@@ -23,6 +23,33 @@ scripts/                 # Shared build scripts (bundle-server, obfuscate, conve
   ```
 - **Build-time encoded vars** (`__ENCODED_SECRET_SALT__`, `__ENCODED_LICENSE_URL__`) are reversed-base64 strings injected from `.env` by `bundle-server.js`. Decoded at runtime by `_decode()` in license.js.
 
+## License Flow
+
+```
+User opens app (doGet)
+  → checkLicense() — reads LICENSE_ACTIVATED from ScriptProperties
+  → If false: redirect to License Server
+
+License Server (apps/license-server/main.js):
+  1. User lands with ?scriptId=...&callback=...&app=...&ver=...
+  2. Server gets user email via Session.getActiveUser()
+  3. Checks email in Whitelist tab (per-app or wildcard *)
+  4. If allowed: token = SHA256(scriptId + SECRET_SALT)
+  5. Redirects back: callback?activate=<token>
+
+App receives callback (doGet with ?activate=token):
+  → activateWithToken(token)
+  → salt = _decode(__ENCODED_SECRET_SALT)  ← build-time injected
+  → expected = SHA256(scriptId + salt)
+  → If token === expected: save LICENSE_ACTIVATED=true to ScriptProperties
+```
+
+**Key points:**
+- `SECRET_SALT` must be **identical** in both app `.env` and license-server Script Properties.
+- Salt is encoded (reversed base64) at build time, decoded at runtime — never stored in plain text in deployed code.
+- Each Google Sheet copy has a unique `scriptId` → unique token → separate license.
+- License Server is container-bound to its own Google Sheet with tabs: Whitelist, Audit Logs, Admins.
+
 ## Commands
 
 ```bash
