@@ -1,0 +1,10 @@
+{
+  "name": "@appscripts/license-server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev.js",
+    "build": "node ../../scripts/convert-gs.js --app license-server",
+    "deploy": "clasp push --force && clasp deploy"
+  }
+}

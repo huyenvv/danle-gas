@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Client: Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/apps/docmgr/src/client",
+      "preLaunchTask": "npm: dev"
+    },
+    {
+      "name": "License Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/license-server/dev.js",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Jest: All Tests",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["jest", "--runInBand", "--no-coverage", "--config", "apps/docmgr/jest.config.js"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Jest: Current File",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["jest", "--runInBand", "--no-coverage", "${relativeFile}"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

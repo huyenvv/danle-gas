@@ -1,0 +1,22 @@
+{
+  "name": "appscripts",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:docmgr": "npm run dev -w apps/docmgr",
+    "dev:license": "npm run dev -w apps/license-server",
+    "test:docmgr": "npm run test -w apps/docmgr",
+    "build:docmgr": "npm run build -w apps/docmgr",
+    "build:license": "npm run build -w apps/license-server"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.3.0",
+    "javascript-obfuscator": "^4.1.1",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0"
+  }
+}

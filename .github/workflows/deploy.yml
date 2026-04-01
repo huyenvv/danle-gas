@@ -1,0 +1,48 @@
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/docmgr/**'
+      - 'packages/gas-core/**'
+      - 'scripts/**'
+
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test -w apps/docmgr -- --no-coverage
+
+      - name: Build
+        env:
+          SECRET_SALT: ${{ secrets.SECRET_SALT }}
+          LICENSE_SERVER_URL: ${{ secrets.LICENSE_SERVER_URL }}
+          APP_ID: ${{ vars.APP_ID }}
+          APP_VERSION: ${{ vars.APP_VERSION }}
+        run: npm run build -w apps/docmgr
+
+      - name: Setup clasp credentials
+        env:
+          CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        run: |
+          echo "$CLASP_CREDENTIALS" > ~/.clasprc.json
+          echo "$CLASP_JSON" > apps/docmgr/.clasp.json
+
+      - name: Deploy to Apps Script
+        working-directory: apps/docmgr
+        run: npx @google/clasp push --force
