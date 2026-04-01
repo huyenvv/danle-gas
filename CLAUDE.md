@@ -34,18 +34,18 @@ License Server (apps/license-server/main.js):
   1. User lands with ?scriptId=...&callback=...&app=...&ver=...
   2. Server gets user email via Session.getActiveUser()
   3. Checks email in Whitelist tab (per-app or wildcard *)
-  4. If allowed: token = SHA256(scriptId + SECRET_SALT)
+  4. If allowed: token = SHA256(scriptId + app + SECRET_SALT)
   5. Redirects back: callback?activate=<token>
 
 App receives callback (doGet with ?activate=token):
   → activateWithToken(token)
   → salt = _decode(__ENCODED_SECRET_SALT)  ← build-time injected
-  → expected = SHA256(scriptId + salt)
+  → expected = SHA256(scriptId + __APP_ID + salt)
   → If token === expected: save LICENSE_ACTIVATED=true + LICENSE_TOKEN to ScriptProperties
 
 Every API call → checkLicense():
   → Reads LICENSE_ACTIVATED flag AND LICENSE_TOKEN
-  → Re-computes expected = SHA256(scriptId + salt)
+  → Re-computes expected = SHA256(scriptId + __APP_ID + salt)
   → If stored token ≠ expected → revoke (clear both keys) → return false
   → Prevents bypass by manually setting LICENSE_ACTIVATED=true
 ```

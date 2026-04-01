@@ -12,14 +12,15 @@ function reset() {
   // Reset build-time placeholders to empty (unset)
   __ENCODED_SECRET_SALT = '__ENCODED_SECRET_SALT__'
   __ENCODED_LICENSE_URL = '__ENCODED_LICENSE_URL__'
+  __APP_ID = 'docmgr'
 }
 
 beforeEach(() => reset())
 
 describe('activateWithToken', () => {
-  test('activates when token matches SHA256(scriptId + salt)', () => {
+  test('activates when token matches SHA256(scriptId + app + salt)', () => {
     __ENCODED_SECRET_SALT = _encode('testsalt')
-    const expected = _sha256(ScriptApp.getScriptId() + 'testsalt')
+    const expected = _sha256(ScriptApp.getScriptId() + 'docmgr' + 'testsalt')
     const result = activateWithToken(expected)
     expect(result.activated).toBe(true)
     expect(checkLicense()).toBe(true)
@@ -32,7 +33,7 @@ describe('activateWithToken', () => {
 
   test('idempotent — already activated returns success', () => {
     __ENCODED_SECRET_SALT = _encode('testsalt')
-    const expected = _sha256(ScriptApp.getScriptId() + 'testsalt')
+    const expected = _sha256(ScriptApp.getScriptId() + 'docmgr' + 'testsalt')
     activateWithToken(expected)
     const result2 = activateWithToken(expected)
     expect(result2.alreadyActivated).toBe(true)
@@ -46,7 +47,7 @@ describe('checkLicense', () => {
 
   test('returns true after proper activation', () => {
     __ENCODED_SECRET_SALT = _encode('testsalt')
-    const token = _sha256(ScriptApp.getScriptId() + 'testsalt')
+    const token = _sha256(ScriptApp.getScriptId() + 'docmgr' + 'testsalt')
     activateWithToken(token)
     expect(checkLicense()).toBe(true)
   })

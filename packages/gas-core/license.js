@@ -22,7 +22,7 @@ function _verifyToken() {
   var salt = _decode(__ENCODED_SECRET_SALT)
   if (!salt) return false
 
-  var expected = _sha256(ScriptApp.getScriptId() + salt)
+  var expected = _sha256(ScriptApp.getScriptId() + __APP_ID + salt)
   return token === expected
 }
 
@@ -46,7 +46,7 @@ function activateWithToken(tokenParam) {
   if (!salt) throw new Error('Configuration error')
 
   var scriptId = ScriptApp.getScriptId()
-  var expected = _sha256(scriptId + salt)
+  var expected = _sha256(scriptId + __APP_ID + salt)
 
   if (tokenParam !== expected) throw new Error('Invalid token')
 

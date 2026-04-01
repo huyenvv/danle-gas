@@ -226,7 +226,7 @@ function _handleActivation(params) {
     return _silentRedirect(callbackUrl, 'error')
   }
 
-  var token = _sha256(scriptId + salt)
+  var token = _sha256(scriptId + app + salt)
   var sep = callbackUrl.indexOf('?') >= 0 ? '&' : '?'
   var redirectTo = callbackUrl + sep + 'activate=' + encodeURIComponent(token)
 
