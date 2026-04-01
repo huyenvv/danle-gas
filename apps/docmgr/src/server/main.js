@@ -223,6 +223,7 @@ function api_setConfig(token, key, value) {
 
 function _wrap(fn) {
   try {
+    if (!checkLicense()) throw new Error('Ứng dụng chưa được kích hoạt')
     var result = fn()
     return { success: true, payload: result }
   } catch(e) {
