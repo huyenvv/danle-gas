@@ -6,23 +6,39 @@ const AuthContext = createContext(null)
 const TOKEN_KEY = 'docmgr_token'
 
 export function AuthProvider({ children }) {
-  const [session, setSession]   = useState(null)
-  const [loading, setLoading]   = useState(true)
+  const [session, setSession]         = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [accessDenied, setAccessDenied] = useState(false)
+  const [accessError, setAccessError]   = useState('')
 
-  // Attempt to restore session from localStorage on mount
+  function doAutoLogin() {
+    gasCall('api_autoLogin')
+      .then(res => {
+        localStorage.setItem(TOKEN_KEY, res.token)
+        setSession({ ...res.user, token: res.token })
+        setLoading(false)
+      })
+      .catch(err => {
+        setAccessDenied(true)
+        setAccessError(err.message || 'Không có quyền truy cập')
+        setLoading(false)
+      })
+  }
+
+  // On mount: try to restore saved session, then fall back to auto-login
   useEffect(() => {
     const saved = localStorage.getItem(TOKEN_KEY)
-    if (!saved) { setLoading(false); return }
+    if (!saved) { doAutoLogin(); return }
     gasCall('api_validateSession', saved)
-      .then(sess => { setSession({ ...sess.user, token: saved }); setLoading(false) })
-      .catch(() => { localStorage.removeItem(TOKEN_KEY); setLoading(false) })
-  }, [])
-
-  const login = useCallback(async (username, password) => {
-    const res = await gasCall('api_login', username, password)
-    localStorage.setItem(TOKEN_KEY, res.token)
-    setSession({ ...res.user, token: res.token })
-    return res
+      .then(sess => {
+        if (!sess) throw new Error('Session expired')
+        setSession({ ...sess, token: saved })
+        setLoading(false)
+      })
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY)
+        doAutoLogin()
+      })
   }, [])
 
   const logout = useCallback(async () => {
@@ -30,9 +46,10 @@ export function AuthProvider({ children }) {
     setSession(null)
     localStorage.removeItem(TOKEN_KEY)
     if (token) await gasCall('api_logout', token).catch(() => {})
+    window.location.reload()
   }, [session])
 
-  const value = { session, loading, login, logout }
+  const value = { session, loading, accessDenied, accessError, logout }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

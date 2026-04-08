@@ -1,35 +1,35 @@
 require('./setup.js')
-
-// Match actual headers from config.js
-const USER_HEADERS = ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối']
-// APP_ROLES: UserID | AppID | Quyền | Phân quyền chi tiết
-const ROLE_HEADERS = ['UserID', 'AppID', 'Quyền', 'Phân quyền chi tiết']
-
-function reset() {
-  SpreadsheetApp._reset()
-  CacheService.getScriptCache()._reset()
-  PropertiesService._reset()
-}
-
-function seedAdmin() {
-  const hashed = _hashPassword('admin', 'admin123')
-  // Rows must match USER_HEADERS order
-  SpreadsheetApp._sheets[SHEETS.USERS]._rows.push(
-    [1, 'admin', hashed, 'admin@test.com', 'Active', false, '']
-  )
-  // Role entry — Quyền must be 'admin' (what requireAdmin checks)
-  SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push(
-    [1, APP_ID, 'admin', '']
-  )
-  invalidateSheetCache(SHEETS.USERS)
-  invalidateSheetCache(SHEETS.APP_ROLES)
-}
+const { resetAll, setupUserSheets, seedUser, loginAs } = require('./helpers')
 
 beforeEach(() => {
-  reset()
-  SpreadsheetApp._addSheet(SHEETS.USERS, [USER_HEADERS])
-  SpreadsheetApp._addSheet(SHEETS.APP_ROLES, [ROLE_HEADERS])
-  seedAdmin()
+  resetAll()
+  setupUserSheets()
+  seedUser(1, 'admin', 'admin123', 'admin@test.com', 'admin')
+})
+
+describe('autoLogin', () => {
+  test('returns session token for matching email', () => {
+    Session._setEmail('admin@test.com')
+    const result = autoLogin()
+    expect(result.token).toBeTruthy()
+    expect(result.user.email).toBe('admin@test.com')
+    expect(result.user.role).toBe('admin')
+  })
+
+  test('throws for email not in user list', () => {
+    Session._setEmail('nobody@test.com')
+    expect(() => autoLogin()).toThrow('chưa được cấp quyền')
+  })
+
+  test('throws for locked user', () => {
+    Session._setEmail('admin@test.com')
+    const token = loginAs('admin', 'admin123')
+    seedUser(2, 'user2', 'pass', 'lock@test.com', 'Xem')
+    lockUser(token, 2)
+    invalidateSheetCache(SHEETS.USERS)
+    Session._setEmail('lock@test.com')
+    expect(() => autoLogin()).toThrow('khóa')
+  })
 })
 
 describe('login', () => {
@@ -96,5 +96,70 @@ describe('requireAdmin', () => {
 
   test('throws for invalid token', () => {
     expect(() => requireAdmin('bad')).toThrow()
+  })
+})
+
+describe('lockUser', () => {
+  beforeEach(() => {
+    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
+  })
+
+  test('locks target user', () => {
+    const token = loginAs('admin', 'admin123')
+    lockUser(token, 2)
+    invalidateSheetCache(SHEETS.USERS)
+    const users = getSheetData(SHEETS.USERS)
+    const u2 = users.find(u => u['ID'] === 2)
+    expect(u2['Trạng thái']).toBe('Locked')
+  })
+
+  test('cannot lock self', () => {
+    const token = loginAs('admin', 'admin123')
+    expect(() => lockUser(token, 1)).toThrow('Không thể tự khóa')
+  })
+
+  test('locked user cannot login', () => {
+    const token = loginAs('admin', 'admin123')
+    lockUser(token, 2)
+    invalidateSheetCache(SHEETS.USERS)
+    expect(() => login('user2', 'pass123')).toThrow('khóa')
+  })
+})
+
+describe('unlockUser', () => {
+  test('unlocks a locked user', () => {
+    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
+    const token = loginAs('admin', 'admin123')
+    lockUser(token, 2)
+    unlockUser(token, 2)
+    invalidateSheetCache(SHEETS.USERS)
+    expect(() => login('user2', 'pass123')).not.toThrow()
+  })
+})
+
+describe('adminResetPassword', () => {
+  beforeEach(() => {
+    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
+  })
+
+  test('resets password for target user', () => {
+    const token = loginAs('admin', 'admin123')
+    adminResetPassword(token, 2, 'newpass99')
+    invalidateSheetCache(SHEETS.USERS)
+    expect(() => login('user2', 'newpass99')).not.toThrow()
+  })
+
+  test('throws when new password is too short', () => {
+    const token = loginAs('admin', 'admin123')
+    expect(() => adminResetPassword(token, 2, '123')).toThrow('ít nhất 6')
+  })
+
+  test('sets MustChangePass flag', () => {
+    const token = loginAs('admin', 'admin123')
+    adminResetPassword(token, 2, 'newpass99')
+    invalidateSheetCache(SHEETS.USERS)
+    const users = getSheetData(SHEETS.USERS)
+    const u2 = users.find(u => u['ID'] === 2)
+    expect(u2['MustChangePass']).toBe('TRUE')
   })
 })

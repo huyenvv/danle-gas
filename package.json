@@ -9,6 +9,7 @@
   "scripts": {
     "dev:docmgr": "npm run dev -w apps/docmgr",
     "dev:license": "npm run dev -w apps/license-server",
+    "test": "npm run test:docmgr",
     "test:docmgr": "npm run test -w apps/docmgr",
     "build:docmgr": "npm run build -w apps/docmgr",
     "build:license": "npm run build -w apps/license-server"

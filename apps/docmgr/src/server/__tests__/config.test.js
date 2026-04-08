@@ -1,17 +1,10 @@
 require('./setup.js')
+const { resetAll } = require('./helpers')
 
-// ── helpers ───────────────────────────────────────────────────────────────────
 function makeSheet(name, headers, rows) {
   SpreadsheetApp._addSheet(name, [headers, ...rows])
 }
 
-function resetAll() {
-  SpreadsheetApp._reset()
-  CacheService.getScriptCache()._reset()
-  PropertiesService._reset()
-}
-
-// ── config ────────────────────────────────────────────────────────────────────
 beforeEach(() => resetAll())
 
 describe('getConfig / setConfig', () => {

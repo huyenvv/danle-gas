@@ -1,0 +1,6 @@
+{
+  "disabledMcpjsonServers": [
+    "datadog",
+    "atlassian"
+  ]
+}

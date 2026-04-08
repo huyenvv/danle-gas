@@ -20,3 +20,5 @@ licenses.json
 
 # Per-app .clasp.json (contains scriptId)
 apps/*/.clasp.json
+
+tmp_app/

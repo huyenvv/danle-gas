@@ -1,22 +1,8 @@
-// ===== License Server (GAS Web App — Container-bound) =====
+// ===== License Server SPA (Vanilla JS) =====
 //
-// Script sống bên trong Google Sheet (Extensions > Apps Script)
-// Google Sheet DB với 3 tabs: Whitelist | Audit Logs | Admins
-// Deploy: Execute as User accessing / Anyone with Google account
-//
-// Admins tab:
-//   Email | Password Hash | Role (owner/admin) | Ngày thêm
-//   Owner: auto-login, full access (manage admins + whitelist)
-//   Admin: password required, whitelist + logs only
-//
-// Whitelist tab:
-//   Email | App | Ngày thêm | Thêm bởi | Ghi chú
-//   App: match activation request's app param (* or empty = all)
-//
-// Script Properties:
-//   SECRET_SALT — same as main app
-//
-// Session: UserProperties (24h TTL)
+// Single-Page App in GAS
+// Backend: Pure data APIs (JSON)
+// Frontend: Vanilla JS + google.script.run callbacks (no reload)
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -24,65 +10,11 @@ var TAB_WHITELIST = 'Whitelist'
 var TAB_LOGS      = 'Audit Logs'
 var TAB_ADMINS    = 'Admins'
 
-var WL_HEADERS  = ['Email', 'App', 'Ngày thêm', 'Thêm bởi', 'Ghi chú']
+var WL_HEADERS  = ['Email', 'App', 'Ver', 'Ngày thêm', 'Thêm bởi', 'Ghi chú']
 var LOG_HEADERS = ['Thời gian', 'Email', 'Hành động', 'Chi tiết', 'IP/User']
 var ADM_HEADERS = ['Email', 'Password Hash', 'Role', 'Ngày thêm']
 
-// ── CSS ──────────────────────────────────────────────────────────────────────
-
-var CSS = '<style>'
-  + '*{box-sizing:border-box;margin:0;padding:0}'
-  + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}'
-  + '.container{max-width:720px;margin:0 auto;padding:24px 16px}'
-  + '.card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:24px;margin-bottom:20px}'
-  + '.header{text-align:center;padding:32px 0 16px}'
-  + '.header h1{font-size:22px;color:#1a56db;margin-bottom:4px}'
-  + '.header p{color:#6b7280;font-size:13px}'
-  + '.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}'
-  + '.badge-blue{background:#dbeafe;color:#1d4ed8}'
-  + '.badge-green{background:#dcfce7;color:#15803d}'
-  + '.badge-red{background:#fee2e2;color:#dc2626}'
-  + '.badge-gray{background:#f3f4f6;color:#6b7280}'
-  + 'table{width:100%;border-collapse:collapse;font-size:13px}'
-  + 'th{text-align:left;padding:10px 12px;background:#f8fafc;color:#64748b;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}'
-  + 'td{padding:10px 12px;border-bottom:1px solid #f1f5f9}'
-  + 'tr:hover td{background:#f8fafc}'
-  + '.btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}'
-  + '.btn-primary{background:#1a56db;color:#fff}.btn-primary:hover{background:#1e40af}'
-  + '.btn-danger{background:#fee2e2;color:#dc2626}.btn-danger:hover{background:#fecaca}'
-  + '.btn-secondary{background:#f3f4f6;color:#374151;text-decoration:none;display:inline-block}.btn-secondary:hover{background:#e5e7eb}'
-  + '.btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}'
-  + 'input[type=email],input[type=text],input[type=password],select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;width:100%;outline:none;transition:border .15s}'
-  + 'input:focus,select:focus{border-color:#1a56db;box-shadow:0 0 0 3px rgba(26,86,219,.1)}'
-  + '.form-row{display:flex;gap:8px;margin-top:16px}'
-  + '.form-row input{flex:1}'
-  + '.alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px}'
-  + '.alert-success{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}'
-  + '.alert-error{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}'
-  + '.alert-warn{background:#fffbeb;color:#b45309;border:1px solid #fde68a}'
-  + '.tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0}'
-  + '.tab{padding:8px 16px;font-size:13px;font-weight:500;color:#6b7280;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}'
-  + '.tab:hover{color:#1a56db}'
-  + '.tab.active{color:#1a56db;border-bottom-color:#1a56db}'
-  + '.filter-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}'
-  + '.filter-bar input,.filter-bar select{width:auto;flex:1;min-width:140px}'
-  + '.empty{text-align:center;padding:32px;color:#9ca3af}'
-  + '.stat{display:inline-block;margin-right:16px;font-size:13px;color:#6b7280}'
-  + '.stat b{color:#1a1a2e}'
-  + '.confirm-box{text-align:center;padding:20px}'
-  + '.confirm-box h3{color:#dc2626;margin-bottom:8px}'
-  + '.confirm-box p{color:#6b7280;margin-bottom:20px}'
-  + '.redirect-box{text-align:center;padding:48px 24px}'
-  + '.redirect-box .icon{font-size:48px;margin-bottom:16px}'
-  + '.redirect-box h2{color:#1a56db;margin-bottom:8px}'
-  + '.redirect-box p{color:#6b7280;font-size:14px}'
-  + '.redirect-box .email{font-weight:600;color:#1a1a2e}'
-  + '.redirect-box .token{font-family:monospace;font-size:11px;color:#9ca3af;margin-top:12px;word-break:break-all}'
-  + '.spinner{display:inline-block;width:20px;height:20px;border:2px solid #e5e7eb;border-top-color:#1a56db;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle}'
-  + '@keyframes spin{to{transform:rotate(360deg)}}'
-  + '</style>'
-
-// ── Entry Points ─────────────────────────────────────────────────────────────
+// ── Entry: doGet → Serve SPA ─────────────────────────────────────────────────
 
 function doGet(e) {
   var p = e && e.parameter ? e.parameter : {}
@@ -92,113 +24,31 @@ function doGet(e) {
     return _handleActivation(p)
   }
 
-  // Logout
-  if (p.action === 'logout') {
-    _logout()
-    return _loggedOutPage()
-  }
-
-  // Check admin
-  var adminInfo = _getAdminInfo()
-  if (!adminInfo) return _accessDeniedPage()
-
-  // Owner auto-login
-  if (adminInfo.role === 'owner' && !_isLoggedIn()) {
-    _login()
-  }
-
-  // Admin needs password login
-  if (!_isLoggedIn()) return _loginPage(adminInfo.email, '')
-
-  var tab = p.tab || 'whitelist'
-  return _renderPage(tab, p.msg || '', p.search || '', adminInfo)
+  // Serve SPA (index.html with embedded JS) — no sheet ops here, keep fast
+  return _html(_getIndexHtml()).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
 }
 
 function doPost(e) {
+  // Legacy support: activation fallback (normally handled in doGet)
   var p = e && e.parameter ? e.parameter : {}
-  var action  = p.action || ''
-
-  // Login action (password-based, for admins only)
-  if (action === 'login') {
-    var adminInfo = _getAdminInfo()
-    if (!adminInfo) return _accessDeniedPage()
-    if (adminInfo.role === 'owner') {
-      _login()
-      _writeLog(adminInfo.email, 'Đăng nhập', 'owner auto')
-      return _renderPage('whitelist', '✅ Đăng nhập thành công!', '', adminInfo)
-    }
-    var password = (p.password || '').trim()
-    if (!adminInfo.passwordHash || _hashPassword(password) !== adminInfo.passwordHash) {
-      _writeLog(adminInfo.email, 'Login thất bại', 'Sai mật khẩu')
-      return _loginPage(adminInfo.email, '❌ Mật khẩu không đúng.')
-    }
-    _login()
-    _writeLog(adminInfo.email, 'Đăng nhập', '')
-    return _renderPage('whitelist', '✅ Đăng nhập thành công!', '', adminInfo)
+  if (p.scriptId && p.callback) {
+    return _handleActivation(p)
   }
-
-  // Các action khác cần đã login
-  var adminInfo = _getAdminInfo()
-  if (!adminInfo) return _accessDeniedPage()
-  if (adminInfo.role === 'owner' && !_isLoggedIn()) _login()
-  if (!_isLoggedIn()) return _loginPage(adminInfo.email, '⚠️ Phiên đăng nhập hết hạn.')
-
-  var email   = (p.email || '').trim().toLowerCase()
-  var confirm = p.confirm || ''
-  var note    = (p.note || '').trim()
-  var app     = (p.app || '').trim()
-
-  if (action === 'add' && email) {
-    if (_emailExistsForApp(email, app)) {
-      return _renderPage('whitelist', '⚠️ Email <b>' + email + '</b>' + (app ? ' (app: ' + app + ')' : '') + ' đã có trong danh sách.', '', adminInfo)
-    }
-    _addEmail(email, app, adminInfo.email, note)
-    _writeLog(adminInfo.email, 'Thêm email', email + (app ? ' [' + app + ']' : '') + (note ? ' (' + note + ')' : ''))
-    return _renderPage('whitelist', '✅ Đã thêm: ' + email, '', adminInfo)
-  }
-
-  if (action === 'confirm-remove' && email) {
-    return _confirmRemovePage(email)
-  }
-
-  if (action === 'remove' && email && confirm === 'yes') {
-    _removeEmail(email, p.removeApp || '')
-    _writeLog(adminInfo.email, 'Xóa email', email)
-    return _renderPage('whitelist', '✅ Đã xóa: ' + email, '', adminInfo)
-  }
-
-  // Admin management (owner only)
-  if (adminInfo.role !== 'owner') {
-    return _renderPage('whitelist', '⚠️ Chỉ owner mới có quyền quản lý admin.', '', adminInfo)
-  }
-
-  if (action === 'add-admin' && email) {
-    if (_adminExists(email)) {
-      return _renderPage('admins', '⚠️ Admin <b>' + email + '</b> đã tồn tại.', '', adminInfo)
-    }
-    var newPassword = (p.password || '').trim()
-    if (!newPassword) {
-      return _renderPage('admins', '⚠️ Vui lòng nhập mật khẩu cho admin mới.', '', adminInfo)
-    }
-    _addAdmin(email, _hashPassword(newPassword), 'admin')
-    _writeLog(adminInfo.email, 'Thêm admin', email)
-    return _renderPage('admins', '✅ Đã thêm admin: ' + email, '', adminInfo)
-  }
-
-  if (action === 'confirm-remove-admin' && email) {
-    return _confirmRemoveAdminPage(email)
-  }
-
-  if (action === 'remove-admin' && email && confirm === 'yes') {
-    _removeAdmin(email)
-    _writeLog(adminInfo.email, 'Xóa admin', email)
-    return _renderPage('admins', '✅ Đã xóa admin: ' + email, '', adminInfo)
-  }
-
-  return _renderPage('whitelist', '', '', adminInfo)
+  return _html('{"error":"Invalid request"}')
 }
 
 // ── Activation Flow ──────────────────────────────────────────────────────────
+
+function _emailExistsForApp(email, app) {
+  var list = _getAllEmails()
+  email = email.toLowerCase()
+  app = (app || '').toLowerCase()
+  return list.some(function(r) {
+    if (r.email !== email) return false
+    var rApp = (r.app || '').toLowerCase()
+    return rApp === '' || rApp === '*' || rApp === app
+  })
+}
 
 function _handleActivation(params) {
   var scriptId    = params.scriptId || ''
@@ -206,7 +56,6 @@ function _handleActivation(params) {
   var app         = params.app || ''
   var ver         = params.ver || ''
 
-  // Validate callback URL (XSS prevention)
   if (!_isValidCallback(callbackUrl)) {
     return _silentRedirect(callbackUrl ? callbackUrl : '', 'denied')
   }
@@ -235,7 +84,257 @@ function _handleActivation(params) {
   return _silentRedirect(redirectTo, '')
 }
 
-// ── Session (UserProperties) ─────────────────────────────────────────────────
+// ── Frontend: Load SPA HTML ──────────────────────────────────────────────────
+
+function _getIndexHtml() {
+  return _SPA_HTML
+}
+
+// ── Google Script Runtime APIs (exposed to client) ──────────────────────────
+
+/**
+ * @return {Object} {user: {email, role}, emails: [], logs: [], admins: []}
+ */
+function getInitData() {
+  // Read admins ONCE (avoid redundant sheet reads for speed)
+  var currentEmail = (Session.getActiveUser().getEmail() || '').toLowerCase()
+  var admins = _getAllAdmins()
+
+  // First run: auto-create owner
+  if (admins.length === 0 && currentEmail) {
+    _addAdmin(currentEmail, '', 'owner')
+    admins = [{ email: currentEmail, passwordHash: '', role: 'owner', date: '' }]
+  }
+
+  var adminInfo = null
+  for (var i = 0; i < admins.length; i++) {
+    if (admins[i].email === currentEmail) { adminInfo = admins[i]; break }
+  }
+
+  if (!adminInfo) {
+    return { user: null, needsLogin: false }
+  }
+
+  if (adminInfo.role === 'owner') {
+    _login()
+    return { user: { email: adminInfo.email, role: adminInfo.role }, needsLogin: false }
+  }
+
+  // Admin thường: cần nhập mật khẩu
+  return { user: null, needsLogin: true }
+}
+
+/**
+ * Load data (lazy — called after UI skeleton renders)
+ * @return {Object} {emails: [], logs: [], admins: []}
+ */
+function loadData() {
+  if (!_isLoggedIn()) {
+    return { error: 'Phiên hết hạn. Vui lòng tải lại trang.' }
+  }
+
+  try {
+    var wlRows = _getTabValues(TAB_WHITELIST, WL_HEADERS)
+    var logRows = _getTabValues(TAB_LOGS, LOG_HEADERS)
+    var admRows = _getTabValues(TAB_ADMINS, ADM_HEADERS)
+
+    // Parse whitelist
+    var emails = []
+    for (var i = 1; i < wlRows.length; i++) {
+      var r = wlRows[i]
+      var email = String(r[0] || '').trim().toLowerCase()
+      if (email) {
+        emails.push({ email: email, app: String(r[1] || '').trim(), ver: String(r[2] || '').trim(), date: r[3] || '', addedBy: r[4] || '', note: r[5] || '' })
+      }
+    }
+
+    // Parse logs (last 100, reversed)
+    var logs = []
+    var logStart = Math.max(1, logRows.length - 100)
+    for (var j = logRows.length - 1; j >= logStart; j--) {
+      var l = logRows[j]
+      logs.push({ time: l[0] || '', email: l[1] || '', action: l[2] || '', detail: l[3] || '', ip: l[4] || '' })
+    }
+
+    // Parse admins (without passwordHash)
+    var admins = []
+    for (var k = 1; k < admRows.length; k++) {
+      var a = admRows[k]
+      var admEmail = String(a[0] || '').trim().toLowerCase()
+      if (admEmail) {
+        admins.push({ email: admEmail, role: String(a[2] || 'admin').trim().toLowerCase(), date: a[3] || '' })
+      }
+    }
+
+    return { emails: emails, logs: logs, admins: admins }
+  } catch(e) {
+    return { error: 'loadData lỗi: ' + (e.message || String(e)) }
+  }
+}
+
+function _getTabValues(name, headers) {
+  var sheet = _getTab(name, headers)
+  var last = sheet.getLastRow()
+  if (last < 1) return []
+  return sheet.getRange(1, 1, last, headers.length).getDisplayValues()
+}
+
+/**
+ * Login with password
+ * @return {Object} {success, user, error, emails, logs, admins}
+ */
+function onLogin(password) {
+  var adminInfo = _getAdminInfo()
+  if (!adminInfo) {
+    return { success: false, error: 'Bạn không phải admin.' }
+  }
+
+  // Owner auto-logins in getInitData, but handle as fallback
+  if (adminInfo.role === 'owner') {
+    _login()
+    return { success: true, user: { email: adminInfo.email, role: adminInfo.role } }
+  }
+
+  if (!adminInfo.passwordHash || _hashPassword(password) !== adminInfo.passwordHash) {
+    _writeLog(adminInfo.email, 'Login thất bại', 'Sai mật khẩu')
+    return { success: false, error: 'Mật khẩu không đúng.' }
+  }
+
+  _login()
+  _writeLog(adminInfo.email, 'Đăng nhập', '')
+  return { success: true, user: { email: adminInfo.email, role: adminInfo.role } }
+}
+
+/**
+ * Add email to whitelist
+ * @return {Object} {success, addedEmail, error, emails, logs}
+ */
+function onAddEmail(email, app, ver, note) {
+  if (!_isLoggedIn()) {
+    return { success: false, error: 'Phiên hết hạn. Vui lòng đăng nhập lại.' }
+  }
+
+  email = (email || '').trim().toLowerCase()
+  app = (app || '').trim()
+  ver = (ver || '').trim()
+  note = (note || '').trim()
+
+  if (!email) {
+    return { success: false, error: 'Email không được để trống.' }
+  }
+
+  if (_exactEntryExists(email, app, ver)) {
+    var detail = email + (app ? ' (app: ' + app + ')' : ' (tất cả app)') + (ver ? ' (ver: ' + ver + ')' : ' (tất cả ver)')
+    return { success: false, error: detail + ' đã có trong danh sách.' }
+  }
+
+  var adminInfo = _getAdminInfo()
+  _addEmail(email, app, ver, adminInfo.email, note)
+  _writeLog(adminInfo.email, 'Thêm email', email + (app ? ' [' + app + ']' : '') + (ver ? ' [' + ver + ']' : '') + (note ? ' (' + note + ')' : ''))
+
+  return {
+    success: true,
+    addedEmail: email,
+    emails: _getAllEmails(),
+    logs: _getRecentLogs(100)
+  }
+}
+
+/**
+ * Remove email from whitelist
+ * @return {Object} {success, emails, logs}
+ */
+function onRemoveEmail(email) {
+  if (!_isLoggedIn()) {
+    return { success: false, error: 'Phiên hết hạn.' }
+  }
+
+  email = (email || '').trim().toLowerCase()
+  var adminInfo = _getAdminInfo()
+  _removeEmail(email)
+  _writeLog(adminInfo.email, 'Xóa email', email)
+
+  return {
+    success: true,
+    emails: _getAllEmails(),
+    logs: _getRecentLogs(100)
+  }
+}
+
+/**
+ * Add admin (owner only)
+ * @return {Object} {success, addedEmail, error, admins, logs}
+ */
+function onAddAdmin(email, password) {
+  if (!_isLoggedIn()) {
+    return { success: false, error: 'Phiên hết hạn.' }
+  }
+
+  var adminInfo = _getAdminInfo()
+  if (adminInfo.role !== 'owner') {
+    return { success: false, error: 'Chỉ owner mới có quyền này.' }
+  }
+
+  email = (email || '').trim().toLowerCase()
+  if (!email) {
+    return { success: false, error: 'Email không được để trống.' }
+  }
+
+  if (_adminExists(email)) {
+    return { success: false, error: 'Admin ' + email + ' đã tồn tại.' }
+  }
+
+  if (!password) {
+    return { success: false, error: 'Vui lòng nhập mật khẩu.' }
+  }
+
+  _addAdmin(email, _hashPassword(password), 'admin')
+  _writeLog(adminInfo.email, 'Thêm admin', email)
+
+  return {
+    success: true,
+    addedEmail: email,
+    admins: _getAllAdmins(),
+    logs: _getRecentLogs(100)
+  }
+}
+
+/**
+ * Remove admin (owner only)
+ * @return {Object} {success, admins, logs}
+ */
+function onRemoveAdmin(email) {
+  if (!_isLoggedIn()) {
+    return { success: false, error: 'Phiên hết hạn.' }
+  }
+
+  var adminInfo = _getAdminInfo()
+  if (adminInfo.role !== 'owner') {
+    return { success: false, error: 'Chỉ owner mới có quyền này.' }
+  }
+
+  email = (email || '').trim().toLowerCase()
+  _removeAdmin(email)
+  _writeLog(adminInfo.email, 'Xóa admin', email)
+
+  return {
+    success: true,
+    admins: _getAllAdmins(),
+    logs: _getRecentLogs(100)
+  }
+}
+
+/**
+ * Logout
+ */
+function onLogout() {
+  var adminInfo = _getAdminInfo()
+  if (adminInfo) {
+    _writeLog(adminInfo.email, 'Đăng xuất', '')
+  }
+  _logout()
+  return { success: true }
+}
 
 var SESSION_KEY = 'license_admin_session'
 var SESSION_TTL = 24 * 60 * 60 * 1000 // 24 giờ
@@ -259,10 +358,6 @@ function _login() {
 }
 
 function _logout() {
-  try {
-    var admin = _getAdminEmail()
-    if (admin) _writeLog(admin, 'Đăng xuất', '')
-  } catch(e) {}
   PropertiesService.getUserProperties().deleteProperty(SESSION_KEY)
 }
 
@@ -293,9 +388,9 @@ function _getAllEmails() {
   var sheet = _getTab(TAB_WHITELIST, WL_HEADERS)
   var last = sheet.getLastRow()
   if (last <= 1) return []
-  var data = sheet.getRange(2, 1, last - 1, WL_HEADERS.length).getValues()
+  var data = sheet.getRange(2, 1, last - 1, WL_HEADERS.length).getDisplayValues()
   return data.map(function(r) {
-    return { email: String(r[0]).trim().toLowerCase(), app: String(r[1] || '').trim(), date: r[2], addedBy: r[3] || '', note: r[4] || '' }
+    return { email: String(r[0]).trim().toLowerCase(), app: String(r[1] || '').trim(), ver: String(r[2] || '').trim(), date: r[3] || '', addedBy: r[4] || '', note: r[5] || '' }
   }).filter(function(r) { return r.email !== '' })
 }
 
@@ -314,10 +409,20 @@ function _emailExistsForApp(email, app) {
   })
 }
 
-function _addEmail(email, app, addedBy, note) {
+function _exactEntryExists(email, app, ver) {
+  var list = _getAllEmails()
+  email = email.toLowerCase()
+  var appNorm = (app || '*').toLowerCase()
+  var verNorm = (ver || '*').toLowerCase()
+  return list.some(function(r) {
+    return r.email === email && (r.app || '*').toLowerCase() === appNorm && (r.ver || '*').toLowerCase() === verNorm
+  })
+}
+
+function _addEmail(email, app, ver, addedBy, note) {
   var sheet = _getTab(TAB_WHITELIST, WL_HEADERS)
   var now = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm')
-  sheet.appendRow([email.toLowerCase(), app || '*', now, addedBy, note])
+  sheet.appendRow([email.toLowerCase(), app || '*', ver || '*', now, addedBy, note])
 }
 
 function _removeEmail(email) {
@@ -339,13 +444,13 @@ function _getAllAdmins() {
   var sheet = _getTab(TAB_ADMINS, ADM_HEADERS)
   var last = sheet.getLastRow()
   if (last <= 1) return []
-  var data = sheet.getRange(2, 1, last - 1, ADM_HEADERS.length).getValues()
+  var data = sheet.getRange(2, 1, last - 1, ADM_HEADERS.length).getDisplayValues()
   return data.map(function(r) {
     return {
       email: String(r[0]).trim().toLowerCase(),
       passwordHash: String(r[1] || '').trim(),
       role: String(r[2] || 'admin').trim().toLowerCase(),
-      date: r[3]
+      date: r[3] || ''
     }
   }).filter(function(r) { return r.email !== '' })
 }
@@ -384,6 +489,17 @@ function _getAdminInfo() {
   return null
 }
 
+function _ensureOwnerExists() {
+  var admins = _getAllAdmins()
+  // If no admins exist, auto-create owner for current user
+  if (admins.length === 0) {
+    var user = Session.getActiveUser().getEmail()
+    if (user) {
+      _addAdmin(user.toLowerCase(), '', 'owner')
+    }
+  }
+}
+
 // ── Audit Logs ───────────────────────────────────────────────────────────────
 
 function _writeLog(user, action, detail) {
@@ -398,9 +514,9 @@ function _getRecentLogs(limit) {
   if (last <= 1) return []
   var count = Math.min(limit || 50, last - 1)
   var startRow = last - count + 1
-  var data = sheet.getRange(startRow, 1, count, LOG_HEADERS.length).getValues()
+  var data = sheet.getRange(startRow, 1, count, LOG_HEADERS.length).getDisplayValues()
   return data.map(function(r) {
-    return { time: r[0], email: r[1], action: r[2], detail: r[3], ip: r[4] }
+    return { time: r[0] || '', email: r[1] || '', action: r[2] || '', detail: r[3] || '', ip: r[4] || '' }
   }).reverse()
 }
 
@@ -434,286 +550,632 @@ function _isValidCallback(url) {
   return typeof url === 'string' && url.indexOf('https://script.google.com/') === 0
 }
 
+// Wrapper: always allow embedding inside GAS iframe (removes X-Frame-Options restriction)
+function _html(content) {
+  return HtmlService.createHtmlOutput(content)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+}
+
 function _silentRedirect(url, errorCode) {
   if (errorCode && url) {
     var sep = url.indexOf('?') >= 0 ? '&' : '?'
     url = url + sep + 'lr=' + encodeURIComponent(errorCode)
   }
   if (!url) {
-    return HtmlService.createHtmlOutput('<html><body></body></html>')
+    return _html('<html><body></body></html>')
   }
-  return HtmlService.createHtmlOutput(
-    '<html><head><script>window.top.location.replace("' + _escapeJs(url) + '")</script></head><body></body></html>'
+  var safeUrl = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  var isError = !!errorCode
+  var icon = isError ? '❌' : '✅'
+  var title = isError ? 'Kích hoạt thất bại' : 'Kích hoạt thành công'
+  var msg = isError ? 'Không thể kích hoạt ứng dụng.' : 'Nhấn nút bên dưới để quay lại ứng dụng.'
+  var btnText = isError ? 'Quay lại' : 'Tiếp tục →'
+
+  return _html(
+    '<html><head><meta charset="UTF-8"><base target="_top"><style>'
+    + '*{box-sizing:border-box;margin:0;padding:0}'
+    + 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh}'
+    + '.box{text-align:center;background:#fff;padding:48px 32px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);max-width:400px}'
+    + '.icon{font-size:48px;margin-bottom:16px}'
+    + 'h2{color:#1a56db;margin-bottom:8px}'
+    + 'p{color:#6b7280;margin-bottom:24px}'
+    + '.btn{display:inline-block;padding:14px 32px;background:#1a56db;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:500;transition:background .15s}'
+    + '.btn:hover{background:#1e40af}'
+    + '</style></head><body><div class="box">'
+    + '<div class="icon">' + icon + '</div>'
+    + '<h2>' + title + '</h2>'
+    + '<p>' + msg + '</p>'
+    + '<a class="btn" href="' + safeUrl + '">' + btnText + '</a>'
+    + '</div></body></html>'
   )
 }
 
-// ── UI Rendering ─────────────────────────────────────────────────────────────
+// ── Embedded SPA HTML ────────────────────────────────────────────────────────
 
-function _loginPage(email, errMsg) {
-  var url = ScriptApp.getService().getUrl()
-  var msgHtml = errMsg ? '<div class="alert alert-error">' + errMsg + '</div>' : ''
+var _SPA_HTML = `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>License Server</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}
+    .container{max-width:720px;margin:0 auto;padding:24px 16px}
+    .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:24px;margin-bottom:20px}
+    .header{text-align:center;padding:32px 0 16px}
+    .header h1{font-size:22px;color:#1a56db;margin-bottom:4px}
+    .header p{color:#6b7280;font-size:13px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+    .badge-blue{background:#dbeafe;color:#1d4ed8}
+    .badge-green{background:#dcfce7;color:#15803d}
+    .badge-red{background:#fee2e2;color:#dc2626}
+    .badge-gray{background:#f3f4f6;color:#6b7280}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;padding:10px 12px;background:#f8fafc;color:#64748b;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e2e8f0}
+    td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
+    tr:hover td{background:#f8fafc}
+    .btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+    .btn-primary{background:#1a56db;color:#fff}.btn-primary:hover{background:#1e40af}
+    .btn-danger{background:#fee2e2;color:#dc2626}.btn-danger:hover{background:#fecaca}
+    .btn-secondary{background:#f3f4f6;color:#374151;text-decoration:none;display:inline-block;border:none;cursor:pointer}.btn-secondary:hover{background:#e5e7eb}
+    .btn-sm{padding:4px 10px;font-size:12px;border-radius:6px}
+    input[type=email],input[type=text],input[type=password],select{padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;width:100%;outline:none;transition:border .15s}
+    input:focus,select:focus{border-color:#1a56db;box-shadow:0 0 0 3px rgba(26,86,219,.1)}
+    .form-row{display:flex;gap:8px;margin-top:16px}
+    .form-row input{flex:1}
+    .alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px}
+    .alert-success{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+    .alert-error{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+    .alert-warn{background:#fffbeb;color:#b45309;border:1px solid #fde68a}
+    .tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0}
+    .tab{padding:8px 16px;font-size:13px;font-weight:500;color:#6b7280;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;cursor:pointer;background:none;border:none}
+    .tab:hover{color:#1a56db}
+    .tab.active{color:#1a56db;border-bottom-color:#1a56db}
+    .filter-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+    .filter-bar input,.filter-bar select{width:auto;flex:1;min-width:140px}
+    .empty{text-align:center;padding:32px;color:#9ca3af}
+    .stat{display:inline-block;margin-right:16px;font-size:13px;color:#6b7280}
+    .stat b{color:#1a1a2e}
+    .confirm-box{text-align:center;padding:20px}
+    .confirm-box h3{color:#dc2626;margin-bottom:8px}
+    .confirm-box p{color:#6b7280;margin-bottom:20px}
+    .spinner{display:inline-block;width:16px;height:16px;border:2px solid #e5e7eb;border-top-color:#1a56db;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .hidden{display:none}
+    button:disabled,input:disabled,.btn:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    let state = {
+      currentUser: null,
+      currentTab: 'whitelist',
+      emails: [],
+      logs: [],
+      admins: [],
+      message: '',
+      messageType: '',
+      loading: false,
+      loadingData: false,
+      initializing: true,
+      needsLogin: false,
+      showConfirm: null,
+      searchQuery: ''
+    }
 
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container">'
-    + '<div class="card" style="text-align:center;padding:48px 32px;max-width:400px;margin:60px auto">'
-    + '<div style="font-size:48px;margin-bottom:16px">🔑</div>'
-    + '<h2 style="margin-bottom:4px">License Server</h2>'
-    + '<p style="color:#6b7280;margin-bottom:24px">Quản lý danh sách kích hoạt</p>'
-    + msgHtml
-    + '<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:20px">'
-    + '<p style="font-size:12px;color:#6b7280">Đăng nhập với</p>'
-    + '<p style="font-weight:600">' + email + '</p></div>'
-    + '<form method="post" action="' + url + '">'
-    + '<input type="hidden" name="action" value="login">'
-    + '<input type="password" name="password" placeholder="Nhập mật khẩu" required style="margin-bottom:16px">'
-    + '<button type="submit" class="btn btn-primary" style="width:100%">Đăng nhập</button>'
-    + '</form></div></div></body></html>'
-  ).setTitle('Đăng nhập — License Server')
-}
-
-function _loggedOutPage() {
-  var url = ScriptApp.getService().getUrl()
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container">'
-    + '<div class="card" style="text-align:center;padding:48px 32px;max-width:400px;margin:60px auto">'
-    + '<div style="font-size:48px;margin-bottom:16px">👋</div>'
-    + '<h2 style="margin-bottom:8px">Đã đăng xuất</h2>'
-    + '<p style="color:#6b7280;margin-bottom:24px">Phiên làm việc đã kết thúc.</p>'
-    + '<a href="' + url + '" class="btn btn-primary" style="text-decoration:none">Đăng nhập lại</a>'
-    + '</div></div></body></html>'
-  ).setTitle('Đã đăng xuất')
-}
-
-function _accessDeniedPage() {
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container"><div class="card" style="text-align:center;padding:48px">'
-    + '<div style="font-size:48px;margin-bottom:16px">🔒</div>'
-    + '<h2 style="margin-bottom:8px">Truy cập bị từ chối</h2>'
-    + '<p style="color:#6b7280">Bạn không có quyền truy cập. Liên hệ quản trị viên.</p>'
-    + '</div></div></body></html>'
-  ).setTitle('License Server')
-}
-
-function _errorPage(msg) {
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container"><div class="card" style="text-align:center;padding:48px 24px">'
-    + '<div style="font-size:48px;margin-bottom:16px">🚫</div>'
-    + '<h2 style="color:#dc2626;margin-bottom:12px">Không thể kích hoạt</h2>'
-    + '<p style="color:#6b7280">' + msg + '</p>'
-    + '</div></div></body></html>'
-  ).setTitle('Lỗi kích hoạt')
-}
-
-function _confirmRemovePage(email) {
-  var url = ScriptApp.getService().getUrl()
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container"><div class="card confirm-box">'
-    + '<h3>⚠️ Xác nhận xóa email</h3>'
-    + '<p>Bạn có chắc muốn xóa <b>' + email + '</b> khỏi whitelist?</p>'
-    + '<div style="display:flex;gap:10px;justify-content:center">'
-    + '<form method="post" action="' + url + '"><input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="' + email + '"><input type="hidden" name="confirm" value="yes"><button type="submit" class="btn btn-danger">Xóa</button></form>'
-    + '<a href="' + url + '" class="btn btn-secondary">Hủy</a>'
-    + '</div></div></div></body></html>'
-  ).setTitle('Xác nhận xóa')
-}
-
-function _confirmRemoveAdminPage(email) {
-  var url = ScriptApp.getService().getUrl()
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container"><div class="card confirm-box">'
-    + '<h3>⚠️ Xác nhận xóa admin</h3>'
-    + '<p>Bạn có chắc muốn xóa admin <b>' + email + '</b>?</p>'
-    + '<div style="display:flex;gap:10px;justify-content:center">'
-    + '<form method="post" action="' + url + '"><input type="hidden" name="action" value="remove-admin"><input type="hidden" name="email" value="' + email + '"><input type="hidden" name="confirm" value="yes"><button type="submit" class="btn btn-danger">Xóa</button></form>'
-    + '<a href="' + url + '?tab=admins" class="btn btn-secondary">Hủy</a>'
-    + '</div></div></div></body></html>'
-  ).setTitle('Xác nhận xóa admin')
-}
-
-function _renderPage(tab, msg, search, adminInfo) {
-  var admin = adminInfo.email
-  var isOwner = adminInfo.role === 'owner'
-  var url = ScriptApp.getService().getUrl()
-
-  // Non-owner cannot access admins tab
-  if (tab === 'admins' && !isOwner) tab = 'whitelist'
-
-  var msgHtml = ''
-  if (msg) {
-    var cls = msg.indexOf('❌') >= 0 ? 'alert-error' : (msg.indexOf('⚠️') >= 0 ? 'alert-warn' : 'alert-success')
-    msgHtml = '<div class="alert ' + cls + '">' + msg + '</div>'
-  }
-
-  var tabsHtml = '<div class="tabs">'
-    + '<a class="tab' + (tab === 'whitelist' ? ' active' : '') + '" href="' + url + '?tab=whitelist">📋 Whitelist</a>'
-    + '<a class="tab' + (tab === 'logs' ? ' active' : '') + '" href="' + url + '?tab=logs">📝 Audit Logs</a>'
-    + (isOwner ? '<a class="tab' + (tab === 'admins' ? ' active' : '') + '" href="' + url + '?tab=admins">👤 Admins</a>' : '')
-    + '</div>'
-
-  var content = ''
-  if (tab === 'whitelist') content = _renderWhitelist(url, admin, search)
-  else if (tab === 'logs') content = _renderLogs(url, search)
-  else if (tab === 'admins') content = _renderAdmins(url, admin)
-
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8">' + CSS + '</head>'
-    + '<body><div class="container">'
-    + '<div class="header"><h1>🔑 License Server</h1>'
-    + '<p>Đăng nhập: ' + admin + ' &nbsp; <a href="' + url + '?action=logout" style="color:#dc2626;font-size:12px;text-decoration:none">Đăng xuất ↗</a></p>'
-    + '</div>'
-    + '<div class="card">'
-    + tabsHtml + msgHtml + content
-    + '</div></div></body></html>'
-  ).setTitle('License Server')
-}
-
-function _renderWhitelist(url, admin, search) {
-  var list = []
-  var err = ''
-  try { list = _getAllEmails() } catch(e) { err = e.message }
-  if (err) return '<div class="alert alert-error">' + err + '</div>'
-
-  var filtered = list
-  if (search) {
-    var s = search.toLowerCase()
-    filtered = list.filter(function(r) {
-      return r.email.indexOf(s) >= 0 || (r.note && r.note.toLowerCase().indexOf(s) >= 0)
+    window.addEventListener('load', function() {
+      render() // show loading screen immediately
+      google.script.run
+        .withSuccessHandler(onInit)
+        .withFailureHandler(onInitError)
+        .getInitData()
     })
-  }
 
-  var filterHtml = '<form method="get" action="' + url + '" class="filter-bar">'
-    + '<input type="hidden" name="tab" value="whitelist">'
-    + '<input type="text" name="search" placeholder="🔍 Tìm email hoặc ghi chú..." value="' + (search || '') + '">'
-    + '<button type="submit" class="btn btn-primary btn-sm">Tìm</button>'
-    + (search ? '<a href="' + url + '?tab=whitelist" class="btn btn-secondary btn-sm">Xóa lọc</a>' : '')
-    + '</form>'
+    function onInit(data) {
+      data = data || {}
+      state.initializing = false
+      state.currentUser = data.user || null
+      state.needsLogin = data.needsLogin || false
+      state.message = ''
+      state.messageType = ''
 
-  var stats = '<div style="margin-bottom:12px">'
-    + '<span class="stat">Tổng: <b>' + list.length + '</b></span>'
-    + (search ? '<span class="stat">Kết quả: <b>' + filtered.length + '</b></span>' : '')
-    + '</div>'
+      if (state.currentUser) {
+        // Show UI skeleton immediately, load data in background
+        state.loadingData = true
+        render()
+        google.script.run
+          .withSuccessHandler(onDataLoaded)
+          .withFailureHandler(onDataError)
+          .loadData()
+      } else {
+        render()
+      }
+    }
 
-  var rows = ''
-  if (!filtered.length) {
-    rows = '<tr><td colspan="5" class="empty">Không có dữ liệu</td></tr>'
-  } else {
-    filtered.forEach(function(item, i) {
-      rows += '<tr>'
-        + '<td>' + (i + 1) + '</td>'
-        + '<td><b>' + item.email + '</b></td>'
-        + '<td><span class="badge badge-blue">' + (item.app || '*') + '</span></td>'
-        + '<td style="font-size:12px;color:#6b7280">' + (item.date || '') + '</td>'
-        + '<td style="font-size:12px;color:#6b7280">' + (item.note || '') + '</td>'
-        + '<td style="text-align:center">'
-        + '<form method="post" action="' + url + '" style="display:inline">'
-        + '<input type="hidden" name="action" value="confirm-remove">'
-        + '<input type="hidden" name="email" value="' + item.email + '">'
-        + '<button type="submit" class="btn btn-danger btn-sm">✕</button>'
-        + '</form></td></tr>'
-    })
-  }
+    function onDataLoaded(data) {
+      data = data || {}
+      if (data.error) {
+        state.message = '⚠️ ' + data.error
+        state.messageType = 'warn'
+      } else {
+        state.emails = data.emails || []
+        state.logs = data.logs || []
+        state.admins = data.admins || []
+      }
+      state.loadingData = false
+      render()
+    }
 
-  var table = '<table><tr><th>#</th><th>Email</th><th>App</th><th>Ngày thêm</th><th>Ghi chú</th><th style="width:50px"></th></tr>' + rows + '</table>'
+    function onDataError(err) {
+      state.loadingData = false
+      state.message = '❌ Không tải được dữ liệu: ' + (err && err.message ? err.message : String(err))
+      state.messageType = 'error'
+      render()
+    }
 
-  var addForm = '<form method="post" action="' + url + '" style="margin-top:20px">'
-    + '<div class="form-row">'
-    + '<input type="email" name="email" placeholder="email@example.com" required>'
-    + '<input type="text" name="app" placeholder="App (vd: docmgr)" style="max-width:140px">'
-    + '<input type="text" name="note" placeholder="Ghi chú" style="max-width:160px">'
-    + '<input type="hidden" name="action" value="add">'
-    + '<button type="submit" class="btn btn-primary">Thêm</button>'
-    + '</div></form>'
+    function onInitError(err) {
+      state.initializing = false
+      state.currentUser = null
+      state.message = '❌ Không tải được dữ liệu khởi tạo. Vui lòng tải lại trang.'
+      state.messageType = 'error'
+      render()
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('getInitData failed:', err)
+      }
+    }
 
-  return filterHtml + stats + table + addForm
-}
+    function render() {
+      const app = document.getElementById('app')
 
-function _renderLogs(url, search) {
-  var logs = []
-  try { logs = _getRecentLogs(100) } catch(e) { return '<div class="alert alert-error">' + e.message + '</div>' }
+      if (state.initializing) {
+        app.innerHTML = \`
+          <div class="container">
+            <div class="card" style="text-align:center;padding:60px 32px;max-width:400px;margin:60px auto">
+              <div style="font-size:48px;margin-bottom:16px">🔑</div>
+              <h2 style="margin-bottom:12px;color:#1a56db">License Server</h2>
+              <p style="color:#6b7280"><span class="spinner"></span>Đang kết nối...</p>
+            </div>
+          </div>
+        \`
+        return
+      }
 
-  var filtered = logs
-  if (search) {
-    var s = search.toLowerCase()
-    filtered = logs.filter(function(r) {
-      return (r.email && r.email.toLowerCase().indexOf(s) >= 0)
-        || (r.action && r.action.toLowerCase().indexOf(s) >= 0)
-        || (r.detail && r.detail.toLowerCase().indexOf(s) >= 0)
-    })
-  }
+      if (!state.currentUser) {
+        if (state.needsLogin) {
+          app.innerHTML = loginPageHtml()
+          document.querySelector('#login-form')?.addEventListener('submit', handleLoginForm)
+        } else if (state.message) {
+          app.innerHTML = '<div class="container">' +
+            '<div class="card" style="text-align:center;padding:48px 32px;max-width:400px;margin:60px auto">' +
+            '<div style="font-size:48px;margin-bottom:16px">🔑</div>' +
+            '<h2 style="margin-bottom:12px;color:#1a56db">License Server</h2>' +
+            '<div class="alert alert-' + state.messageType + '">' + state.message + '</div>' +
+            '</div></div>'
+        } else {
+          app.innerHTML = '' // trang trắng cho người dùng thường
+        }
+        return
+      }
 
-  var filterHtml = '<form method="get" action="' + url + '" class="filter-bar">'
-    + '<input type="hidden" name="tab" value="logs">'
-    + '<input type="text" name="search" placeholder="🔍 Tìm theo email, hành động..." value="' + (search || '') + '">'
-    + '<button type="submit" class="btn btn-primary btn-sm">Tìm</button>'
-    + (search ? '<a href="' + url + '?tab=logs" class="btn btn-secondary btn-sm">Xóa lọc</a>' : '')
-    + '</form>'
+      app.innerHTML = mainPageHtml()
+      
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          state.currentTab = e.target.dataset.tab
+          state.searchQuery = ''
+          render()
+        })
+      })
 
-  var rows = ''
-  if (!filtered.length) {
-    rows = '<tr><td colspan="4" class="empty">Chưa có log nào</td></tr>'
-  } else {
-    filtered.forEach(function(log) {
-      var badgeCls = 'badge-gray'
-      if (log.action.indexOf('thành công') >= 0 || log.action.indexOf('Thêm') >= 0) badgeCls = 'badge-green'
-      else if (log.action.indexOf('từ chối') >= 0 || log.action.indexOf('Xóa') >= 0) badgeCls = 'badge-red'
+      if (state.currentTab === 'whitelist') {
+        document.getElementById('add-email-form')?.addEventListener('submit', handleAddEmail)
+        document.getElementById('search-form')?.addEventListener('submit', handleSearch)
+        document.getElementById('search')?.addEventListener('input', function() {
+          var val = this.value, pos = this.selectionStart
+          state.searchQuery = val
+          render()
+          var el = document.getElementById('search')
+          if (el) { el.focus(); el.setSelectionRange(pos, pos) }
+        })
+        document.querySelectorAll('.remove-email-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.showConfirm = { type: 'remove-email', email: btn.dataset.email }
+            render()
+          })
+        })
+      }
 
-      rows += '<tr>'
-        + '<td style="font-size:12px;color:#6b7280;white-space:nowrap">' + (log.time || '') + '</td>'
-        + '<td>' + (log.email || '') + '</td>'
-        + '<td><span class="badge ' + badgeCls + '">' + (log.action || '') + '</span></td>'
-        + '<td style="font-size:12px;color:#6b7280;max-width:200px;overflow:hidden;text-overflow:ellipsis">' + (log.detail || '') + '</td>'
-        + '</tr>'
-    })
-  }
+      if (state.currentTab === 'logs') {
+        document.getElementById('search-logs-form')?.addEventListener('submit', handleSearchLogs)
+        document.getElementById('search-logs')?.addEventListener('input', function() {
+          var val = this.value, pos = this.selectionStart
+          state.searchQuery = val
+          render()
+          var el = document.getElementById('search-logs')
+          if (el) { el.focus(); el.setSelectionRange(pos, pos) }
+        })
+      }
 
-  return filterHtml
-    + '<div style="margin-bottom:12px"><span class="stat">Hiển thị: <b>' + filtered.length + '</b> / ' + logs.length + ' logs gần nhất</span></div>'
-    + '<table><tr><th>Thời gian</th><th>Email</th><th>Hành động</th><th>Chi tiết</th></tr>' + rows + '</table>'
-}
+      if (state.currentTab === 'admins') {
+        document.getElementById('add-admin-form')?.addEventListener('submit', handleAddAdmin)
+        document.querySelectorAll('.remove-admin-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.showConfirm = { type: 'remove-admin', email: btn.dataset.email }
+            render()
+          })
+        })
+      }
 
-function _renderAdmins(url, currentAdmin) {
-  var admins = []
-  try { admins = _getAllAdmins() } catch(e) { return '<div class="alert alert-error">' + e.message + '</div>' }
+      if (state.showConfirm) {
+        document.getElementById('confirm-yes')?.addEventListener('click', handleConfirm)
+        document.getElementById('confirm-no')?.addEventListener('click', () => {
+          state.showConfirm = null
+          render()
+        })
+      }
 
-  var rows = ''
-  if (!admins.length) {
-    rows = '<tr><td colspan="5" class="empty">Chưa có admin nào</td></tr>'
-  } else {
-    admins.forEach(function(a, i) {
-      var isSelf = (a.email === currentAdmin)
-      var roleBadge = a.role === 'owner'
-        ? '<span class="badge badge-green">owner</span>'
-        : '<span class="badge badge-gray">admin</span>'
-      rows += '<tr>'
-        + '<td>' + (i + 1) + '</td>'
-        + '<td><b>' + a.email + '</b>' + (isSelf ? ' <span class="badge badge-blue">Bạn</span>' : '') + '</td>'
-        + '<td>' + roleBadge + '</td>'
-        + '<td style="font-size:12px;color:#6b7280">' + (a.date || '') + '</td>'
-        + '<td style="text-align:center">'
-        + (isSelf || a.role === 'owner' ? '' : '<form method="post" action="' + url + '" style="display:inline"><input type="hidden" name="action" value="confirm-remove-admin"><input type="hidden" name="email" value="' + a.email + '"><button type="submit" class="btn btn-danger btn-sm">✕</button></form>')
-        + '</td></tr>'
-    })
-  }
+      document.getElementById('logout-btn')?.addEventListener('click', handleLogout)
+    }
 
-  return '<table><tr><th>#</th><th>Email</th><th>Role</th><th>Ngày thêm</th><th style="width:50px"></th></tr>' + rows + '</table>'
-    + '<form method="post" action="' + url + '" style="margin-top:20px">'
-    + '<div class="form-row">'
-    + '<input type="email" name="email" placeholder="admin@example.com" required>'
-    + '<input type="password" name="password" placeholder="Mật khẩu" required style="max-width:160px">'
-    + '<input type="hidden" name="action" value="add-admin">'
-    + '<button type="submit" class="btn btn-primary">Thêm admin</button>'
-    + '</div></form>'
-    + '<p style="color:#9ca3af;font-size:12px;margin-top:12px">💡 Chỉ Owner mới quản lý được admin. Admin mới cần mật khẩu để đăng nhập.</p>'
-}
+    function loginPageHtml() {
+      return \`
+        <div class="container">
+          <div class="card" style="text-align:center;padding:48px 32px;max-width:400px;margin:60px auto">
+            <div style="font-size:48px;margin-bottom:16px">🔑</div>
+            <h2 style="margin-bottom:4px">License Server</h2>
+            <p style="color:#6b7280;margin-bottom:24px">Quản lý danh sách kích hoạt</p>
+            \${state.message ? \`<div class="alert alert-\${state.messageType}" style="text-align:left">\${state.message}</div>\` : ''}
+            <form id="login-form" style="display:flex;flex-direction:column;gap:12px">
+              <input type="password" id="password" placeholder="Nhập mật khẩu (owner có thể để trống)" \${state.loading ? 'disabled' : ''}>
+              <button type="submit" class="btn btn-primary" \${state.loading ? 'disabled' : ''}>\${state.loading ? '<span class="spinner"></span>Đang xử lý...' : 'Đăng nhập'}</button>
+            </form>
+          </div>
+        </div>
+      \`
+    }
 
-// ── Node.js export (cho local debug — GAS bỏ qua) ───────────────────────────
+    function mainPageHtml() {
+      const isOwner = state.currentUser?.role === 'owner'
+      let content = ''
+      
+      if (state.loadingData) {
+        content = '<div class="empty"><span class="spinner"></span> \u0110ang t\u1ea3i d\u1eef li\u1ec7u...</div>'
+      } else if (state.currentTab === 'whitelist') content = renderWhitelistTab()
+      else if (state.currentTab === 'logs') content = renderLogsTab()
+      else if (state.currentTab === 'admins' && isOwner) content = renderAdminsTab()
+      
+      return \`
+        <div class="container">
+          <div class="header">
+            <h1>🔑 License Server</h1>
+            <p>Đăng nhập: \${state.currentUser.email} &nbsp; <a href="#" id="logout-btn" style="color:#dc2626;font-size:12px;text-decoration:none">\${state.loading ? '<span class="spinner"></span>' : 'Đăng xuất ↗'}</a></p>
+          </div>
+          <div class="card">
+            <div class="tabs">
+              <button class="tab tab-btn \${state.currentTab === 'whitelist' ? 'active' : ''}" data-tab="whitelist">📋 Whitelist</button>
+              <button class="tab tab-btn \${state.currentTab === 'logs' ? 'active' : ''}" data-tab="logs">📝 Audit Logs</button>
+              \${isOwner ? \`<button class="tab tab-btn \${state.currentTab === 'admins' ? 'active' : ''}" data-tab="admins">👤 Admins</button>\` : ''}
+            </div>
+            \${state.message ? \`<div class="alert alert-\${state.messageType}">\${state.message}</div>\` : ''}
+            \${state.showConfirm ? renderConfirmDialog() : content}
+          </div>
+        </div>
+      \`
+    }
+
+    function renderWhitelistTab() {
+      const filtered = state.emails.filter(e => 
+        e.email.includes(state.searchQuery.toLowerCase()) || 
+        (e.note && e.note.toLowerCase().includes(state.searchQuery.toLowerCase()))
+      )
+      
+      return \`
+        <form id="search-form" class="filter-bar" style="margin-bottom:16px">
+          <input type="text" id="search" placeholder="🔍 Tìm email hoặc ghi chú..." value="\${state.searchQuery}">
+          <button type="submit" class="btn btn-primary btn-sm">Tìm</button>
+          \${state.searchQuery ? \`<button type="button" class="btn btn-secondary btn-sm" onclick="state.searchQuery='';render()">Xóa lọc</button>\` : ''}
+        </form>
+        <div style="margin-bottom:12px">
+          <span class="stat">Tổng: <b>\${state.emails.length}</b></span>
+          \${state.searchQuery ? \`<span class="stat">Kết quả: <b>\${filtered.length}</b></span>\` : ''}
+        </div>
+        <table>
+          <tr><th>#</th><th>Email</th><th>App</th><th>Ver</th><th>Ngày thêm</th><th>Ghi chú</th><th style="width:50px"></th></tr>
+          \${filtered.length === 0 
+            ? '<tr><td colspan="7" class="empty">Không có dữ liệu</td></tr>'
+            : filtered.map((e, i) => \`
+              <tr>
+                <td>\${i+1}</td>
+                <td><b>\${e.email}</b></td>
+                <td><span class="badge badge-blue">\${e.app || '*'}</span></td>
+                <td><span class="badge badge-gray">\${e.ver || '*'}</span></td>
+                <td style="font-size:12px;color:#6b7280">\${e.date}</td>
+                <td style="font-size:12px;color:#6b7280">\${e.note}</td>
+                <td style="text-align:center"><button class="btn btn-danger btn-sm remove-email-btn" data-email="\${e.email}" \${state.loading ? 'disabled' : ''}>✕</button></td>
+              </tr>
+            \`).join('')
+          }
+        </table>
+        <form id="add-email-form" style="margin-top:20px">
+          <div class="form-row">
+            <input type="email" id="new-email" placeholder="email@example.com" required>
+            <input type="text" id="new-app" placeholder="App (vd: docmgr)" style="max-width:140px">
+            <input type="text" id="new-ver" placeholder="Ver (vd: 1.0)" style="max-width:100px">
+            <input type="text" id="new-note" placeholder="Ghi chú" style="max-width:140px">
+            <button type="submit" class="btn btn-primary" \${state.loading ? 'disabled' : ''}>\${state.loading ? '<span class="spinner"></span>' : 'Thêm'}</button>
+          </div>
+        </form>
+      \`
+    }
+
+    function renderLogsTab() {
+      const filtered = state.logs.filter(l =>
+        (l.email && l.email.toLowerCase().includes(state.searchQuery.toLowerCase())) ||
+        (l.action && l.action.toLowerCase().includes(state.searchQuery.toLowerCase())) ||
+        (l.detail && l.detail.toLowerCase().includes(state.searchQuery.toLowerCase()))
+      )
+      
+      return \`
+        <form id="search-logs-form" class="filter-bar" style="margin-bottom:16px">
+          <input type="text" id="search-logs" placeholder="🔍 Tìm theo email, hành động..." value="\${state.searchQuery}">
+          <button type="submit" class="btn btn-primary btn-sm">Tìm</button>
+          \${state.searchQuery ? \`<button type="button" class="btn btn-secondary btn-sm" onclick="state.searchQuery='';render()">Xóa lọc</button>\` : ''}
+        </form>
+        <div style="margin-bottom:12px"><span class="stat">Hiển thị: <b>\${filtered.length}</b> / \${state.logs.length} logs</span></div>
+        <table>
+          <tr><th>Thời gian</th><th>Email</th><th>Hành động</th><th>Chi tiết</th></tr>
+          \${filtered.length === 0
+            ? '<tr><td colspan="4" class="empty">Chưa có log nào</td></tr>'
+            : filtered.map(l => {
+              const badgeCls = l.action.includes('thành công') || l.action.includes('Thêm') ? 'badge-green' : 
+                             l.action.includes('từ chối') || l.action.includes('Xóa') ? 'badge-red' : 'badge-gray'
+              return \`
+                <tr>
+                  <td style="font-size:12px;color:#6b7280;white-space:nowrap">\${l.time}</td>
+                  <td>\${l.email}</td>
+                  <td><span class="badge \${badgeCls}">\${l.action}</span></td>
+                  <td style="font-size:12px;color:#6b7280;max-width:200px;overflow:hidden;text-overflow:ellipsis">\${l.detail}</td>
+                </tr>
+              \`
+            }).join('')
+          }
+        </table>
+      \`
+    }
+
+    function renderAdminsTab() {
+      return \`
+        <table>
+          <tr><th>#</th><th>Email</th><th>Role</th><th>Ngày thêm</th><th style="width:50px"></th></tr>
+          \${state.admins.length === 0
+            ? '<tr><td colspan="5" class="empty">Chưa có admin nào</td></tr>'
+            : state.admins.map((a, i) => {
+              const isSelf = a.email === state.currentUser.email
+              const badgeCls = a.role === 'owner' ? 'badge-green' : 'badge-gray'
+              return \`
+                <tr>
+                  <td>\${i+1}</td>
+                  <td><b>\${a.email}</b>\${isSelf ? ' <span class="badge badge-blue">Bạn</span>' : ''}</td>
+                  <td><span class="badge \${badgeCls}">\${a.role}</span></td>
+                  <td style="font-size:12px;color:#6b7280">\${a.date}</td>
+                  <td style="text-align:center">\${!isSelf && a.role !== 'owner' ? \`<button class="btn btn-danger btn-sm remove-admin-btn" data-email="\${a.email}" \${state.loading ? 'disabled' : ''}>✕</button>\` : ''}</td>
+                </tr>
+              \`
+            }).join('')
+          }
+        </table>
+        <form id="add-admin-form" style="margin-top:20px">
+          <div class="form-row">
+            <input type="email" id="new-admin-email" placeholder="admin@example.com" required>
+            <input type="password" id="new-admin-pass" placeholder="Mật khẩu" required style="max-width:160px">
+            <button type="submit" class="btn btn-primary" \${state.loading ? 'disabled' : ''}>\${state.loading ? '<span class="spinner"></span>' : 'Thêm admin'}</button>
+          </div>
+        </form>
+        <p style="color:#9ca3af;font-size:12px;margin-top:12px">💡 Chỉ Owner mới quản lý được admin. Admin mới cần mật khẩu để đăng nhập.</p>
+      \`
+    }
+
+    function renderConfirmDialog() {
+      const c = state.showConfirm
+      const title = c.type === 'remove-email' ? '⚠️ Xác nhận xóa email' : '⚠️ Xác nhận xóa admin'
+      const text = c.type === 'remove-email' 
+        ? \`Bạn có chắc muốn xóa <b>\${c.email}</b> khỏi whitelist?\`
+        : \`Bạn có chắc muốn xóa admin <b>\${c.email}</b>?\`
+      
+      return \`
+        <div class="confirm-box">
+          <h3>\${title}</h3>
+          <p>\${text}</p>
+          <div style="display:flex;gap:10px;justify-content:center">
+            <button id="confirm-yes" class="btn btn-danger" \${state.loading ? 'disabled' : ''}>\${state.loading ? '<span class="spinner"></span>Đang xóa...' : 'Xóa'}</button>
+            <button id="confirm-no" class="btn btn-secondary" \${state.loading ? 'disabled' : ''}>Hủy</button>
+          </div>
+        </div>
+      \`
+    }
+
+    function handleLoginForm(e) {
+      e.preventDefault()
+      const pass = (document.getElementById('password').value || '').trim()
+      state.loading = true
+      state.message = ''
+      render()
+      google.script.run
+        .withSuccessHandler(onLoginSuccess)
+        .withFailureHandler(onError)
+        .onLogin(pass)
+    }
+
+    function onLoginSuccess(result) {
+      state.loading = false
+      result = result || {}
+      if (result.success) {
+        state.currentUser = result.user
+        state.message = '✅ Đăng nhập thành công!'
+        state.messageType = 'success'
+        state.loadingData = true
+        render()
+        setTimeout(() => { state.message = ''; render() }, 2000)
+        google.script.run
+          .withSuccessHandler(onDataLoaded)
+          .withFailureHandler(onDataError)
+          .loadData()
+      } else {
+        state.message = '❌ ' + result.error
+        state.messageType = 'error'
+        render()
+      }
+    }
+
+    function handleAddEmail(e) {
+      e.preventDefault()
+      const email = document.getElementById('new-email').value.toLowerCase()
+      const app = document.getElementById('new-app').value.trim()
+      const ver = document.getElementById('new-ver').value.trim()
+      const note = document.getElementById('new-note').value.trim()
+      state.loading = true
+      state.message = ''
+      render()
+      google.script.run.withSuccessHandler(onAddEmailSuccess).withFailureHandler(onError).onAddEmail(email, app, ver, note)
+    }
+
+    function onAddEmailSuccess(result) {
+      state.loading = false
+      result = result || {}
+      if (result.success) {
+        state.emails = result.emails
+        state.logs = result.logs
+        state.message = '✅ Đã thêm: ' + result.addedEmail
+        state.messageType = 'success'
+        document.getElementById('new-email').value = ''
+        document.getElementById('new-app').value = ''
+        document.getElementById('new-ver').value = ''
+        document.getElementById('new-note').value = ''
+        render()
+        setTimeout(() => { state.message = ''; render() }, 2000)
+      } else {
+        state.message = '⚠️ ' + result.error
+        state.messageType = 'warn'
+        render()
+      }
+    }
+
+    function handleSearch(e) {
+      e.preventDefault()
+      state.searchQuery = document.getElementById('search').value
+      render()
+    }
+
+    function handleSearchLogs(e) {
+      e.preventDefault()
+      state.searchQuery = document.getElementById('search-logs').value
+      render()
+    }
+
+    function handleAddAdmin(e) {
+      e.preventDefault()
+      const email = document.getElementById('new-admin-email').value.toLowerCase()
+      const pass = document.getElementById('new-admin-pass').value
+      state.loading = true
+      state.message = ''
+      render()
+      google.script.run.withSuccessHandler(onAddAdminSuccess).withFailureHandler(onError).onAddAdmin(email, pass)
+    }
+
+    function onAddAdminSuccess(result) {
+      state.loading = false
+      result = result || {}
+      if (result.success) {
+        state.admins = result.admins
+        state.logs = result.logs
+        state.message = '✅ Đã thêm admin: ' + result.addedEmail
+        state.messageType = 'success'
+        document.getElementById('new-admin-email').value = ''
+        document.getElementById('new-admin-pass').value = ''
+        render()
+        setTimeout(() => { state.message = ''; render() }, 2000)
+      } else {
+        state.message = '⚠️ ' + result.error
+        state.messageType = 'warn'
+        render()
+      }
+    }
+
+    function handleConfirm() {
+      state.loading = true
+      render()
+      const c = state.showConfirm
+      if (c.type === 'remove-email') {
+        google.script.run.withSuccessHandler(onRemoveEmailSuccess).withFailureHandler(onError).onRemoveEmail(c.email)
+      } else if (c.type === 'remove-admin') {
+        google.script.run.withSuccessHandler(onRemoveAdminSuccess).withFailureHandler(onError).onRemoveAdmin(c.email)
+      }
+    }
+
+    function onRemoveEmailSuccess(result) {
+      state.loading = false
+      result = result || {}
+      if (result.success) {
+        state.emails = result.emails
+        state.logs = result.logs
+        state.showConfirm = null
+        state.message = '✅ Đã xóa'
+        state.messageType = 'success'
+        render()
+        setTimeout(() => { state.message = ''; render() }, 2000)
+      }
+    }
+
+    function onRemoveAdminSuccess(result) {
+      state.loading = false
+      result = result || {}
+      if (result.success) {
+        state.admins = result.admins
+        state.logs = result.logs
+        state.showConfirm = null
+        state.message = '✅ Đã xóa admin'
+        state.messageType = 'success'
+        render()
+        setTimeout(() => { state.message = ''; render() }, 2000)
+      }
+    }
+
+    function handleLogout(e) {
+      e.preventDefault()
+      state.loading = true
+      render()
+      google.script.run.withSuccessHandler(onLogoutSuccess).withFailureHandler(onError).onLogout()
+    }
+
+    function onLogoutSuccess() {
+      state.loading = false
+      state.currentUser = null
+      state.message = '👋 Đã đăng xuất'
+      state.messageType = 'success'
+      render()
+      setTimeout(() => {
+        state.message = ''
+        state.searchQuery = ''
+        state.currentTab = 'whitelist'
+        render()
+      }, 1000)
+    }
+
+    function onError(err) {
+      state.loading = false
+      state.message = '❌ Lỗi: ' + (err && err.message ? err.message : String(err))
+      state.messageType = 'error'
+      render()
+    }
+  </script>
+</body>
+</html>`
+
+// ── Node.js export ──────────────────────────────────────────────────────────
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { doGet: doGet, doPost: doPost, _hashPassword: _hashPassword }
+  module.exports = { doGet: doGet, doPost: doPost, loadData: loadData, _hashPassword: _hashPassword }
 }

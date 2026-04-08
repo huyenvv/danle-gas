@@ -1,15 +1,10 @@
 require('./setup.js')
+const { resetAll, DOC_HEADERS } = require('./helpers')
 
 const HEADERS = ['ID', 'Tên danh mục', 'Mô tả', 'Ngày tạo']
 
-function reset() {
-  SpreadsheetApp._reset()
-  CacheService.getScriptCache()._reset()
-  PropertiesService._reset()
-}
-
 beforeEach(() => {
-  reset()
+  resetAll()
   SpreadsheetApp._addSheet(SHEETS.DANH_MUC, [HEADERS])
   SpreadsheetApp._addSheet(SHEETS.HO_SO, [
     ['ID', 'Tên hồ sơ', 'Danh mục', 'Người tạo', 'Trạng thái', 'Ngày tạo']

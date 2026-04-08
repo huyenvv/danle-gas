@@ -10,11 +10,25 @@ REFERENCE_MAP[SHEETS.NHA_CUNG_CAP] = { targetSheet: SHEETS.HO_SO, targetColumn: 
 REFERENCE_MAP[SHEETS.USERS]        = { targetSheet: SHEETS.HO_SO, targetColumn: 'Phụ trách' }
 
 function getAllData() {
+  var rawUsers = getSheetData(SHEETS.USERS)
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var users = rawUsers.map(function(u) {
+    var appRole = roles.find(function(r) {
+      return String(r['UserID']) === String(u['ID']) && r['AppID'] === APP_ID
+    })
+    return {
+      ID: u['ID'],
+      'Tên đăng nhập': u['Tên đăng nhập'],
+      'Phòng ban': u['Phòng ban'] || '',
+      'Quyền': appRole ? appRole['Quyền'] : '',
+    }
+  })
   return {
     danhMuc:     getSheetData(SHEETS.DANH_MUC),
     phongBan:    getSheetData(SHEETS.PHONG_BAN),
     duAn:        getSheetData(SHEETS.DU_AN),
     nhaCungCap:  getSheetData(SHEETS.NHA_CUNG_CAP),
+    users:       users,
   }
 }
 
@@ -29,6 +43,14 @@ deleteRow = function(sheetName, id) {
         'Không thể xóa vì đang được sử dụng bởi ' + check.count + ' hồ sơ: ' +
         check.sampleDocuments.join(', ')
       )
+    }
+  }
+  // Extra check: category self-reference (child categories)
+  if (sheetName === SHEETS.DANH_MUC) {
+    var allCats = getSheetData(SHEETS.DANH_MUC)
+    var childCats = allCats.filter(function(c) { return String(c['Danh mục cha']) === String(id) })
+    if (childCats.length > 0) {
+      throw new Error('Không thể xóa vì có ' + childCats.length + ' danh mục con đang sử dụng danh mục này làm cha.')
     }
   }
   return _coreDeleteRow(sheetName, id)

@@ -1,21 +1,17 @@
 require('./setup.js')
+const { resetAll } = require('./helpers')
 
 // Encode helper — reverse of _decode: base64-encode then reverse
 function _encode(str) {
   return Buffer.from(str).toString('base64').split('').reverse().join('')
 }
 
-function reset() {
-  SpreadsheetApp._reset()
-  CacheService.getScriptCache()._reset()
-  PropertiesService._reset()
-  // Reset build-time placeholders to empty (unset)
+beforeEach(() => {
+  resetAll()
   __ENCODED_SECRET_SALT = '__ENCODED_SECRET_SALT__'
   __ENCODED_LICENSE_URL = '__ENCODED_LICENSE_URL__'
   __APP_ID = 'docmgr'
-}
-
-beforeEach(() => reset())
+})
 
 describe('activateWithToken', () => {
   test('activates when token matches SHA256(scriptId + app + salt)', () => {

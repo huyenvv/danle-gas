@@ -115,7 +115,6 @@ global.DriveApp = {
   _reset()   { this._files = {} },
   getFolderById(id) {
     const files = this._files
-    const file  = { id, name: id, _files: {} }
     return {
       getFoldersByName(n) {
         let hasNext = false
@@ -137,6 +136,15 @@ global.DriveApp = {
               setSharing(){}
             }
           }
+        }
+      },
+      createFile(blob) {
+        const fid = 'file_' + Date.now()
+        files[fid] = { id: fid, name: blob.getName(), trashed: false }
+        return {
+          getId()     { return fid },
+          getUrl()    { return 'https://drive.google.com/file/d/' + fid },
+          setSharing(){}
         }
       },
       getId() { return id }
@@ -204,8 +212,10 @@ global.ScriptApp = {
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
+let _sessionEmail = 'test@example.com'
 global.Session = {
-  getActiveUser() { return { getEmail: () => 'test@example.com' } }
+  _setEmail(email) { _sessionEmail = email },
+  getActiveUser() { return { getEmail: () => _sessionEmail } }
 }
 
 // ── Logger ────────────────────────────────────────────────────────────────────

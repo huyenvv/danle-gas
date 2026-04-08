@@ -92,3 +92,11 @@ Object.entries(replacements).forEach(([placeholder, value]) => {
 fs.writeFileSync(outFile, bundle, 'utf8');
 const totalFiles = GAS_CORE_FILES.length + appFiles.length;
 console.log(`  ✓ Bundled ${totalFiles} files (${GAS_CORE_FILES.length} gas-core + ${appFiles.length} app) → apps/${appName}/dist/gas/main.js`);
+
+// ── Copy appsscript.json to dist/gas if it exists ────────────────────────────
+const manifestSrc = path.join(appDir, 'appsscript.json');
+const manifestDest = path.join(outDir, 'appsscript.json');
+if (fs.existsSync(manifestSrc)) {
+  fs.copyFileSync(manifestSrc, manifestDest);
+  console.log(`  ✓ appsscript.json → apps/${appName}/dist/gas/appsscript.json`);
+}

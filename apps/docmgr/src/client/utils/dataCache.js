@@ -51,6 +51,7 @@ class DataCache {
 
   invalidate(key) {
     delete this._store[key]
+    delete this._inflight[key]
   }
 
   /**
@@ -90,4 +91,9 @@ export const dataCache = new DataCache()
 // Helper: fetch all lookup data
 export async function prefetchLookups(token) {
   return dataCache.fetch('lookups', () => gasCall('api_getAllData', token))
+}
+
+// Helper: force-refresh lookups (use after mutations)
+export async function refreshLookups(token) {
+  return dataCache.fetch('lookups', () => gasCall('api_getAllData', token), { forceRefresh: true })
 }

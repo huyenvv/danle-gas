@@ -1,5 +1,50 @@
 // ===== Sheet CRUD operations =====
 
+/**
+ * Batch-read multiple sheets in a single Sheets API v4 call.
+ * Returns an object keyed by sheet name, each value is an array of row-objects.
+ * Uses cache: skips cached sheets, only fetches uncached ones.
+ * @param {string[]} sheetNames - Array of sheet tab names
+ * @param {SpreadsheetApp.Spreadsheet} [ss] - Optional spreadsheet (defaults to app sheet)
+ * @return {Object} { sheetName: [{col: val, ...}, ...], ... }
+ */
+function batchGetSheetData(sheetNames, ss) {
+  ss = ss || getAppSheet()
+  var result = {}
+  var uncachedNames = []
+
+  // Check cache first
+  for (var i = 0; i < sheetNames.length; i++) {
+    var name = sheetNames[i]
+    var cached = cacheGet('data_' + name)
+    if (cached) {
+      result[name] = cached
+    } else {
+      uncachedNames.push(name)
+    }
+  }
+
+  if (uncachedNames.length === 0) return result
+
+  // Build A:ZZ ranges for uncached sheets
+  var ranges = uncachedNames.map(function(name) {
+    return "'" + name + "'!A:ZZ"
+  })
+
+  var response = Sheets.Spreadsheets.Values.batchGet(ss.getId(), { ranges: ranges })
+  var valueRanges = response.valueRanges || []
+
+  for (var j = 0; j < uncachedNames.length; j++) {
+    var tabName = uncachedNames[j]
+    var rows = (valueRanges[j] && valueRanges[j].values) || []
+    var data = rowsToObjects(rows)
+    cachePut('data_' + tabName, data)
+    result[tabName] = data
+  }
+
+  return result
+}
+
 function getSheetData(sheetName) {
   var cached = cacheGet('data_' + sheetName)
   if (cached) return cached

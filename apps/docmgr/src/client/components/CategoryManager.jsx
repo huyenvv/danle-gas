@@ -1,45 +1,87 @@
 import { useState, useEffect } from 'react'
 import gasCall from '../gasClient.js'
+import { viMatch } from '../utils/viSearch.js'
+import Icon from './common/Icon.jsx'
+import FormModal from './common/FormModal.jsx'
+import { inputCls, selectCls, textareaCls, labelCls, fieldCls } from './common/formStyles.js'
+import { useToast } from '../context/ToastContext.jsx'
+
+const ICON_OPTIONS = [
+  'description', 'contract', 'bar_chart', 'engineering', 'inventory_2',
+  'folder_open', 'folder_special', 'work', 'business_center', 'receipt_long',
+  'policy', 'gavel', 'handshake', 'diversity_3', 'account_balance',
+  'local_shipping', 'construction', 'architecture', 'settings', 'hub',
+]
+
+function getDescendantIds(cats, rootId) {
+  const ids = new Set()
+  const queue = [String(rootId)]
+  while (queue.length) {
+    const cur = queue.shift()
+    ids.add(cur)
+    cats.filter(c => String(c['Danh mục cha']) === cur).forEach(c => queue.push(String(c.ID)))
+  }
+  return ids
+}
+
+function buildParentSelectOptions(cats, excludedIds) {
+  const opts = []
+  function walk(parentId, depth) {
+    cats
+      .filter(c => String(c['Danh mục cha'] || '') === String(parentId || '') && !excludedIds.has(String(c.ID)))
+      .forEach(c => {
+        const prefix = '\u00A0'.repeat(depth * 4) + (depth > 0 ? '— ' : '')
+        opts.push({ id: c.ID, label: prefix + c['Tên danh mục'] })
+        walk(c.ID, depth + 1)
+      })
+  }
+  walk('', 0)
+  return opts
+}
 
 export default function CategoryManager({ token, lookups, onUpdate }) {
-  const [cats, setCats]           = useState(lookups.danhMuc || [])
-  const [editing, setEditing]     = useState(null)   // null | category object
-  const [adding, setAdding]       = useState(false)
-  const [form, setForm]           = useState({ 'Tên danh mục': '', 'Icon': '', 'Màu sắc': '#3b82f6', 'Mô tả': '' })
-  const [error, setError]         = useState('')
-  const [saving, setSaving]       = useState(false)
+  const [cats, setCats]   = useState(lookups.danhMuc || [])
+  const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', cat? }
+  const [form, setForm]   = useState({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '' })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const { showToast } = useToast()
 
   useEffect(() => { setCats(lookups.danhMuc || []) }, [lookups.danhMuc])
 
-  function startAdd() {
-    setForm({ 'Tên danh mục': '', 'Icon': '', 'Màu sắc': '#3b82f6', 'Mô tả': '' })
-    setEditing(null)
-    setAdding(true)
+  function openAdd() {
+    setForm({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '' })
     setError('')
+    setModal({ mode: 'create' })
   }
 
-  function startEdit(cat) {
+  function openEdit(cat) {
     setForm({ ...cat })
-    setEditing(cat)
-    setAdding(false)
     setError('')
+    setModal({ mode: 'edit', cat })
   }
+
+  function closeModal() { setModal(null); setError('') }
 
   async function handleSave() {
     if (!form['Tên danh mục']) { setError('Tên danh mục là bắt buộc'); return }
-    setSaving(true)
-    setError('')
+    if (modal.cat && String(form['Danh mục cha']) === String(modal.cat.ID)) {
+      setError('Danh mục không thể là cha của chính nó'); return
+    }
+    setSaving(true); setError('')
     try {
-      if (editing) {
-        await gasCall('api_updateCategory', token, editing.ID, form)
+      if (modal.mode === 'edit') {
+        await gasCall('api_updateCategory', token, modal.cat.ID, form)
       } else {
         await gasCall('api_addCategory', token, form)
       }
-      setEditing(null)
-      setAdding(false)
+      closeModal()
+      showToast('Đã lưu danh mục', 'success')
       onUpdate()
     } catch (err) {
       setError(err.message)
+      showToast(err.message, 'error')
     } finally {
       setSaving(false)
     }
@@ -49,90 +91,162 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
     if (!window.confirm(`Xóa danh mục "${cat['Tên danh mục']}"?`)) return
     try {
       await gasCall('api_deleteCategory', token, cat.ID)
+      showToast('Đã xóa danh mục', 'success')
       onUpdate()
     } catch (err) {
-      alert('Lỗi: ' + err.message)
+      showToast(err.message, 'error')
     }
   }
 
-  const showForm = adding || editing !== null
+  // Fixed parentOptions: exclude self + all descendants
+  const excludedIds = modal?.cat ? getDescendantIds(cats, modal.cat.ID) : new Set()
+  const parentSelectOpts = buildParentSelectOptions(cats, excludedIds)
+
+  const roots = cats.filter(c => !c['Danh mục cha'])
+  const childrenList = cats.filter(c => !!c['Danh mục cha'])
+
+  function renderTree(parentId, depth) {
+    return cats
+      .filter(c => String(c['Danh mục cha'] || '') === String(parentId || ''))
+      .flatMap(cat => [
+        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} />,
+        ...renderTree(cat.ID, depth + 1)
+      ])
+  }
+
+  const filtered = search
+    ? cats.filter(c => viMatch(c['Tên danh mục'], search) || viMatch(c['Mô tả'], search))
+    : null // null = show tree; array = flat search results
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-gray-500">{cats.length} danh mục</span>
-        <button onClick={startAdd} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
-          + Thêm danh mục
-        </button>
+    <div className="space-y-5">
+      {/* Toolbar */}
+      <div className="bg-white rounded-2xl shadow-card p-4 flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <Icon name="search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" />
+          <input
+            className="w-full bg-surface-container-low border-none rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+            placeholder="Tìm danh mục..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <span className="text-sm text-on-surface-variant">{cats.length} danh mục</span>
+        <div className="ml-auto">
+          <button onClick={openAdd}
+            className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
+            <Icon name="add" size={18} />
+            Thêm danh mục
+          </button>
+        </div>
       </div>
 
-      {showForm && (
-        <div className="bg-white rounded-xl shadow-sm p-5 space-y-3 border border-blue-100">
-          <h4 className="font-medium text-sm">{editing ? 'Chỉnh sửa danh mục' : 'Thêm danh mục'}</h4>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-600">Tên danh mục *</label>
-              <input className={cls} value={form['Tên danh mục']} onChange={e => setForm(f => ({ ...f, 'Tên danh mục': e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">Icon (emoji)</label>
-              <input className={cls} value={form['Icon']} onChange={e => setForm(f => ({ ...f, 'Icon': e.target.value }))} placeholder="📄" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">Màu sắc</label>
-              <input type="color" className="h-9 w-full border border-gray-300 rounded-lg" value={form['Màu sắc']} onChange={e => setForm(f => ({ ...f, 'Màu sắc': e.target.value }))} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600">Mô tả</label>
-              <input className={cls} value={form['Mô tả']} onChange={e => setForm(f => ({ ...f, 'Mô tả': e.target.value }))} />
-            </div>
-          </div>
-          {error && <p className="text-red-600 text-xs">{error}</p>}
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => { setAdding(false); setEditing(null) }} className="px-4 py-1.5 border border-gray-300 rounded-lg text-sm">Hủy</button>
-            <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm disabled:opacity-60">
-              {saving ? 'Đang lưu…' : 'Lưu'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+      {/* Table */}
+      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Icon</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Tên danh mục</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Màu</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Mô tả</th>
+            <tr className="bg-surface-container-low border-b border-outline-variant">
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Danh mục</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Mô tả</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-outline-variant/40">
             {cats.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-400">Chưa có danh mục</td></tr>
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-on-surface-variant">Chưa có danh mục</td></tr>
             )}
-            {cats.map(cat => (
-              <tr key={cat.ID} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-xl">{cat.Icon}</td>
-                <td className="px-4 py-3 font-medium">{cat['Tên danh mục']}</td>
-                <td className="px-4 py-3">
-                  <span className="inline-block w-5 h-5 rounded-full border border-gray-200" style={{ background: cat['Màu sắc'] }} />
-                </td>
-                <td className="px-4 py-3 text-gray-500">{cat['Mô tả']}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => startEdit(cat)} className="text-blue-600 hover:text-blue-800 text-xs">Sửa</button>
-                    <button onClick={() => handleDelete(cat)} className="text-red-500 hover:text-red-700 text-xs">Xóa</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {filtered
+              ? filtered.map(cat => <CatRow key={cat.ID} cat={cat} cats={cats} indent={0} onEdit={openEdit} onDelete={handleDelete} />)
+              : renderTree('', 0)
+            }
           </tbody>
         </table>
       </div>
+
+      {/* FormModal */}
+      <FormModal
+        open={!!modal}
+        title={modal?.mode === 'create' ? 'Thêm danh mục' : 'Sửa danh mục'}
+        icon={modal?.mode === 'create' ? 'add' : 'edit'}
+        onClose={closeModal}
+        onSave={handleSave}
+        saving={saving}
+        error={error}
+        maxWidth="max-w-lg"
+      >
+        <div className="space-y-4">
+          <div className={fieldCls}>
+            <label className={labelCls}>Tên danh mục *</label>
+            <input className={inputCls} value={form['Tên danh mục']}
+              onChange={e => setForm(f => ({ ...f, 'Tên danh mục': e.target.value }))} placeholder="Nhập tên danh mục..." />
+          </div>
+
+          <div className={fieldCls}>
+            <label className={labelCls}>Danh mục cha</label>
+            <select className={selectCls} value={form['Danh mục cha'] || ''}
+              onChange={e => setForm(f => ({ ...f, 'Danh mục cha': e.target.value }))}>
+              <option value="">— Không có (danh mục gốc) —</option>
+              {parentSelectOpts.map(o => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className={fieldCls}>
+            <label className={labelCls}>
+              Icon — <span className="font-medium text-primary">{form['Icon'] || '(chưa chọn)'}</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {ICON_OPTIONS.map(icon => (
+                <button key={icon} type="button" title={icon}
+                  onClick={() => setForm(f => ({ ...f, 'Icon': icon }))}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                    form['Icon'] === icon
+                      ? 'bg-primary text-on-primary shadow-md3-1'
+                      : 'bg-surface-container-low text-on-surface-variant hover:bg-primary/10 hover:text-primary'
+                  }`}
+                >
+                  <Icon name={icon} size={18} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={fieldCls}>
+            <label className={labelCls}>Mô tả</label>
+            <textarea className={textareaCls + ' h-20'} value={form['Mô tả'] || ''}
+              onChange={e => setForm(f => ({ ...f, 'Mô tả': e.target.value }))} placeholder="Ghi chú thêm..." />
+          </div>
+        </div>
+      </FormModal>
     </div>
   )
 }
 
-const cls = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mt-0.5'
+function CatRow({ cat, cats, indent, orphan, onEdit, onDelete }) {
+  const childCount = cats.filter(c => String(c['Danh mục cha']) === String(cat.ID)).length
+  const isChild = indent > 0
+  return (
+    <tr className={`hover:bg-surface-container-low transition-colors ${isChild ? 'bg-surface-container-lowest/50' : ''}`}>
+      <td className="px-4 py-3" style={{ paddingLeft: indent * 24 + 16 }}>
+        <div className="flex items-center gap-2">
+          <div className={`rounded-lg flex items-center justify-center shrink-0 ${isChild ? 'w-6 h-6' : 'w-8 h-8'} ${orphan ? 'bg-amber-100' : isChild ? 'bg-secondary/10' : 'bg-primary/10'}`}>
+            <Icon name={cat.Icon || 'folder_open'} size={isChild ? 14 : 18} className={orphan ? 'text-amber-600' : isChild ? 'text-secondary' : 'text-primary'} />
+          </div>
+          <span className={`${isChild ? 'text-on-surface' : 'font-semibold text-on-surface'}`}>{cat['Tên danh mục']}</span>
+          {!isChild && childCount > 0 && (
+            <span className="ml-1 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{childCount}</span>
+          )}
+          {orphan && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Orphaned</span>}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-on-surface-variant text-xs">{cat['Mô tả'] || '—'}</td>
+      <td className="px-4 py-3">
+        <div className="flex gap-1 justify-end">
+          <button onClick={() => onEdit(cat)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+          <button onClick={() => onDelete(cat)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>
+        </div>
+      </td>
+    </tr>
+  )
+}
