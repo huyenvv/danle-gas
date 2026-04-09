@@ -113,12 +113,11 @@ function createDocument(token, data, fileInfos) {
   fileInfos = fileInfos || []
 
   var uploadedFiles = []
-  var catName = _resolveCategoryName(data['Danh mục'])
-  var year = new Date().getFullYear().toString()
+  var catPath = _resolveCategoryPath(data['Danh mục'])
 
   fileInfos.forEach(function(fi) {
     if (fi && fi.base64Data) {
-      var result = uploadFile(fi.base64Data, fi.mimeType, fi.fileName, [catName, year])
+      var result = uploadFile(fi.base64Data, fi.mimeType, fi.fileName, catPath)
       uploadedFiles.push({ fileId: result.fileId, fileName: result.fileName, mimeType: fi.mimeType, size: fi.size || 0 })
     }
   })
@@ -215,12 +214,11 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   })
 
   // Upload new files
-  var catName = _resolveCategoryName(updates['Danh mục'] || doc['Danh mục'])
-  var year = new Date().getFullYear().toString()
+  var catPath = _resolveCategoryPath(updates['Danh mục'] || doc['Danh mục'])
   var newlyUploaded = []
   fileInfos.forEach(function(fi) {
     if (fi && fi.base64Data) {
-      var result = uploadFile(fi.base64Data, fi.mimeType, fi.fileName, [catName, year])
+      var result = uploadFile(fi.base64Data, fi.mimeType, fi.fileName, catPath)
       newlyUploaded.push({ fileId: result.fileId, fileName: result.fileName, mimeType: fi.mimeType, size: fi.size || 0 })
     }
   })
@@ -311,6 +309,28 @@ function _resolveCategoryName(categoryId) {
   var cats = getSheetData(SHEETS.DANH_MUC)
   var cat = cats.find(function(c) { return String(c['ID']) === String(categoryId) })
   return cat ? cat['Tên danh mục'] : 'Khác'
+}
+
+// Build full folder path from root ancestor down to the selected category
+// e.g. category "Hợp đồng xây dựng" (cha = "Hợp đồng") → ['Hợp đồng', 'Hợp đồng xây dựng']
+function _resolveCategoryPath(categoryId) {
+  if (!categoryId) return ['Khác']
+  var cats = getSheetData(SHEETS.DANH_MUC)
+  var path = []
+  var currentId = String(categoryId)
+  var visited = {}
+  while (currentId) {
+    if (visited[currentId]) break // prevent infinite loop
+    visited[currentId] = true
+    var cat = null
+    for (var i = 0; i < cats.length; i++) {
+      if (String(cats[i]['ID']) === currentId) { cat = cats[i]; break }
+    }
+    if (!cat) break
+    path.unshift(cat['Tên danh mục'])
+    currentId = cat['Danh mục cha'] ? String(cat['Danh mục cha']) : ''
+  }
+  return path.length > 0 ? path : ['Khác']
 }
 
 // Parse Phụ trách field: JSON array string or legacy plain value → array of strings

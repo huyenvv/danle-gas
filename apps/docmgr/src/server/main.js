@@ -71,6 +71,7 @@ function doGet(e) {
     // Serve main app
     return HtmlService.createHtmlOutputFromFile('index')
       .setTitle('Quản Lý Tài Liệu')
+      .setFaviconUrl('https://www.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
 
   } catch(err) {
@@ -354,7 +355,9 @@ function api_setConfig(token, key, value) {
 function api_browseDriveFolders(token, parentFolderId) {
   return _wrap(function() {
     requireAdmin(token)
-    var parent = DriveApp.getFolderById(parentFolderId || 'root')
+    var parent = parentFolderId
+      ? DriveApp.getFolderById(parentFolderId)
+      : DriveApp.getRootFolder()
     var folders = []
     var iter = parent.getFolders()
     while (iter.hasNext()) {
@@ -487,6 +490,7 @@ function _wrap(fn) {
     var result = fn()
     return { success: true, payload: result }
   } catch(e) {
-    return { success: false, error: e.message }
+    var msg = (e && e.message) ? e.message : String(e)
+    return { success: false, error: msg || 'Lỗi không xác định' }
   }
 }

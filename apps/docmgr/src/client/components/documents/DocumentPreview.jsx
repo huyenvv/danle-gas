@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react'
 import gasCall from '../../gasClient.js'
 import { formatCurrency, formatDate, statusColor } from '../../utils/format.js'
 import Icon from '../common/Icon.jsx'
+import { useConfirm } from '../../context/ConfirmContext.jsx'
+import { useToast } from '../../context/ToastContext.jsx'
 
 function parseFileInfos(fileIdCol) {
   if (!fileIdCol) return []
@@ -21,6 +23,8 @@ function parseAssignees(v) {
 }
 
 export default function DocumentPreview({ doc, lookups, isAdmin, token, session, onClose, onEdit, onDelete }) {
+  const confirm = useConfirm()
+  const { showToast } = useToast()
   const fileInfos = parseFileInfos(doc['File ID'])
   const [slideIdx, setSlideIdx] = useState(0)
   const [comments, setComments] = useState([])
@@ -67,16 +71,15 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
   }
 
   function handleDownload() {
-    if (!downloadUrl) return
-    if (!window.confirm('Tải file này về máy?')) return
-    window.open(downloadUrl, '_blank')
+    if (!currentFile) return
+    window.open('https://drive.google.com/file/d/' + encodeURIComponent(currentFile.fileId) + '/view?usp=sharing', '_blank')
   }
 
   function handleShare() {
     if (!currentFile) return
     const shareUrl = `https://drive.google.com/file/d/${encodeURIComponent(currentFile.fileId)}/view?usp=sharing`
     navigator.clipboard.writeText(shareUrl).then(() => {
-      alert('Đã sao chép link chia sẻ!')
+      showToast('Đã sao chép link chia sẻ!', 'success')
     }).catch(() => {
       window.prompt('Sao chép link:', shareUrl)
     })
@@ -110,6 +113,24 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
           <div className="flex-1 bg-surface-container-lowest overflow-hidden relative flex flex-col">
             {previewUrl ? (
               <>
+                {fileInfos.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setSlideIdx(i => Math.max(0, i - 1))}
+                      disabled={slideIdx === 0}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 text-white hover:bg-black/50 disabled:opacity-0 transition-all shadow-md"
+                    >
+                      <Icon name="chevron_left" size={24} />
+                    </button>
+                    <button
+                      onClick={() => setSlideIdx(i => Math.min(fileInfos.length - 1, i + 1))}
+                      disabled={slideIdx === fileInfos.length - 1}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-10 h-10 flex items-center justify-center rounded-full bg-black/30 text-white hover:bg-black/50 disabled:opacity-0 transition-all shadow-md"
+                    >
+                      <Icon name="chevron_right" size={24} />
+                    </button>
+                  </>
+                )}
                 <iframe
                   key={previewUrl}
                   src={previewUrl}
@@ -118,14 +139,7 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                   sandbox="allow-scripts allow-same-origin"
                 />
                 {fileInfos.length > 1 && (
-                  <div className="flex items-center justify-center gap-3 py-2 bg-surface-container-low border-t border-outline-variant shrink-0">
-                    <button
-                      onClick={() => setSlideIdx(i => Math.max(0, i - 1))}
-                      disabled={slideIdx === 0}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container disabled:opacity-30 transition-colors"
-                    >
-                      <Icon name="chevron_left" size={20} />
-                    </button>
+                  <div className="flex items-center justify-center gap-2 py-2 bg-surface-container-low border-t border-outline-variant shrink-0">
                     {fileInfos.map((_, i) => (
                       <button
                         key={i}
@@ -133,13 +147,6 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                         className={`w-2 h-2 rounded-full transition-colors ${i === slideIdx ? 'bg-primary' : 'bg-outline-variant'}`}
                       />
                     ))}
-                    <button
-                      onClick={() => setSlideIdx(i => Math.min(fileInfos.length - 1, i + 1))}
-                      disabled={slideIdx === fileInfos.length - 1}
-                      className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container disabled:opacity-30 transition-colors"
-                    >
-                      <Icon name="chevron_right" size={20} />
-                    </button>
                     <span className="text-xs text-on-surface-variant ml-1">
                       {slideIdx + 1} / {fileInfos.length}
                     </span>
@@ -184,65 +191,75 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
             </div>
 
             {/* Classification */}
-            <div className="p-4 border-b border-outline-variant space-y-3">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Phân loại</p>
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                  <Icon name={getCategoryIcon(doc['Danh mục'])} size={16} className="text-primary" />
+            <div className="p-4 border-b border-outline-variant">
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Phân loại</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs text-on-surface-variant mb-1">Danh mục</p>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                      <Icon name={getCategoryIcon(doc['Danh mục'])} size={14} className="text-primary" />
+                    </div>
+                    <span className="text-sm text-on-surface font-medium truncate">{getCategoryName(doc['Danh mục'])}</span>
+                  </div>
                 </div>
-                <span className="text-sm text-on-surface font-medium">{getCategoryName(doc['Danh mục'])}</span>
+                <div>
+                  <p className="text-xs text-on-surface-variant mb-1">Tình trạng</p>
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
+                    {doc['Tình trạng'] || '—'}
+                  </span>
+                </div>
               </div>
-              <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
-                {doc['Tình trạng'] || '—'}
-              </span>
             </div>
 
             {/* Ownership */}
-            <div className="p-4 border-b border-outline-variant space-y-3">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Thông tin chủ thể</p>
-              <InfoRow icon="corporate_fare" label="Phòng ban" value={doc['Phòng ban']} />
-              {/* Phụ trách — stacked avatars */}
-              <div className="flex items-start gap-2">
-                <Icon name="group" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs text-on-surface-variant">Phụ trách</p>
-                  {(() => {
-                    const list = parseAssignees(doc['Phụ trách'])
-                    if (!list.length) return <p className="text-sm text-on-surface">—</p>
-                    return (
-                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                        {list.map((a, i) => (
-                          <span key={i} title={String(a)} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
-                            <span className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">{String(a).charAt(0).toUpperCase()}</span>
-                            {a}
-                          </span>
-                        ))}
-                      </div>
-                    )
-                  })()}
+            <div className="p-4 border-b border-outline-variant">
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Thông tin chủ thể</p>
+              <div className="grid grid-cols-2 gap-3">
+                <InfoRow icon="corporate_fare" label="Phòng ban" value={doc['Phòng ban']} />
+                <InfoRow icon="calendar_today" label="Ngày ban hành" value={formatDate(doc['Ngày ban hành'])} />
+                <InfoRow icon="event" label="Ngày kết thúc" value={formatDate(doc['Ngày kết thúc'])} />
+                <div className="flex items-start gap-2">
+                  <Icon name="group" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs text-on-surface-variant">Phụ trách</p>
+                    {(() => {
+                      const list = parseAssignees(doc['Phụ trách'])
+                      if (!list.length) return <p className="text-sm text-on-surface">—</p>
+                      return (
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          {list.map((a, i) => (
+                            <span key={i} title={String(a)} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
+                              <span className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">{String(a).charAt(0).toUpperCase()}</span>
+                              {a}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
                 </div>
               </div>
-              <InfoRow icon="calendar_today" label="Ngày ban hành" value={formatDate(doc['Ngày ban hành'])} />
-              <InfoRow icon="event" label="Ngày kết thúc" value={formatDate(doc['Ngày kết thúc'])} />
             </div>
 
             {/* Business Context */}
-            <div className="p-4 border-b border-outline-variant space-y-3">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Bối cảnh kinh doanh</p>
-              <InfoRow icon="account_tree" label="Dự án" value={doc['Dự án']} />
-              <InfoRow icon="inventory_2" label="Nhà cung cấp" value={doc['Nhà cung cấp']} />
-              {(doc['Giá trị HĐ'] || doc['Giá trị thực hiện']) && (
-                <>
-                  <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
-                  <InfoRow icon="receipt_long" label="Giá trị TH" value={formatCurrency(doc['Giá trị thực hiện'])} />
-                  <div className="flex items-center justify-between pt-1 border-t border-outline-variant/40">
-                    <span className="text-xs text-on-surface-variant">Chênh lệch</span>
-                    <span className={`text-sm font-semibold ${diff >= 0 ? 'text-emerald-700' : 'text-error'}`}>
-                      {formatCurrency(diff)}
-                    </span>
-                  </div>
-                </>
-              )}
+            <div className="p-4 border-b border-outline-variant">
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Bối cảnh kinh doanh</p>
+              <div className="grid grid-cols-2 gap-3">
+                <InfoRow icon="account_tree" label="Dự án" value={doc['Dự án']} />
+                <InfoRow icon="inventory_2" label="Nhà cung cấp" value={doc['Nhà cung cấp']} />
+                {(doc['Giá trị HĐ'] || doc['Giá trị thực hiện']) && (
+                  <>
+                    <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
+                    <InfoRow icon="receipt_long" label="Giá trị TH" value={formatCurrency(doc['Giá trị thực hiện'])} />
+                    <div className="col-span-2">
+                      <InfoRow icon="balance" label="Chênh lệch" value={
+                        <span className={diff >= 0 ? 'text-emerald-700 font-semibold' : 'text-error font-semibold'}>{formatCurrency(diff)}</span>
+                      } />
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Mô tả */}
@@ -255,10 +272,34 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
 
             {/* Người tạo / cập nhật */}
             {(doc['Người tạo'] || doc['Người cập nhật']) && (
-              <div className="p-4 border-b border-outline-variant space-y-1.5">
-                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Lịch sử</p>
-                {doc['Người tạo'] && <InfoRow icon="person_add" label="Người tạo" value={doc['Người tạo']} />}
-                {doc['Người cập nhật'] && <InfoRow icon="edit" label="Cập nhật bởi" value={doc['Người cập nhật']} />}
+              <div className="p-4 border-b border-outline-variant">
+                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Lịch sử</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {doc['Người tạo'] && (
+                    <div className="flex items-start gap-2">
+                      <Icon name="person_add" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Người tạo</p>
+                        <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full mt-0.5">
+                          <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{String(doc['Người tạo']).charAt(0).toUpperCase()}</span>
+                          {doc['Người tạo']}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {doc['Người cập nhật'] && (
+                    <div className="flex items-start gap-2">
+                      <Icon name="edit" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Cập nhật bởi</p>
+                        <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full mt-0.5">
+                          <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{String(doc['Người cập nhật']).charAt(0).toUpperCase()}</span>
+                          {doc['Người cập nhật']}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -290,10 +331,11 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
               </div>
               <form onSubmit={handleAddComment} className="flex gap-2">
                 <input
-                  className="flex-1 text-sm bg-surface-container-low rounded-xl px-3 py-2 border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  placeholder="Nhập bình luận..."
+                  className="flex-1 text-sm bg-surface-container-low rounded-xl px-3 py-2 border-none focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder={commentSaving ? 'Đang gửi...' : 'Nhập bình luận...'}
                   value={commentInput}
                   onChange={e => setCommentInput(e.target.value)}
+                  disabled={commentSaving}
                 />
                 <button type="submit" disabled={commentSaving || !commentInput.trim()}
                   className="w-9 h-9 flex items-center justify-center rounded-xl bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0">

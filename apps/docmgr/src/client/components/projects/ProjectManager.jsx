@@ -5,6 +5,7 @@ import { dataCache } from '../../utils/dataCache.js'
 import FormModal from '../common/FormModal.jsx'
 import { inputCls, labelCls, fieldCls } from '../common/formStyles.js'
 import { useToast } from '../../context/ToastContext.jsx'
+import { useConfirm } from '../../context/ConfirmContext.jsx'
 
 function emptyForm() {
   return { 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '', 'Địa chỉ': '' }
@@ -18,6 +19,7 @@ export default function ProjectManager({ token, lookups, onUpdate }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => { setItems(lookups.duAn || []) }, [lookups.duAn])
 
@@ -38,7 +40,7 @@ export default function ProjectManager({ token, lookups, onUpdate }) {
   }
 
   async function handleDelete(item) {
-    if (!window.confirm(`Xóa dự án "${item['Tên dự án viết tắt']}"?`)) return
+    if (!await confirm(`Xóa dự án "${item['Tên dự án viết tắt']}"?`)) return
     try {
       await gasCall('api_deleteDuAn', token, item.ID)
       showToast('Đã xóa dự án', 'success')

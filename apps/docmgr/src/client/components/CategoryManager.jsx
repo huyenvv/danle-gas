@@ -5,6 +5,7 @@ import Icon from './common/Icon.jsx'
 import FormModal from './common/FormModal.jsx'
 import { inputCls, selectCls, textareaCls, labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 
 const ICON_OPTIONS = [
   'description', 'contract', 'bar_chart', 'engineering', 'inventory_2',
@@ -47,6 +48,7 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => { setCats(lookups.danhMuc || []) }, [lookups.danhMuc])
 
@@ -88,7 +90,7 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
   }
 
   async function handleDelete(cat) {
-    if (!window.confirm(`Xóa danh mục "${cat['Tên danh mục']}"?`)) return
+    if (!await confirm(`Xóa danh mục "${cat['Tên danh mục']}"?`)) return
     try {
       await gasCall('api_deleteCategory', token, cat.ID)
       showToast('Đã xóa danh mục', 'success')

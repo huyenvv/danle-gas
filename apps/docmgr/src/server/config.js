@@ -52,8 +52,22 @@ function _ensureAllTabsExist(ss) {
       sheet.getRange(1, 1, 1, def.headers.length).setValues([def.headers])
       sheet.setFrozenRows(1)
       if (def.name === SHEETS.SYS) sheet.hideSheet()
+      if (def.name === SHEETS.USERS) {
+        var pwdIdx = def.headers.indexOf('Mật khẩu')
+        if (pwdIdx !== -1) sheet.hideColumns(pwdIdx + 1)
+      }
     }
   })
+}
+
+// Run once from GAS editor to hide the password column on an existing sheet
+function _hidePasswordColumn() {
+  var ss = getCentralSheet()
+  var sheet = ss.getSheetByName(SHEETS.USERS)
+  if (!sheet) return
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  var idx = headers.indexOf('Mật khẩu')
+  if (idx !== -1) sheet.hideColumns(idx + 1)
 }
 
 function _seedAdminUser(ss) {
@@ -62,8 +76,10 @@ function _seedAdminUser(ss) {
   var appsSheet  = ss.getSheetByName(SHEETS.APPS)
 
   var passwordHash = _hashPassword('admin', 'admin123')
+  var ownerEmail = ''
+  try { ownerEmail = SpreadsheetApp.getActiveSpreadsheet().getOwner().getEmail() } catch(e) {}
 
-  usersSheet.appendRow([1, 'admin', passwordHash, '', 'Active', 'TRUE', ''])
+  usersSheet.appendRow([1, 'admin', passwordHash, ownerEmail, 'Active', 'FALSE', '', ''])
   rolesSheet.appendRow([1, APP_ID, 'admin', ''])
 
   if (appsSheet.getLastRow() <= 1) {

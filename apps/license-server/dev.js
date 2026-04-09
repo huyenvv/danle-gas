@@ -23,10 +23,10 @@ function mockHash(password) {
 
 var sheetDB = {
   'Whitelist': {
-    headers: ['Email', 'App', 'Ngày thêm', 'Thêm bởi', 'Ghi chú'],
+    headers: ['Email', 'App', 'Ver', 'Ngày thêm', 'Thêm bởi', 'Ghi chú'],
     rows: [
-      ['admin@example.com', '*', '01/01/2025 00:00', 'system', 'Default'],
-      ['user@example.com', 'docmgr', '15/01/2025 10:30', 'admin@example.com', 'Test user']
+      ['admin@example.com', '*', '*', '01/01/2025 00:00', 'system', 'Default'],
+      ['user@example.com', 'docmgr', '*', '15/01/2025 10:30', 'admin@example.com', 'Test user']
     ]
   },
   'Audit Logs': {

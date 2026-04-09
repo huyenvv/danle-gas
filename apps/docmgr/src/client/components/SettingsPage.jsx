@@ -55,7 +55,7 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
 
   if (loading) {
     return (
-      <div className="max-w-lg">
+      <div className="max-w-3xl">
         <div className="bg-white rounded-2xl shadow-card p-6">
           <p className="text-sm text-on-surface-variant">Đang tải cài đặt…</p>
         </div>
@@ -64,7 +64,7 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
   }
 
   return (
-    <div className="max-w-lg space-y-5">
+    <div className="max-w-3xl space-y-5">
       <div className="bg-white rounded-2xl shadow-card p-6 space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">

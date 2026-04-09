@@ -5,6 +5,7 @@ import { dataCache } from '../../utils/dataCache.js'
 import FormModal from '../common/FormModal.jsx'
 import { inputCls, labelCls, fieldCls } from '../common/formStyles.js'
 import { useToast } from '../../context/ToastContext.jsx'
+import { useConfirm } from '../../context/ConfirmContext.jsx'
 
 const PAGE_SIZE = 10
 
@@ -25,6 +26,7 @@ export default function SupplierManager({ token, lookups, onUpdate }) {
   const [error, setError]   = useState('')
   const [saving, setSaving] = useState(false)
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => { setItems(lookups.nhaCungCap || []) }, [lookups.nhaCungCap])
 
@@ -45,7 +47,7 @@ export default function SupplierManager({ token, lookups, onUpdate }) {
   }
 
   async function handleDelete(item) {
-    if (!window.confirm(`Xóa NCC "${item['Tên NCC viết tắt']}"?`)) return
+    if (!await confirm(`Xóa NCC "${item['Tên NCC viết tắt']}"?`)) return
     try {
       await gasCall('api_deleteNhaCungCap', token, item.ID)
       showToast('Đã xóa nhà cung cấp', 'success')

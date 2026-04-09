@@ -31,6 +31,11 @@ const _mockComments = []
 let _nextCommentId = 1
 
 const _mockData = {
+  users: [
+    { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '' },
+    { ID: 2, 'Tên đăng nhập': 'editor1', 'Email': 'editor@test.com', 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-10', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
+    { ID: 3, 'Tên đăng nhập': 'truongphong', 'Email': 'tp@test.com', 'Quyền': 'Trưởng phòng', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-12', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
+  ],
   danhMuc: [
     { ID: 1, 'Tên danh mục': 'Hợp đồng', Icon: 'contract', 'Mô tả': 'Hợp đồng kinh tế', 'Danh mục cha': '' },
     { ID: 2, 'Tên danh mục': 'Công văn',  Icon: 'description', 'Mô tả': 'Công văn đến/đi', 'Danh mục cha': '' },
@@ -50,8 +55,8 @@ const _mockData = {
     { ID: 2, 'Tên NCC viết tắt': 'XYZ Ltd', 'Tên NCC đầy đủ': 'Công ty CP XYZ', 'Mã số thuế': '067890', 'Điện thoại': '024-5678', 'Lĩnh vực kinh doanh': 'Xây dựng' },
   ],
   docs: [
-    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-01', 'Nhà cung cấp': 'ABC Corp', 'Phòng ban': 'Kỹ thuật', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Giá trị thực hiện': 80000000, 'Chênh lệch': 20000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
-    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-02', 'Nhà cung cấp': '', 'Phòng ban': 'Kinh doanh', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Giá trị thực hiện': 0, 'Chênh lệch': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin', 'editor1']), 'Người tạo': 'admin', 'Người cập nhật': 'editor1' },
+    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-01', 'Nhà cung cấp': 'ABC Corp', 'Phòng ban': 'Kỹ thuật', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Giá trị thực hiện': 80000000, 'Chênh lệch': 20000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]) },
+    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-02', 'Nhà cung cấp': '', 'Phòng ban': 'Kinh doanh', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Giá trị thực hiện': 0, 'Chênh lệch': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin', 'editor1']), 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]) },
     { ID: 3, 'Tên hồ sơ': 'Hợp đồng xây dựng VP', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt', 'Dự án': 'DA-01', 'Nhà cung cấp': 'XYZ Ltd', 'Phòng ban': 'Kỹ thuật', 'Số hồ sơ': 'HS-003', 'Giá trị HĐ': 500000000, 'Giá trị thực hiện': 0, 'Chênh lệch': 500000000, 'Ngày ban hành': '2024-03-01', 'Ngày kết thúc': '2025-03-01', 'Ngày cập nhật': '2024-03-01', 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
   ],
 }
@@ -167,12 +172,16 @@ async function mockCall(fn, ...args) {
     case 'api_deleteDuAn':
       return _mockDelete(_mockData.duAn, args[1])
     case 'api_getUsers':
-      return [
+      return (_mockData.users || [
         { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '' },
         { ID: 2, 'Tên đăng nhập': 'editor1', 'Email': 'editor@test.com', 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-10', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
         { ID: 3, 'Tên đăng nhập': 'truongphong', 'Email': 'tp@test.com', 'Quyền': 'Trưởng phòng', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-12', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
-      ]
-    case 'api_addUser':
+      ]).map(u => ({ ...u }))
+    case 'api_addUser': {
+      const nu = { ID: ++_nextId, ...args[1], 'Trạng thái': 'Active', 'Đăng nhập cuối': '' }
+      _mockData.users = [...(_mockData.users || []), nu]
+      return nu
+    }
     case 'api_updateUser':
       return { success: true }
     case 'api_changePassword':

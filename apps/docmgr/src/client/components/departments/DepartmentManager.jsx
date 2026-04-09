@@ -6,6 +6,7 @@ import { dataCache } from '../../utils/dataCache.js'
 import FormModal from '../common/FormModal.jsx'
 import { inputCls, textareaCls, labelCls, fieldCls } from '../common/formStyles.js'
 import { useToast } from '../../context/ToastContext.jsx'
+import { useConfirm } from '../../context/ConfirmContext.jsx'
 
 export default function DepartmentManager({ token, lookups, onUpdate }) {
   const [items, setItems] = useState(lookups.phongBan || [])
@@ -15,6 +16,7 @@ export default function DepartmentManager({ token, lookups, onUpdate }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => { setItems(lookups.phongBan || []) }, [lookups.phongBan])
 
@@ -51,7 +53,7 @@ export default function DepartmentManager({ token, lookups, onUpdate }) {
   }
 
   async function handleDelete(item) {
-    if (!window.confirm(`Xóa phòng ban "${item['Tên phòng ban']}"?`)) return
+    if (!await confirm(`Xóa phòng ban "${item['Tên phòng ban']}"?`)) return
     try {
       await gasCall('api_deletePhongBan', token, item.ID)
       showToast('Đã xóa phòng ban', 'success')

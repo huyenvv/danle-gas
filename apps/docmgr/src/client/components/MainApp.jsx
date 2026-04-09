@@ -5,6 +5,7 @@ import { dataCache, prefetchLookups, refreshLookups } from '../utils/dataCache.j
 import { viMatch } from '../utils/viSearch.js'
 import { formatCurrency, formatDate, statusColor } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 import DocumentModal from './DocumentModal.jsx'
 import Sidebar from './Sidebar.jsx'
 import StatsCards from './StatsCards.jsx'
@@ -18,12 +19,14 @@ import ProjectManager from './projects/ProjectManager.jsx'
 import DocumentPreview from './documents/DocumentPreview.jsx'
 import AuditLogPage from './AuditLogPage.jsx'
 import TopHeader from './layout/TopHeader.jsx'
+import Icon from './common/Icon.jsx'
 
 const PAGE_SIZE = 20
 
 export default function MainApp() {
   const { session, logout } = useAuth()
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   const [page, setPage]            = useState('documents')
   const [allDocs, setAllDocs]      = useState([])
@@ -120,7 +123,7 @@ export default function MainApp() {
   }
 
   async function handleDeleteDoc(id) {
-    if (!window.confirm('Xóa hồ sơ này?')) return
+    if (!await confirm('Xóa hồ sơ này?')) return
     setGlobalLoading(true)
     try {
       await gasCall('api_deleteDocument', session.token, id)
@@ -357,12 +360,16 @@ export default function MainApp() {
             <ProjectManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} />
           )}
 
-          {page === 'users' && isAdmin && (
-            <UserManager token={session.token} lookups={lookups} />
+          {isAdmin && (
+            <div className={page === 'users' ? '' : 'hidden'}>
+              <UserManager token={session.token} lookups={lookups} />
+            </div>
           )}
 
-          {page === 'settings' && isAdmin && (
-            <SettingsPage token={session.token} onCompanyNameChange={setCompanyName} />
+          {isAdmin && (
+            <div className={page === 'settings' ? '' : 'hidden'}>
+              <SettingsPage token={session.token} onCompanyNameChange={setCompanyName} />
+            </div>
           )}
 
           {page === 'auditlogs' && isAdmin && (
@@ -553,6 +560,10 @@ function DocRow({ doc, depth, readDocIds, selectedIds, onToggleSelect, isAdmin, 
   const isRead = readDocIds.has(String(doc.ID))
   const isSelected = selectedIds.has(String(doc.ID))
   const indent = depth * 16 + 16
+  const { showToast } = useToast()
+  const [dlOpen, setDlOpen] = useState(false)
+  const [dlPos, setDlPos] = useState({ top: 0, right: 0 })
+  const dlBtnRef = useRef(null)
   return (
     <tr
       className={`hover:bg-surface-container-low transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
@@ -604,7 +615,64 @@ function DocRow({ doc, depth, readDocIds, selectedIds, onToggleSelect, isAdmin, 
       </td>
       <td className="px-4 py-3 text-on-surface-variant">{formatDate(doc['Ngày ban hành'])}</td>
       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-        <div className="flex gap-1.5 justify-end">
+        <div className="flex gap-1 justify-end items-center">
+          {(() => {
+            const raw = doc['File ID']
+            if (!raw) return null
+            let fileInfos = []
+            try {
+              fileInfos = typeof raw === 'string' && raw.charAt(0) === '[' ? JSON.parse(raw) : [{ fileId: raw }]
+            } catch(_) { fileInfos = [{ fileId: raw }] }
+            if (!fileInfos.length) return null
+            return (
+              <>
+                {fileInfos.length === 1 ? (
+                  <button title="Tải về" onClick={() => window.open('https://drive.google.com/file/d/' + encodeURIComponent(fileInfos[0].fileId) + '/view?usp=sharing', '_blank')}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors">
+                    <Icon name="download" size={16} />
+                  </button>
+                ) : (
+                  <div className="relative">
+                    <button ref={dlBtnRef} title={`Tải về (${fileInfos.length} file)`} onClick={() => {
+                      if (!dlOpen && dlBtnRef.current) {
+                        const r = dlBtnRef.current.getBoundingClientRect()
+                        setDlPos({ top: r.bottom + 4, right: window.innerWidth - r.right })
+                      }
+                      setDlOpen(v => !v)
+                    }}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors">
+                      <Icon name="download" size={16} />
+                    </button>
+                    {dlOpen && (
+                      <>
+                        <div className="fixed inset-0 z-[100]" onClick={() => setDlOpen(false)} />
+                        <div className="fixed bg-surface border border-outline-variant rounded-xl shadow-lg z-[101] py-1 min-w-[180px]"
+                          style={{ top: dlPos.top, right: dlPos.right }}>
+                          {fileInfos.map((fi, i) => (
+                            <a key={i}
+                              href={'https://drive.google.com/file/d/' + encodeURIComponent(fi.fileId) + '/view?usp=sharing'}
+                              target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-primary/10 cursor-pointer"
+                              onClick={() => setDlOpen(false)}>
+                              <Icon name="description" size={14} className="shrink-0 text-on-surface-variant" />
+                              <span className="truncate max-w-[160px]">{fi.fileName || `File ${i + 1}`}</span>
+                            </a>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                <button title="Sao chép link" onClick={() => {
+                  const url = 'https://drive.google.com/file/d/' + encodeURIComponent(fileInfos[0].fileId) + '/view?usp=sharing'
+                  navigator.clipboard.writeText(url).then(() => showToast('Đã sao chép link chia sẻ', 'success')).catch(() => window.prompt('Sao chép link:', url))
+                }}
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors">
+                  <Icon name="share" size={16} />
+                </button>
+              </>
+            )
+          })()}
           <button onClick={() => onEdit(doc)} className="text-primary hover:bg-primary/10 text-xs font-medium px-2 py-1 rounded-lg transition-colors">Sửa</button>
           {isAdmin && (
             <button onClick={() => onDelete(doc.ID)} className="text-error hover:bg-error-container text-xs font-medium px-2 py-1 rounded-lg transition-colors">Xóa</button>

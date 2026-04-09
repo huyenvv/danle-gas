@@ -102,7 +102,26 @@ function autoLogin() {
     return u['Email'] && u['Email'].toString().toLowerCase() === email.toLowerCase()
   })
 
-  if (!user) throw new Error('Email ' + email + ' chưa được cấp quyền truy cập. Liên hệ quản trị viên.')
+  if (!user) {
+    // Check if this is the spreadsheet owner → auto-grant super admin
+    var ownerEmail = ''
+    try { ownerEmail = SpreadsheetApp.getActiveSpreadsheet().getOwner().getEmail() } catch(e) {}
+    if (ownerEmail && ownerEmail.toLowerCase() === email.toLowerCase()) {
+      var ownerToken = generateUuid()
+      var ownerSession = {
+        userId: 0,
+        username: email.split('@')[0],
+        email: email,
+        role: 'admin',
+        mustChangePass: false,
+        departments: [],
+        permissions: FULL_ADMIN_PERMS,
+      }
+      cachePut('sess_' + ownerToken, ownerSession, SESSION_TTL)
+      return { token: ownerToken, user: ownerSession }
+    }
+    throw new Error('Email ' + email + ' chưa được cấp quyền truy cập. Liên hệ quản trị viên.')
+  }
   if (user['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
 
   var roles = rowsToObjects(central.getSheetByName(SHEETS.APP_ROLES).getDataRange().getValues())

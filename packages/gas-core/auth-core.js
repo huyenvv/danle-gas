@@ -28,7 +28,8 @@ function requireAuth(token) {
 
 function requireAdmin(token) {
   var session = requireAuth(token)
-  if (session.role !== 'admin') throw new Error('Chỉ quản trị viên mới có quyền thực hiện thao tác này')
+  var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc']
+  if (adminRoles.indexOf(session.role) === -1) throw new Error('Chỉ quản trị viên mới có quyền thực hiện thao tác này')
   return session
 }
 

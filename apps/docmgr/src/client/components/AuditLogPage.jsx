@@ -28,7 +28,7 @@ export default function AuditLogPage({ token }) {
     setError('')
     try {
       const res = await gasCall('api_getAuditLogs', token, {})
-      setLogs(res.logs || [])
+      setLogs(res.data || [])
     } catch (err) {
       setError(err.message)
     } finally {

@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react'
+import { useState, useEffect } from 'react'
 import gasCall from '../gasClient.js'
 import { viMatch } from '../utils/viSearch.js'
 import Icon from './common/Icon.jsx'
@@ -58,22 +58,23 @@ export default function UserManager({ token, lookups = {} }) {
   const [modal, setModal]     = useState(null) // null | { mode: 'create' | 'edit', user?: {} }
   const [form, setForm]       = useState(EMPTY_FORM)
   const [perms, setPerms]     = useState(defaultPerms())
-  const [allowedCategories, setAllowedCategories] = useState([])
   const [selectedDepts, setSelectedDepts] = useState([]) // Nhân viên / Trưởng phòng dept assignment
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
   const { showToast } = useToast()
 
-  async function load() {
-    setLoading(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
     try {
       const res = await gasCall('api_getUsers', token)
       setUsers(res || [])
+      if (silent) setError('')
     } catch (err) {
-      setError(err.message)
+      if (silent) showToast('Không thể làm mới danh sách người dùng', 'error')
+      else setError(err.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -82,7 +83,6 @@ export default function UserManager({ token, lookups = {} }) {
   function openCreate() {
     setForm(EMPTY_FORM)
     setPerms(defaultPerms())
-    setAllowedCategories([])
     setSelectedDepts([])
     setFormError('')
     setModal({ mode: 'create' })
@@ -96,7 +96,6 @@ export default function UserManager({ token, lookups = {} }) {
     })
     const parsed = parsePermissions(user['Phân quyền chi tiết'], user['Quyền'])
     setPerms(parsed)
-    setAllowedCategories(Array.isArray(parsed.allowedCategories) ? parsed.allowedCategories.map(String) : [])
     // Parse Phòng ban for this user
     let depts = []
     try {
@@ -113,16 +112,9 @@ export default function UserManager({ token, lookups = {} }) {
 
   function handleRoleChange(role) {
     setForm(f => ({ ...f, 'Quyền': role }))
-    setAllowedCategories([])
     if (role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên') setPerms(fullPerms())
     else if (role === 'Văn thư' || role === 'Trưởng phòng' || role === 'Biên tập viên') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
     else setPerms(defaultPerms())
-  }
-
-  function toggleCategory(id) {
-    setAllowedCategories(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
   }
 
   function togglePerm(mod, op) {
@@ -136,7 +128,7 @@ export default function UserManager({ token, lookups = {} }) {
     setSaving(true); setFormError('')
     const isFullAdmin = form['Quyền'] === 'admin' || form['Quyền'] === 'Giám đốc' || form['Quyền'] === 'Quản trị viên'
     const finalPerms = isFullAdmin ? fullPerms() : perms
-    const payload = { ...form, permissions: { ...finalPerms, allowedCategories }, 'Phòng ban': selectedDepts }
+    const payload = { ...form, permissions: finalPerms, 'Phòng ban': selectedDepts }
     try {
       if (modal.mode === 'create') {
         await gasCall('api_addUser', token, payload)
@@ -145,7 +137,7 @@ export default function UserManager({ token, lookups = {} }) {
       }
       closeModal()
       showToast('Đã lưu người dùng', 'success')
-      load()
+      load(true)
     } catch (err) {
       setFormError(err.message)
       showToast(err.message, 'error')
@@ -382,45 +374,20 @@ export default function UserManager({ token, lookups = {} }) {
               </thead>
               <tbody className="divide-y divide-outline-variant/40">
                 {MODULES.map(mod => (
-                  <Fragment key={mod.key}>
-                    <tr className="hover:bg-surface-container-lowest">
-                      <td className="px-3 py-2 font-medium text-on-surface">{mod.label}</td>
-                      {OPS.map(op => (
-                        <td key={op.key} className="px-3 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={isAdmin ? true : !!(perms[mod.key]?.[op.key])}
-                            disabled={isAdmin}
-                            onChange={() => togglePerm(mod.key, op.key)}
-                            className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-default disabled:opacity-60"
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                    {mod.key === 'danhMuc' && !isAdmin && (lookups.danhMuc || []).filter(c => !c['Danh mục cha']).length > 0 && (
-                      <tr className="bg-surface-container-lowest/60">
-                        <td colSpan={5} className="px-3 py-2 pl-8">
-                          <div className="flex flex-wrap gap-3 items-center">
-                            <span className="text-xs text-on-surface-variant">Phạm vi:</span>
-                            {(lookups.danhMuc || []).filter(c => !c['Danh mục cha']).map(cat => (
-                              <label key={cat.ID} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={allowedCategories.includes(String(cat.ID))}
-                                  onChange={() => toggleCategory(String(cat.ID))}
-                                  className="w-3.5 h-3.5 rounded accent-primary cursor-pointer"
-                                />
-                                <span>{cat['Tên danh mục']}</span>
-                              </label>
-                            ))}
-                            {allowedCategories.length === 0 && (
-                              <span className="text-xs text-on-surface-variant italic">(tất cả)</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                  <tr key={mod.key} className="hover:bg-surface-container-lowest">
+                    <td className="px-3 py-2 font-medium text-on-surface">{mod.label}</td>
+                    {OPS.map(op => (
+                      <td key={op.key} className="px-3 py-2 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isAdmin ? true : !!(perms[mod.key]?.[op.key])}
+                          disabled={isAdmin}
+                          onChange={() => togglePerm(mod.key, op.key)}
+                          className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-default disabled:opacity-60"
+                        />
+                      </td>
+                    ))}
+                  </tr>
                 ))}
               </tbody>
             </table>

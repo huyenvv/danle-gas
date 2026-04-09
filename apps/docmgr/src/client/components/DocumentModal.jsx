@@ -3,6 +3,7 @@ import gasCall from '../gasClient.js'
 import { dataCache } from '../utils/dataCache.js'
 import { formatCurrency } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
+import LoadingOverlay from './common/LoadingOverlay.jsx'
 
 const STATUS_OPTIONS = ['Hiệu lực', 'Hết hạn', 'Sắp hết hạn', 'Chờ duyệt', 'Đã thanh lý']
 const MAX_FILE_MB = 20
@@ -24,13 +25,20 @@ function buildCategoryOptions(danhMuc) {
 
 const DEPT_RESTRICTED_ROLES = ['Trưởng phòng', 'Nhân viên']
 
+function formatCompact(n) {
+  if (n >= 1000000000) return (n / 1000000000).toFixed(n % 1000000000 === 0 ? 0 : 1) + 'B'
+  if (n >= 1000000)    return (n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 1) + 'M'
+  if (n >= 1000)       return (n / 1000).toFixed(n % 1000 === 0 ? 0 : 1) + 'K'
+  return String(n)
+}
+
 function parseSuggestions(raw) {
   const digits = String(raw || '').replace(/[^\d]/g, '')
   if (!digits) return []
   const n = Number(digits)
   if (!n) return []
   const multipliers = [10, 100, 1000, 10000, 100000]
-  return multipliers.map(m => n * m).slice(0, 5)
+  return multipliers.map(m => ({ value: n * m, label: formatCompact(n * m) }))
 }
 
 export default function DocumentModal({ mode, doc, lookups: initialLookups, token, session, onClose, onSaved, docs }) {
@@ -58,7 +66,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   })
   const [assignees, setAssignees] = useState(initialAssignees)
   const [assigneeSearch, setAssigneeSearch] = useState('')
-  const [currencyFocus, setCurrencyFocus] = useState(null) // 'hd' | 'th'
+  const [currencyTyping, setCurrencyTyping] = useState(null) // 'hd' | 'th'
 
   const [files, setFiles]           = useState([])   // new files: [{file: File}]
   const [existingFiles, setExistingFiles] = useState(  // existing files in edit mode
@@ -170,6 +178,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      {uploading && <LoadingOverlay />}
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col shadow-[0_12px_40px_rgba(0,83,219,0.12)]">
 
         {/* Header */}
@@ -183,7 +192,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
             <h3 className="font-semibold text-on-surface text-base">{isEdit ? 'Chỉnh sửa hồ sơ' : 'Thêm hồ sơ mới'}</h3>
             <p className="text-xs text-on-surface-variant">{isEdit ? 'Cập nhật thông tin hồ sơ' : 'Điền đầy đủ thông tin bên dưới'}</p>
           </div>
-          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">
+          <button onClick={onClose} disabled={uploading} className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:pointer-events-none">
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
           </button>
         </div>
@@ -410,16 +419,15 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <Field label="Giá trị HĐ (VNĐ)">
                     <input type="text" inputMode="numeric" className={iCls}
                       value={form['Giá trị HĐ'] ? Number(String(form['Giá trị HĐ']).replace(/\./g, '')).toLocaleString('vi-VN') : ''}
-                      onChange={e => setField('Giá trị HĐ', e.target.value.replace(/[^\d]/g, ''))}
-                      onFocus={() => setCurrencyFocus('hd')}
-                      onBlur={() => setTimeout(() => setCurrencyFocus(null), 200)}
+                      onChange={e => { setField('Giá trị HĐ', e.target.value.replace(/[^\d]/g, '')); setCurrencyTyping('hd') }}
+                      onBlur={() => setTimeout(() => setCurrencyTyping(null), 200)}
                       placeholder="0" />
-                    {currencyFocus === 'hd' && parseSuggestions(form['Giá trị HĐ']).length > 0 && (
+                    {currencyTyping === 'hd' && parseSuggestions(form['Giá trị HĐ']).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {parseSuggestions(form['Giá trị HĐ']).map(v => (
-                          <button key={v} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị HĐ', String(v)) }}
+                        {parseSuggestions(form['Giá trị HĐ']).map(({ value, label }) => (
+                          <button key={value} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị HĐ', String(value)); setCurrencyTyping(null) }}
                             className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full hover:bg-primary/20 transition-colors">
-                            {Number(v).toLocaleString('vi-VN')}
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -428,16 +436,15 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <Field label="Giá trị thực hiện (VNĐ)">
                     <input type="text" inputMode="numeric" className={iCls}
                       value={form['Giá trị thực hiện'] ? Number(String(form['Giá trị thực hiện']).replace(/\./g, '')).toLocaleString('vi-VN') : ''}
-                      onChange={e => setField('Giá trị thực hiện', e.target.value.replace(/[^\d]/g, ''))}
-                      onFocus={() => setCurrencyFocus('th')}
-                      onBlur={() => setTimeout(() => setCurrencyFocus(null), 200)}
+                      onChange={e => { setField('Giá trị thực hiện', e.target.value.replace(/[^\d]/g, '')); setCurrencyTyping('th') }}
+                      onBlur={() => setTimeout(() => setCurrencyTyping(null), 200)}
                       placeholder="0" />
-                    {currencyFocus === 'th' && parseSuggestions(form['Giá trị thực hiện']).length > 0 && (
+                    {currencyTyping === 'th' && parseSuggestions(form['Giá trị thực hiện']).length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {parseSuggestions(form['Giá trị thực hiện']).map(v => (
-                          <button key={v} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị thực hiện', String(v)) }}
+                        {parseSuggestions(form['Giá trị thực hiện']).map(({ value, label }) => (
+                          <button key={value} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị thực hiện', String(value)); setCurrencyTyping(null) }}
                             className="px-2 py-0.5 bg-secondary/10 text-secondary text-xs rounded-full hover:bg-secondary/20 transition-colors">
-                            {Number(v).toLocaleString('vi-VN')}
+                            {label}
                           </button>
                         ))}
                       </div>
