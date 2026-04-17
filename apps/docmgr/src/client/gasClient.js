@@ -97,23 +97,15 @@ async function mockCall(fn, ...args) {
   // eslint-disable-next-line no-console
   console.log('[gasClient mock]', fn, args)
   switch (fn) {
-    case 'api_autoLogin':
-      _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS }
-      return { token: 'mock-token', user: { ..._mockSession } }
-    case 'api_login': {
-      const [username, password] = args
-      if (username === 'admin' && password === 'admin123') {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS }
-        return { token: 'mock-token', user: { ..._mockSession } }
-      }
-      throw new Error('Tên đăng nhập hoặc mật khẩu không đúng')
-    }
     case 'api_logout':
       _mockSession = null
       return { success: true }
     case 'api_validateSession':
-      if (_mockSession) return { ..._mockSession }
-      throw new Error('Phiên đăng nhập hết hạn')
+      // In dev mode, auto-create session for testing
+      if (!_mockSession) {
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS }
+      }
+      return { ..._mockSession }
     case 'api_getAllData':
       return {
         danhMuc:     _mockData.danhMuc.map(i => ({ ...i })),
@@ -184,11 +176,7 @@ async function mockCall(fn, ...args) {
     }
     case 'api_updateUser':
       return { success: true }
-    case 'api_changePassword':
-      return { success: true }
-    case 'api_adminResetPassword':
-    case 'api_lockUser':
-    case 'api_unlockUser':
+    case 'api_removeUserRole':
       return { success: true }
     case 'api_markAsRead':
       _mockReadIds.add(String(args[1]))

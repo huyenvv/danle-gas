@@ -1,12 +1,14 @@
-// ===== App-specific auth — login with column mappings, lock/unlock =====
-// Core auth (validateSession, requireAuth, requireAdmin, changePassword, etc.) provided by gas-core/auth-core.js
+// ===== App-specific auth — SSO session + local authorization =====
+// Core auth (validateSession, requireAuth, requireAdmin, etc.) provided by gas-core/auth-core.js
+// SSO validation (ssoValidateToken, ssoStoreParentSheetId) provided by gas-core/sso.js
+// Authentication (login, password, lock/unlock) is managed by SSO Portal (parent app).
+// This app only handles authorization (roles, permissions).
 
 /**
  * Default permission sets when Phân quyền chi tiết is empty.
- * Returns full JSON permissions object.
  */
 var DEFAULT_PERMS = {
-  'Quản trị viên': null, // null = bypass (full access)
+  'Quản trị viên': null,
   'admin':         null,
   'Giám đốc':      null,
   'Biên tập viên': {
@@ -75,7 +77,6 @@ var FULL_ADMIN_PERMS = {
 /**
  * Build permissions object for a user.
  * appRole — row from APP_ROLES sheet.
- * Returns full permissions JSON (never null).
  */
 function getPermissions(appRole) {
   var role = appRole ? appRole['Quyền'] : ''
@@ -92,88 +93,11 @@ function getPermissions(appRole) {
   return DEFAULT_PERMS[role] || DEFAULT_PERMS['Xem']
 }
 
-function autoLogin() {
-  var email = Session.getActiveUser().getEmail()
-  if (!email) throw new Error('Không thể xác định tài khoản Google. Vui lòng mở lại ứng dụng.')
-
-  var central = getCentralSheet()
-  var users = rowsToObjects(central.getSheetByName(SHEETS.USERS).getDataRange().getValues())
-  var user = users.find(function(u) {
-    return u['Email'] && u['Email'].toString().toLowerCase() === email.toLowerCase()
-  })
-
-  if (!user) {
-    // Check if this is the spreadsheet owner → auto-grant super admin
-    var ownerEmail = ''
-    try { ownerEmail = SpreadsheetApp.getActiveSpreadsheet().getOwner().getEmail() } catch(e) {}
-    if (ownerEmail && ownerEmail.toLowerCase() === email.toLowerCase()) {
-      var ownerToken = generateUuid()
-      var ownerSession = {
-        userId: 0,
-        username: email.split('@')[0],
-        email: email,
-        role: 'admin',
-        mustChangePass: false,
-        departments: [],
-        permissions: FULL_ADMIN_PERMS,
-      }
-      cachePut('sess_' + ownerToken, ownerSession, SESSION_TTL)
-      return { token: ownerToken, user: ownerSession }
-    }
-    throw new Error('Email ' + email + ' chưa được cấp quyền truy cập. Liên hệ quản trị viên.')
-  }
-  if (user['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
-
-  var roles = rowsToObjects(central.getSheetByName(SHEETS.APP_ROLES).getDataRange().getValues())
-  var appRole = roles.find(function(r) {
-    return String(r['UserID']) === String(user['ID']) && r['AppID'] === APP_ID
-  })
-  if (!appRole) throw new Error('Tài khoản chưa được phân quyền cho ứng dụng này. Liên hệ quản trị viên.')
-
-  updateRow(SHEETS.USERS, user['ID'], { 'Đăng nhập cuối': now() })
-
-  var depts = []
-  try {
-    var deptVal = user['Phòng ban']
-    if (deptVal && typeof deptVal === 'string' && deptVal.charAt(0) === '[') {
-      depts = JSON.parse(deptVal)
-    } else if (deptVal) {
-      depts = [deptVal]
-    }
-  } catch(e) {}
-
-  var token = generateUuid()
-  var sessionData = {
-    userId: user['ID'],
-    username: user['Tên đăng nhập'],
-    email: email,
-    role: appRole['Quyền'],
-    mustChangePass: false,
-    departments: depts,
-    permissions: getPermissions(appRole),
-  }
-  cachePut('sess_' + token, sessionData, SESSION_TTL)
-
-  return { token: token, user: sessionData }
-}
-
-function login(username, password) {
-  var central = getCentralSheet()
-  var users = rowsToObjects(central.getSheetByName(SHEETS.USERS).getDataRange().getValues())
-  var user = users.find(function(u) { return u['Tên đăng nhập'] === username })
-
-  if (!user) throw new Error('Tên đăng nhập hoặc mật khẩu không đúng')
-  if (user['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
-  if (!_verifyPassword(username, password, user['Mật khẩu'])) throw new Error('Tên đăng nhập hoặc mật khẩu không đúng')
-
-  var roles = rowsToObjects(central.getSheetByName(SHEETS.APP_ROLES).getDataRange().getValues())
-  var appRole = roles.find(function(r) {
-    return String(r['UserID']) === String(user['ID']) && r['AppID'] === APP_ID
-  })
-  if (!appRole) throw new Error('Tài khoản chưa được cấp quyền cho ứng dụng này')
-
-  updateRow(SHEETS.USERS, user['ID'], { 'Đăng nhập cuối': now() })
-
+/**
+ * Create a local session from SSO-validated user + local app role.
+ * Called by doGet after SSO token validation.
+ */
+function ssoCreateSession(user, appRole) {
   var depts = []
   try {
     var deptVal = user['Phòng ban']
@@ -190,25 +114,10 @@ function login(username, password) {
     username: user['Tên đăng nhập'],
     email: user['Email'],
     role: appRole['Quyền'],
-    mustChangePass: user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true,
+    mustChangePass: false,
     departments: depts,
     permissions: getPermissions(appRole),
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
-
-  return { token: token, user: sessionData }
-}
-
-// ===== Lock / Unlock =====
-function lockUser(token, targetUserId) {
-  var session = requireAdmin(token)
-  if (String(session.userId) === String(targetUserId)) throw new Error('Không thể tự khóa tài khoản của mình')
-  updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Locked' })
-  return { success: true }
-}
-
-function unlockUser(token, targetUserId) {
-  requireAdmin(token)
-  updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Active' })
-  return { success: true }
+  return token
 }

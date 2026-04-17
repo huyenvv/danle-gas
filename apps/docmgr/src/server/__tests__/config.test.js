@@ -20,7 +20,7 @@ describe('getConfig / setConfig', () => {
 
 describe('getSheet routing', () => {
   test('sheet with _ prefix resolves from app spreadsheet', () => {
-    makeSheet(SHEETS.USERS, ['ID', 'Tên đăng nhập'], [])
-    expect(() => getSheet(SHEETS.USERS)).not.toThrow()
+    makeSheet(SHEETS.APP_ROLES, ['ID', 'UserID'], [])
+    expect(() => getSheet(SHEETS.APP_ROLES)).not.toThrow()
   })
 })

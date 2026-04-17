@@ -11,34 +11,47 @@ export function AuthProvider({ children }) {
   const [accessDenied, setAccessDenied] = useState(false)
   const [accessError, setAccessError]   = useState('')
 
-  function doAutoLogin() {
-    gasCall('api_autoLogin')
-      .then(res => {
-        localStorage.setItem(TOKEN_KEY, res.token)
-        setSession({ ...res.user, token: res.token })
-        setLoading(false)
-      })
-      .catch(err => {
-        setAccessDenied(true)
-        setAccessError(err.message || 'Không có quyền truy cập')
-        setLoading(false)
-      })
-  }
-
-  // On mount: try to restore saved session, then fall back to auto-login
   useEffect(() => {
+    // Priority 1: SSO token injected by doGet
+    const ssoToken = window.__SSO_TOKEN__
+    if (ssoToken) {
+      window.__SSO_TOKEN__ = ''
+      gasCall('api_validateSession', ssoToken)
+        .then(sess => {
+          localStorage.setItem(TOKEN_KEY, ssoToken)
+          setSession({ ...sess, token: ssoToken })
+          setLoading(false)
+        })
+        .catch(err => {
+          setAccessDenied(true)
+          setAccessError(err.message || 'Phiên SSO không hợp lệ')
+          setLoading(false)
+        })
+      return
+    }
+
+    // Priority 2: Saved session from localStorage
     const saved = localStorage.getItem(TOKEN_KEY)
-    if (!saved) { doAutoLogin(); return }
-    gasCall('api_validateSession', saved)
-      .then(sess => {
-        if (!sess) throw new Error('Session expired')
-        setSession({ ...sess, token: saved })
-        setLoading(false)
-      })
-      .catch(() => {
-        localStorage.removeItem(TOKEN_KEY)
-        doAutoLogin()
-      })
+    if (saved) {
+      gasCall('api_validateSession', saved)
+        .then(sess => {
+          if (!sess) throw new Error('expired')
+          setSession({ ...sess, token: saved })
+          setLoading(false)
+        })
+        .catch(() => {
+          localStorage.removeItem(TOKEN_KEY)
+          setAccessDenied(true)
+          setAccessError('Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.')
+          setLoading(false)
+        })
+      return
+    }
+
+    // No SSO token, no saved session
+    setAccessDenied(true)
+    setAccessError('Vui lòng truy cập qua SSO Portal.')
+    setLoading(false)
   }, [])
 
   const logout = useCallback(async () => {
@@ -46,7 +59,8 @@ export function AuthProvider({ children }) {
     setSession(null)
     localStorage.removeItem(TOKEN_KEY)
     if (token) await gasCall('api_logout', token).catch(() => {})
-    window.location.reload()
+    setAccessDenied(true)
+    setAccessError('Đã đăng xuất. Vui lòng mở lại từ SSO Portal.')
   }, [session])
 
   const value = { session, loading, accessDenied, accessError, logout }

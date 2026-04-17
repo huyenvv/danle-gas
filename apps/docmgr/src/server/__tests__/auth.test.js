@@ -1,57 +1,36 @@
 require('./setup.js')
-const { resetAll, setupUserSheets, seedUser, loginAs } = require('./helpers')
+const { resetAll, setupRoleSheets, seedUser, createSession } = require('./helpers')
 
 beforeEach(() => {
   resetAll()
-  setupUserSheets()
-  seedUser(1, 'admin', 'admin123', 'admin@test.com', 'admin')
+  setupRoleSheets()
+  seedUser(1, 'admin', 'admin@test.com', 'admin')
 })
 
-describe('autoLogin', () => {
-  test('returns session token for matching email', () => {
-    Session._setEmail('admin@test.com')
-    const result = autoLogin()
-    expect(result.token).toBeTruthy()
-    expect(result.user.email).toBe('admin@test.com')
-    expect(result.user.role).toBe('admin')
+describe('ssoCreateSession', () => {
+  test('creates session with correct data', () => {
+    var user = { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Phòng ban': '' }
+    var appRole = { 'Quyền': 'admin', 'Phân quyền chi tiết': '' }
+    var token = ssoCreateSession(user, appRole)
+    expect(token).toBeTruthy()
+    var session = validateSession(token)
+    expect(session.username).toBe('admin')
+    expect(session.role).toBe('admin')
   })
 
-  test('throws for email not in user list', () => {
-    Session._setEmail('nobody@test.com')
-    expect(() => autoLogin()).toThrow('chưa được cấp quyền')
-  })
-
-  test('throws for locked user', () => {
-    Session._setEmail('admin@test.com')
-    const token = loginAs('admin', 'admin123')
-    seedUser(2, 'user2', 'pass', 'lock@test.com', 'Xem')
-    lockUser(token, 2)
-    invalidateSheetCache(SHEETS.USERS)
-    Session._setEmail('lock@test.com')
-    expect(() => autoLogin()).toThrow('khóa')
-  })
-})
-
-describe('login', () => {
-  test('returns session token on valid credentials', () => {
-    const result = login('admin', 'admin123')
-    expect(result.token).toBeTruthy()
-    expect(result.user.role).toBe('admin')
-  })
-
-  test('throws on wrong password', () => {
-    expect(() => login('admin', 'wrong')).toThrow()
-  })
-
-  test('throws on unknown user', () => {
-    expect(() => login('nobody', 'pass')).toThrow()
+  test('parses departments from JSON array', () => {
+    var user = { ID: 2, 'Tên đăng nhập': 'user2', 'Email': 'u2@test.com', 'Phòng ban': '["Kỹ thuật","Kinh doanh"]' }
+    var appRole = { 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '' }
+    var token = ssoCreateSession(user, appRole)
+    var session = validateSession(token)
+    expect(session.departments).toEqual(['Kỹ thuật', 'Kinh doanh'])
   })
 })
 
 describe('validateSession', () => {
   test('returns session for valid token', () => {
-    const { token } = login('admin', 'admin123')
-    const session = validateSession(token)
+    var token = createSession(1, 'admin', 'admin@test.com', 'admin')
+    var session = validateSession(token)
     expect(session).not.toBeNull()
     expect(session.username).toBe('admin')
   })
@@ -63,34 +42,15 @@ describe('validateSession', () => {
 
 describe('logout', () => {
   test('invalidates session', () => {
-    const { token } = login('admin', 'admin123')
+    var token = createSession(1, 'admin', 'admin@test.com', 'admin')
     logout(token)
     expect(validateSession(token)).toBeNull()
   })
 })
 
-describe('changePassword', () => {
-  test('changes password and invalidates session', () => {
-    const { token } = login('admin', 'admin123')
-    changePassword(token, 'admin123', 'newpass99')
-    expect(validateSession(token)).toBeNull()
-    expect(() => login('admin', 'newpass99')).not.toThrow()
-  })
-
-  test('throws when old password is wrong', () => {
-    const { token } = login('admin', 'admin123')
-    expect(() => changePassword(token, 'wrong', 'newpass99')).toThrow()
-  })
-
-  test('throws when new password is too short', () => {
-    const { token } = login('admin', 'admin123')
-    expect(() => changePassword(token, 'admin123', '123')).toThrow()
-  })
-})
-
 describe('requireAdmin', () => {
   test('passes for admin token', () => {
-    const { token } = login('admin', 'admin123')
+    var token = createSession(1, 'admin', 'admin@test.com', 'admin')
     expect(() => requireAdmin(token)).not.toThrow()
   })
 
@@ -99,67 +59,24 @@ describe('requireAdmin', () => {
   })
 })
 
-describe('lockUser', () => {
-  beforeEach(() => {
-    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
+describe('getPermissions', () => {
+  test('returns full perms for admin role', () => {
+    var perms = getPermissions({ 'Quyền': 'admin', 'Phân quyền chi tiết': '' })
+    expect(perms.hoSo.c).toBe(true)
+    expect(perms.hoSo.d).toBe(true)
+    expect(perms.user.c).toBe(true)
   })
 
-  test('locks target user', () => {
-    const token = loginAs('admin', 'admin123')
-    lockUser(token, 2)
-    invalidateSheetCache(SHEETS.USERS)
-    const users = getSheetData(SHEETS.USERS)
-    const u2 = users.find(u => u['ID'] === 2)
-    expect(u2['Trạng thái']).toBe('Locked')
+  test('returns default perms for Xem role', () => {
+    var perms = getPermissions({ 'Quyền': 'Xem', 'Phân quyền chi tiết': '' })
+    expect(perms.hoSo.r).toBe(true)
+    expect(perms.hoSo.c).toBe(false)
   })
 
-  test('cannot lock self', () => {
-    const token = loginAs('admin', 'admin123')
-    expect(() => lockUser(token, 1)).toThrow('Không thể tự khóa')
-  })
-
-  test('locked user cannot login', () => {
-    const token = loginAs('admin', 'admin123')
-    lockUser(token, 2)
-    invalidateSheetCache(SHEETS.USERS)
-    expect(() => login('user2', 'pass123')).toThrow('khóa')
-  })
-})
-
-describe('unlockUser', () => {
-  test('unlocks a locked user', () => {
-    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
-    const token = loginAs('admin', 'admin123')
-    lockUser(token, 2)
-    unlockUser(token, 2)
-    invalidateSheetCache(SHEETS.USERS)
-    expect(() => login('user2', 'pass123')).not.toThrow()
-  })
-})
-
-describe('adminResetPassword', () => {
-  beforeEach(() => {
-    seedUser(2, 'user2', 'pass123', 'u2@test.com', 'Biên tập viên')
-  })
-
-  test('resets password for target user', () => {
-    const token = loginAs('admin', 'admin123')
-    adminResetPassword(token, 2, 'newpass99')
-    invalidateSheetCache(SHEETS.USERS)
-    expect(() => login('user2', 'newpass99')).not.toThrow()
-  })
-
-  test('throws when new password is too short', () => {
-    const token = loginAs('admin', 'admin123')
-    expect(() => adminResetPassword(token, 2, '123')).toThrow('ít nhất 6')
-  })
-
-  test('sets MustChangePass flag', () => {
-    const token = loginAs('admin', 'admin123')
-    adminResetPassword(token, 2, 'newpass99')
-    invalidateSheetCache(SHEETS.USERS)
-    const users = getSheetData(SHEETS.USERS)
-    const u2 = users.find(u => u['ID'] === 2)
-    expect(u2['MustChangePass']).toBe('TRUE')
+  test('parses custom perms from JSON', () => {
+    var custom = JSON.stringify({ hoSo: { c: true, r: true, u: true, d: false } })
+    var perms = getPermissions({ 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': custom })
+    expect(perms.hoSo.c).toBe(true)
+    expect(perms.hoSo.d).toBe(false)
   })
 })

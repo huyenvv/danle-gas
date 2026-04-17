@@ -7,20 +7,16 @@ REFERENCE_MAP[SHEETS.DANH_MUC]     = { targetSheet: SHEETS.HO_SO, targetColumn: 
 REFERENCE_MAP[SHEETS.PHONG_BAN]    = { targetSheet: SHEETS.HO_SO, targetColumn: 'Phòng ban' }
 REFERENCE_MAP[SHEETS.DU_AN]        = { targetSheet: SHEETS.HO_SO, targetColumn: 'Dự án' }
 REFERENCE_MAP[SHEETS.NHA_CUNG_CAP] = { targetSheet: SHEETS.HO_SO, targetColumn: 'Nhà cung cấp' }
-REFERENCE_MAP[SHEETS.USERS]        = { targetSheet: SHEETS.HO_SO, targetColumn: 'Phụ trách' }
 
 function getAllData() {
-  var rawUsers = getSheetData(SHEETS.USERS)
+  // Read authorized users from local _Phân Quyền (users are managed by SSO Portal)
   var roles = getSheetData(SHEETS.APP_ROLES)
-  var users = rawUsers.map(function(u) {
-    var appRole = roles.find(function(r) {
-      return String(r['UserID']) === String(u['ID']) && r['AppID'] === APP_ID
-    })
+  var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     return {
-      ID: u['ID'],
-      'Tên đăng nhập': u['Tên đăng nhập'],
-      'Phòng ban': u['Phòng ban'] || '',
-      'Quyền': appRole ? appRole['Quyền'] : '',
+      ID: r['UserID'],
+      'Tên đăng nhập': r['Tên đăng nhập'] || '',
+      'Phòng ban': '',
+      'Quyền': r['Quyền'],
     }
   })
   return {

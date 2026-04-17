@@ -15,6 +15,7 @@ const GAS_CORE_FILES = [
   'utils.js',
   'sheets-crud.js',
   'auth-core.js',
+  'sso.js',
   'drive-io.js',
   'license.js',
 ]

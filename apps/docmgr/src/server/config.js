@@ -1,11 +1,9 @@
 // ===== App-specific sheet names & initialization =====
 // Base helpers (getConfig, setConfig, getSheet, _hashPassword, etc.) provided by gas-core/config-base.js
+// Users are managed by SSO Portal (parent app). This app only manages local authorization (_Phân Quyền).
 
 var SHEETS = {
-  USERS: '_Người Dùng',
   APP_ROLES: '_Phân Quyền',
-  APPS: '_Ứng Dụng',
-  SYS: '_Hệ Thống',
   DANH_MUC: 'Danh Mục',
   PHONG_BAN: 'Phòng Ban',
   DU_AN: 'Dự Án',
@@ -21,20 +19,12 @@ var APP_ID = 'docmgr'
 // ===== First-run initialization =====
 function ensureInitialized() {
   var central = getCentralSheet()
-  var usersSheet = central.getSheetByName(SHEETS.USERS)
-
   _ensureAllTabsExist(central)
-
-  if (!usersSheet || usersSheet.getLastRow() <= 1) {
-    _seedAdminUser(central)
-  }
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS,         headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban'] },
-    { name: SHEETS.APP_ROLES,     headers: ['UserID', 'AppID', 'Quyền', 'Phân quyền chi tiết'] },
-    { name: SHEETS.APPS,          headers: ['AppID', 'Tên App', 'Webapp URL', 'Mô tả', 'API Secret', 'Trạng thái'] },
+    { name: SHEETS.APP_ROLES,     headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết'] },
     { name: SHEETS.DANH_MUC,      headers: ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha'] },
     { name: SHEETS.PHONG_BAN,     headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Danh mục cho phép'] },
     { name: SHEETS.DU_AN,         headers: ['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ'] },
@@ -51,43 +41,10 @@ function _ensureAllTabsExist(ss) {
       sheet = ss.insertSheet(def.name)
       sheet.getRange(1, 1, 1, def.headers.length).setValues([def.headers])
       sheet.setFrozenRows(1)
-      if (def.name === SHEETS.SYS) sheet.hideSheet()
-      if (def.name === SHEETS.USERS) {
-        var pwdIdx = def.headers.indexOf('Mật khẩu')
-        if (pwdIdx !== -1) sheet.hideColumns(pwdIdx + 1)
-      }
     }
   })
-}
 
-// Run once from GAS editor to hide the password column on an existing sheet
-function _hidePasswordColumn() {
-  var ss = getCentralSheet()
-  var sheet = ss.getSheetByName(SHEETS.USERS)
-  if (!sheet) return
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-  var idx = headers.indexOf('Mật khẩu')
-  if (idx !== -1) sheet.hideColumns(idx + 1)
-}
-
-function _seedAdminUser(ss) {
-  var usersSheet = ss.getSheetByName(SHEETS.USERS)
-  var rolesSheet = ss.getSheetByName(SHEETS.APP_ROLES)
-  var appsSheet  = ss.getSheetByName(SHEETS.APPS)
-
-  var passwordHash = _hashPassword('admin', 'admin123')
-  var ownerEmail = ''
-  try { ownerEmail = SpreadsheetApp.getActiveSpreadsheet().getOwner().getEmail() } catch(e) {}
-
-  usersSheet.appendRow([1, 'admin', passwordHash, ownerEmail, 'Active', 'FALSE', '', ''])
-  rolesSheet.appendRow([1, APP_ID, 'admin', ''])
-
-  if (appsSheet.getLastRow() <= 1) {
-    var url = ''
-    try { url = ScriptApp.getService().getUrl() } catch(e) {}
-    appsSheet.appendRow([APP_ID, 'Quản lý Tài liệu', url, '', '', 'Active'])
-  }
-
+  // Seed default categories if empty
   var catSheet = ss.getSheetByName(SHEETS.DANH_MUC)
   if (catSheet && catSheet.getLastRow() <= 1) {
     catSheet.appendRow([1, 'Hợp đồng', 'contract', 'Hợp đồng kinh tế', ''])

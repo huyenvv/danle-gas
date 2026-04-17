@@ -1,20 +1,20 @@
 require('./setup.js')
-const { resetAll, setupUserSheets, setupDocSheets, CAT_HEADERS, seedUser, loginAs } = require('./helpers')
+const { resetAll, setupRoleSheets, setupDocSheets, CAT_HEADERS, seedUser, createSession } = require('./helpers')
 
 let editorToken
 
 beforeEach(() => {
   resetAll()
-  setupUserSheets()
+  setupRoleSheets()
   setupDocSheets()
 
-  seedUser(1, 'editor', 'pass123', 'e@test.com', 'Biên tập viên')
+  seedUser(1, 'editor', 'e@test.com', 'Biên tập viên')
   SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
     [1, 'Hợp đồng', '', '', '']
   )
   invalidateSheetCache(SHEETS.DANH_MUC)
 
-  editorToken = loginAs('editor', 'pass123')
+  editorToken = createSession(1, 'editor', 'e@test.com', 'Biên tập viên')
 })
 
 describe('createDocument', () => {
@@ -90,8 +90,8 @@ describe('deleteDocument', () => {
   let adminToken
 
   beforeEach(() => {
-    seedUser(2, 'admin', 'admin123', 'a@test.com', 'admin')
-    adminToken = loginAs('admin', 'admin123')
+    seedUser(2, 'admin', 'a@test.com', 'admin')
+    adminToken = createSession(2, 'admin', 'a@test.com', 'admin')
     createDocument(editorToken, { 'Tên hồ sơ': 'To Delete', 'Danh mục': 1 }, null)
     invalidateSheetCache(SHEETS.HO_SO)
   })

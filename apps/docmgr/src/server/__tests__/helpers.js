@@ -1,8 +1,8 @@
 // Shared test helpers — header constants, reset, seed, login utilities
+// Updated for SSO model: users are managed by parent app, this app only manages roles.
 
 // ── Header constants matching config.js ──────────────────────────────────────
-var USER_HEADERS = ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban']
-var ROLE_HEADERS = ['UserID', 'AppID', 'Quyền', 'Phân quyền chi tiết']
+var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết']
 var DOC_HEADERS = [
   'ID', 'Tên hồ sơ', 'Danh mục', 'Phòng ban', 'Ngày ban hành',
   'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước',
@@ -21,8 +21,7 @@ function resetAll() {
 }
 
 // ── Sheet setup helpers ──────────────────────────────────────────────────────
-function setupUserSheets() {
-  SpreadsheetApp._addSheet(SHEETS.USERS, [USER_HEADERS])
+function setupRoleSheets() {
   SpreadsheetApp._addSheet(SHEETS.APP_ROLES, [ROLE_HEADERS])
 }
 
@@ -33,32 +32,38 @@ function setupDocSheets() {
   SpreadsheetApp._addSheet(SHEETS.COMMENTS, [['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian']])
 }
 
-// ── Seed a user with role ────────────────────────────────────────────────────
-function seedUser(id, username, password, email, role) {
-  var hashed = _hashPassword(username, password)
-  SpreadsheetApp._sheets[SHEETS.USERS]._rows.push(
-    [id, username, hashed, email, 'Active', false, '', '']
-  )
+// ── Seed a user role in local _Phân Quyền + create session ──────────────────
+function seedUser(id, username, email, role) {
   SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push(
-    [id, APP_ID, role, '']
+    [SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.length, id, username, APP_ID, role, '']
   )
-  invalidateSheetCache(SHEETS.USERS)
   invalidateSheetCache(SHEETS.APP_ROLES)
 }
 
-// ── Login shortcut ───────────────────────────────────────────────────────────
-function loginAs(username, password) {
-  return login(username, password).token
+// ── Create a session directly (SSO session creation) ────────────────────────
+function createSession(userId, username, email, role) {
+  var appRole = { 'Quyền': role, 'Phân quyền chi tiết': '' }
+  var token = generateUuid()
+  var sessionData = {
+    userId: userId,
+    username: username,
+    email: email || username + '@test.com',
+    role: role,
+    mustChangePass: false,
+    departments: [],
+    permissions: getPermissions(appRole),
+  }
+  cachePut('sess_' + token, sessionData, SESSION_TTL)
+  return token
 }
 
 module.exports = {
-  USER_HEADERS: USER_HEADERS,
   ROLE_HEADERS: ROLE_HEADERS,
   DOC_HEADERS: DOC_HEADERS,
   CAT_HEADERS: CAT_HEADERS,
   resetAll: resetAll,
-  setupUserSheets: setupUserSheets,
+  setupRoleSheets: setupRoleSheets,
   setupDocSheets: setupDocSheets,
   seedUser: seedUser,
-  loginAs: loginAs,
+  createSession: createSession,
 }

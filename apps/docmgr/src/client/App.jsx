@@ -27,7 +27,7 @@ function AppInner() {
           </div>
           <h2 className="text-xl font-bold text-on-surface">Không có quyền truy cập</h2>
           <p className="text-sm text-on-surface-variant leading-relaxed">{accessError}</p>
-          <p className="text-xs text-on-surface-variant">Liên hệ quản trị viên để được cấp quyền.</p>
+          <p className="text-xs text-on-surface-variant">Vui lòng truy cập qua SSO Portal hoặc liên hệ quản trị viên.</p>
         </div>
       </div>
     )

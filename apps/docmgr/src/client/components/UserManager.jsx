@@ -3,7 +3,7 @@ import gasCall from '../gasClient.js'
 import { viMatch } from '../utils/viSearch.js'
 import Icon from './common/Icon.jsx'
 import FormModal from './common/FormModal.jsx'
-import { inputCls, selectCls, labelCls, fieldCls } from './common/formStyles.js'
+import { selectCls, labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
 
 const ROLE_OPTIONS = ['admin', 'Giám đốc', 'Trưởng phòng', 'Nhân viên', 'Văn thư']
@@ -14,7 +14,6 @@ const ROLE_BADGE = {
   'Trưởng phòng':  'bg-amber-100 text-amber-700',
   'Nhân viên':     'bg-surface-container text-on-surface-variant',
   'Văn thư':      'bg-cyan-100 text-cyan-700',
-  // legacy
   'Quản trị viên': 'bg-primary/10 text-primary',
   'Biên tập viên': 'bg-secondary/10 text-secondary',
   'Xem':            'bg-surface-container text-on-surface-variant',
@@ -49,16 +48,13 @@ function parsePermissions(raw, role) {
   return defaultPerms()
 }
 
-const EMPTY_FORM = { 'Tên đăng nhập': '', 'Email': '', 'Quyền': 'Nhân viên' }
-
-export default function UserManager({ token, lookups = {} }) {
+export default function UserManager({ token }) {
   const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
-  const [modal, setModal]     = useState(null) // null | { mode: 'create' | 'edit', user?: {} }
-  const [form, setForm]       = useState(EMPTY_FORM)
+  const [modal, setModal]     = useState(null) // null | { user }
+  const [role, setRole]       = useState('Nhân viên')
   const [perms, setPerms]     = useState(defaultPerms())
-  const [selectedDepts, setSelectedDepts] = useState([]) // Nhân viên / Trưởng phòng dept assignment
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
@@ -80,63 +76,40 @@ export default function UserManager({ token, lookups = {} }) {
 
   useEffect(() => { load() }, [])
 
-  function openCreate() {
-    setForm(EMPTY_FORM)
-    setPerms(defaultPerms())
-    setSelectedDepts([])
-    setFormError('')
-    setModal({ mode: 'create' })
-  }
-
   function openEdit(user) {
-    setForm({
-      'Tên đăng nhập': user['Tên đăng nhập'] || '',
-      'Email':         user['Email'] || '',
-      'Quyền':         user['Quyền'] || 'Nhân viên',
-    })
-    const parsed = parsePermissions(user['Phân quyền chi tiết'], user['Quyền'])
-    setPerms(parsed)
-    // Parse Phòng ban for this user
-    let depts = []
-    try {
-      const pb = user['Phòng ban']
-      if (pb && pb.charAt(0) === '[') depts = JSON.parse(pb)
-      else if (pb) depts = [pb]
-    } catch(_) {}
-    setSelectedDepts(depts)
+    const currentRole = user['Quyền'] || 'Nhân viên'
+    setRole(currentRole)
+    setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
     setFormError('')
-    setModal({ mode: 'edit', user })
+    setModal({ user })
   }
 
   function closeModal() { setModal(null); setFormError('') }
 
-  function handleRoleChange(role) {
-    setForm(f => ({ ...f, 'Quyền': role }))
-    if (role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên') setPerms(fullPerms())
-    else if (role === 'Văn thư' || role === 'Trưởng phòng' || role === 'Biên tập viên') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
+  function handleRoleChange(newRole) {
+    setRole(newRole)
+    if (newRole === 'admin' || newRole === 'Giám đốc' || newRole === 'Quản trị viên') setPerms(fullPerms())
+    else if (newRole === 'Văn thư' || newRole === 'Trưởng phòng' || newRole === 'Biên tập viên') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
     else setPerms(defaultPerms())
   }
 
   function togglePerm(mod, op) {
-    if (form['Quyền'] === 'Quản trị viên') return
+    if (role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên') return
     setPerms(p => ({ ...p, [mod]: { ...p[mod], [op]: !p[mod][op] } }))
   }
 
   async function handleSave() {
-    if (!form['Tên đăng nhập']) { setFormError('Tên đăng nhập là bắt buộc'); return }
-    if (!form['Email']) { setFormError('Email là bắt buộc'); return }
+    if (!role) { setFormError('Vui lòng chọn quyền'); return }
     setSaving(true); setFormError('')
-    const isFullAdmin = form['Quyền'] === 'admin' || form['Quyền'] === 'Giám đốc' || form['Quyền'] === 'Quản trị viên'
+    const isFullAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
     const finalPerms = isFullAdmin ? fullPerms() : perms
-    const payload = { ...form, permissions: finalPerms, 'Phòng ban': selectedDepts }
     try {
-      if (modal.mode === 'create') {
-        await gasCall('api_addUser', token, payload)
-      } else {
-        await gasCall('api_updateUser', token, modal.user.ID, payload)
-      }
+      await gasCall('api_updateUser', token, modal.user.ID, {
+        'Tên đăng nhập': modal.user['Tên đăng nhập'],
+        'Quyền': role,
+      })
       closeModal()
-      showToast('Đã lưu người dùng', 'success')
+      showToast('Đã lưu phân quyền', 'success')
       load(true)
     } catch (err) {
       setFormError(err.message)
@@ -146,19 +119,18 @@ export default function UserManager({ token, lookups = {} }) {
     }
   }
 
-  async function handleLock(user) {
-    try { await gasCall('api_lockUser', token, user.ID); load(); showToast('Đã khóa tài khoản', 'success') }
-    catch (err) { showToast(err.message, 'error') }
+  async function handleRemoveRole(user) {
+    try {
+      await gasCall('api_removeUserRole', token, user.ID)
+      showToast('Đã xóa quyền', 'success')
+      load(true)
+    } catch (err) {
+      showToast(err.message, 'error')
+    }
   }
 
-  async function handleUnlock(user) {
-    try { await gasCall('api_unlockUser', token, user.ID); load(); showToast('Đã mở khóa tài khoản', 'success') }
-    catch (err) { showToast(err.message, 'error') }
-  }
-
-  const totalUsers  = users.length
-  const activeUsers = users.filter(u => u['Trạng thái'] === 'Active').length
-  const lockedUsers = users.filter(u => u['Trạng thái'] !== 'Active').length
+  const assignedUsers = users.filter(u => u['Quyền'])
+  const unassignedUsers = users.filter(u => !u['Quyền'])
 
   const filtered = users.filter(u => {
     if (!search) return true
@@ -166,9 +138,7 @@ export default function UserManager({ token, lookups = {} }) {
   })
 
   const avatar = (name) => (name || '?')[0].toUpperCase()
-  const isFullAdmin = form['Quyền'] === 'admin' || form['Quyền'] === 'Giám đốc' || form['Quyền'] === 'Quản trị viên'
-  const isAdmin = isFullAdmin // kept for backwards compat in template
-  const showDeptPicker = form['Quyền'] === 'Trưởng phòng' || form['Quyền'] === 'Nhân viên'
+  const isAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -186,10 +156,18 @@ export default function UserManager({ token, lookups = {} }) {
   return (
     <div className="space-y-6">
       {/* Stats cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard icon="group" label="Tổng users" value={totalUsers} color="primary" />
-        <StatCard icon="check_circle" label="Đang hoạt động" value={activeUsers} color="green" />
-        <StatCard icon="lock" label="Bị khóa" value={lockedUsers} color="red" />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <StatCard icon="group" label="Tổng users (SSO)" value={users.length} color="primary" />
+        <StatCard icon="shield_person" label="Đã phân quyền" value={assignedUsers.length} color="green" />
+        <StatCard icon="person_off" label="Chưa phân quyền" value={unassignedUsers.length} color="amber" />
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-primary/5 rounded-2xl p-4 flex items-start gap-3">
+        <Icon name="info" size={20} className="text-primary mt-0.5 shrink-0" />
+        <p className="text-xs text-on-surface-variant leading-relaxed">
+          Người dùng được quản lý từ <strong>SSO Portal</strong>. Tại đây bạn chỉ phân quyền truy cập cho ứng dụng này.
+        </p>
       </div>
 
       {/* Toolbar */}
@@ -203,15 +181,6 @@ export default function UserManager({ token, lookups = {} }) {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <div className="ml-auto">
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1"
-          >
-            <Icon name="person_add" size={18} />
-            Thêm người dùng
-          </button>
-        </div>
       </div>
 
       {/* Table */}
@@ -221,15 +190,13 @@ export default function UserManager({ token, lookups = {} }) {
             <tr className="bg-surface-container-low border-b border-outline-variant">
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quyền</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Phòng ban</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Trạng thái</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden lg:table-cell">Đăng nhập cuối</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Trạng thái (SSO)</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
             )}
             {filtered.map(user => (
               <tr key={user.ID} className="hover:bg-surface-container-low transition-colors">
@@ -245,44 +212,35 @@ export default function UserManager({ token, lookups = {} }) {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[user['Quyền']] || ROLE_BADGE['Xem']}`}>
-                    {user['Quyền'] || '—'}
-                  </span>
+                  {user['Quyền'] ? (
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[user['Quyền']] || ROLE_BADGE['Xem']}`}>
+                      {user['Quyền']}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-on-surface-variant italic">Chưa phân quyền</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 hidden md:table-cell">
-                  {(() => {
-                    let depts = []
-                    try {
-                      const pb = user['Phòng ban']
-                      if (pb && pb.charAt(0) === '[') depts = JSON.parse(pb)
-                      else if (pb) depts = [pb]
-                    } catch(_) {}
-                    return depts.length > 0
-                      ? <div className="flex flex-wrap gap-1">{depts.map(d => <span key={d} className="px-1.5 py-0.5 bg-surface-container rounded text-xs text-on-surface-variant">{d}</span>)}</div>
-                      : <span className="text-on-surface-variant text-xs">—</span>
-                  })()}
-                </td>
-                <td className="px-4 py-3">
                   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                     user['Trạng thái'] === 'Active'
                       ? 'bg-emerald-100 text-emerald-800'
                       : 'bg-error-container text-on-error-container'
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${user['Trạng thái'] === 'Active' ? 'bg-emerald-500' : 'bg-error'}`} />
-                    {user['Trạng thái'] === 'Active' ? 'Hoạt động' : 'Bị khóa'}
+                    {user['Trạng thái'] === 'Active' ? 'Hoạt động' : user['Trạng thái'] || '—'}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-on-surface-variant text-xs hidden lg:table-cell">{user['Đăng nhập cuối'] || '—'}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1 justify-end">
                     <button onClick={() => openEdit(user)}
-                      className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
-                    {user['Trạng thái'] === 'Active' ? (
-                      <button onClick={() => handleLock(user)}
-                        className="text-xs px-2.5 py-1 rounded-lg text-amber-700 hover:bg-amber-50 transition-colors font-medium">Khóa</button>
-                    ) : (
-                      <button onClick={() => handleUnlock(user)}
-                        className="text-xs px-2.5 py-1 rounded-lg text-emerald-700 hover:bg-emerald-50 transition-colors font-medium">Mở khóa</button>
+                      className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">
+                      {user['Quyền'] ? 'Sửa quyền' : 'Phân quyền'}
+                    </button>
+                    {user['Quyền'] && (
+                      <button onClick={() => handleRemoveRole(user)}
+                        className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">
+                        Xóa quyền
+                      </button>
                     )}
                   </div>
                 </td>
@@ -297,102 +255,77 @@ export default function UserManager({ token, lookups = {} }) {
         )}
       </div>
 
-      {/* Add / Edit modal */}
+      {/* Edit role modal */}
       <FormModal
         open={!!modal}
-        title={modal?.mode === 'create' ? 'Thêm người dùng' : 'Sửa người dùng'}
-        icon={modal?.mode === 'create' ? 'person_add' : 'manage_accounts'}
+        title="Phân quyền"
+        icon="shield_person"
         onClose={closeModal}
         onSave={handleSave}
         saving={saving}
         error={formError}
         maxWidth="max-w-2xl"
       >
-        <div className="grid grid-cols-2 gap-4">
-          <div className={fieldCls}>
-            <label className={labelCls}>Tên đăng nhập *</label>
-            <input className={inputCls} value={form['Tên đăng nhập']}
-              onChange={e => setForm(f => ({ ...f, 'Tên đăng nhập': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Email *</label>
-            <input type="email" className={inputCls} value={form['Email']}
-              onChange={e => setForm(f => ({ ...f, 'Email': e.target.value }))} />
-          </div>
-          <div className={fieldCls + ' col-span-2'}>
-            <label className={labelCls}>Quyền</label>
-            <select className={selectCls} value={form['Quyền']} onChange={e => handleRoleChange(e.target.value)}>
-              {ROLE_OPTIONS.map(r => <option key={r}>{r}</option>)}
-            </select>
-          </div>
-
-          {/* Phòng ban multi-select — visible for Trưởng phòng / Nhân viên */}
-          {showDeptPicker && (
-            <div className={fieldCls + ' col-span-2'}>
-              <label className={labelCls}>Phòng ban</label>
-              <div className="flex flex-wrap gap-2 p-2.5 bg-surface-container-low rounded-xl min-h-[40px]">
-                {(lookups.phongBan || []).map(pb => {
-                  const name = pb['Tên phòng ban']
-                  const selected = selectedDepts.includes(name)
-                  return (
-                    <button key={pb.ID} type="button"
-                      onClick={() => setSelectedDepts(prev => selected ? prev.filter(d => d !== name) : [...prev, name])}
-                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${selected ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
-                    >
-                      {name}
-                      {selected && <Icon name="close" size={12} />}
-                    </button>
-                  )
-                })}
-                {(lookups.phongBan || []).length === 0 && (
-                  <span className="text-xs text-on-surface-variant">Chưa có phòng ban</span>
-                )}
+        {modal && (
+          <>
+            {/* User info (read-only) */}
+            <div className="bg-surface-container-low rounded-xl p-3 flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span className="text-base font-semibold text-primary">{avatar(modal.user['Tên đăng nhập'])}</span>
               </div>
-              {selectedDepts.length > 0 && (
-                <p className="text-xs text-on-surface-variant mt-1">Đã chọn: {selectedDepts.join(', ')}</p>
-              )}
+              <div>
+                <p className="font-medium text-on-surface text-sm">{modal.user['Tên đăng nhập']}</p>
+                <p className="text-xs text-on-surface-variant">{modal.user['Email'] || '—'}</p>
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Permission matrix */}
-        <div className="mt-5">
-          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2 flex items-center gap-1">
-            <Icon name="shield" size={14} />
-            Phân quyền chi tiết
-            {isAdmin && <span className="ml-2 text-primary">(Toàn quyền)</span>}
-          </p>
-          <div className="overflow-x-auto rounded-xl border border-outline-variant">
-            <table className="min-w-full text-xs">
-              <thead>
-                <tr className="bg-surface-container-low">
-                  <th className="px-3 py-2 text-left text-on-surface-variant font-medium">Chức năng</th>
-                  {OPS.map(op => (
-                    <th key={op.key} className="px-3 py-2 text-center text-on-surface-variant font-medium w-16">{op.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant/40">
-                {MODULES.map(mod => (
-                  <tr key={mod.key} className="hover:bg-surface-container-lowest">
-                    <td className="px-3 py-2 font-medium text-on-surface">{mod.label}</td>
-                    {OPS.map(op => (
-                      <td key={op.key} className="px-3 py-2 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isAdmin ? true : !!(perms[mod.key]?.[op.key])}
-                          disabled={isAdmin}
-                          onChange={() => togglePerm(mod.key, op.key)}
-                          className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-default disabled:opacity-60"
-                        />
-                      </td>
+            <div className={fieldCls}>
+              <label className={labelCls}>Quyền</label>
+              <select className={selectCls} value={role} onChange={e => handleRoleChange(e.target.value)}>
+                {ROLE_OPTIONS.map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+
+            {/* Permission matrix — hidden, hardcoded per role for now */}
+            {/* <div className="mt-5">
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2 flex items-center gap-1">
+                <Icon name="shield" size={14} />
+                Phân quyền chi tiết
+                {isAdmin && <span className="ml-2 text-primary">(Toàn quyền)</span>}
+              </p>
+              <div className="overflow-x-auto rounded-xl border border-outline-variant">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="bg-surface-container-low">
+                      <th className="px-3 py-2 text-left text-on-surface-variant font-medium">Chức năng</th>
+                      {OPS.map(op => (
+                        <th key={op.key} className="px-3 py-2 text-center text-on-surface-variant font-medium w-16">{op.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant/40">
+                    {MODULES.map(mod => (
+                      <tr key={mod.key} className="hover:bg-surface-container-lowest">
+                        <td className="px-3 py-2 font-medium text-on-surface">{mod.label}</td>
+                        {OPS.map(op => (
+                          <td key={op.key} className="px-3 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isAdmin ? true : !!(perms[mod.key]?.[op.key])}
+                              disabled={isAdmin}
+                              onChange={() => togglePerm(mod.key, op.key)}
+                              className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-default disabled:opacity-60"
+                            />
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </tbody>
+                </table>
+              </div>
+            </div> */}
+          </>
+        )}
       </FormModal>
     </div>
   )

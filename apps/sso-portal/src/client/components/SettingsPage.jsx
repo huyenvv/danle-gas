@@ -1,0 +1,106 @@
+import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
+import gasCall from '../gasClient.js'
+
+export default function SettingsPage() {
+  const { session } = useAuth()
+  const { addToast } = useToast()
+  const [config, setConfig] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    gasCall('api_getMailConfig', session.token)
+      .then(data => { setConfig(data || {}); setLoading(false) })
+      .catch(err => { addToast(err.message, 'error'); setLoading(false) })
+  }, [])
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await gasCall('api_saveMailConfig', session.token, config)
+      addToast('Đã lưu cấu hình', 'success')
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function updateConfig(key, value) {
+    setConfig(prev => ({ ...prev, [key]: value }))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <span className="material-symbols-outlined text-4xl text-primary animate-pulse">settings</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-lg font-bold text-on-surface mb-5">Cài đặt</h2>
+
+      {/* Email config */}
+      <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-5 mb-5">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-xl text-primary">mail</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-on-surface">Gửi email thông báo</h3>
+            <p className="text-xs text-on-surface-variant">Cấu hình gửi email khi tạo user mới hoặc reset mật khẩu</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-on-surface">Bật gửi email</label>
+            <button
+              onClick={() => updateConfig('MAIL_ENABLED', config.MAIL_ENABLED === 'TRUE' ? 'FALSE' : 'TRUE')}
+              className={`w-11 h-6 rounded-full transition-colors relative
+                ${config.MAIL_ENABLED === 'TRUE' ? 'bg-primary' : 'bg-outline-variant'}`}
+            >
+              <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform
+                ${config.MAIL_ENABLED === 'TRUE' ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+
+          {config.MAIL_ENABLED === 'TRUE' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Tiêu đề email (tạo user mới)</label>
+                <input type="text" value={config.MAIL_SUBJECT_NEW_USER || ''}
+                  onChange={e => updateConfig('MAIL_SUBJECT_NEW_USER', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
+                  placeholder="Tài khoản mới đã được tạo" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1.5">
+                  Nội dung email
+                  <span className="text-outline ml-1">(dùng {'{username}'} và {'{password}'} làm biến)</span>
+                </label>
+                <textarea value={config.MAIL_BODY_NEW_USER || ''}
+                  onChange={e => updateConfig('MAIL_BODY_NEW_USER', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition resize-none font-mono"
+                  rows={5}
+                  placeholder={'Xin chào {username},\n\nTài khoản của bạn đã được tạo.\nTên đăng nhập: {username}\nMật khẩu mặc định: {password}\n\nVui lòng đổi mật khẩu ngay lần đăng nhập đầu tiên.'} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <button onClick={handleSave} disabled={saving}
+        className="px-6 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 transition flex items-center gap-2">
+        <span className="material-symbols-outlined text-lg">save</span>
+        {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
+      </button>
+    </div>
+  )
+}
