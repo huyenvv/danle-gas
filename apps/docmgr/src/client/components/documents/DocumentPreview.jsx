@@ -22,15 +22,41 @@ function parseAssignees(v) {
   return [String(v)]
 }
 
-export default function DocumentPreview({ doc, lookups, isAdmin, token, session, onClose, onEdit, onDelete }) {
+function formatFileSize(size) {
+  var value = Number(size || 0)
+  if (!value) return '—'
+  if (value < 1024) return value + ' B'
+  if (value < 1024 * 1024) return (value / 1024).toFixed(1).replace(/\.0$/, '') + ' KB'
+  if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(1).replace(/\.0$/, '') + ' MB'
+  return (value / (1024 * 1024 * 1024)).toFixed(1).replace(/\.0$/, '') + ' GB'
+}
+
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—'
+  try {
+    var d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    var date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    var time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    return time + ' ' + date
+  } catch (_) {
+    return dateStr
+  }
+}
+
+export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, canDelete, token, session, onClose, onEdit, onDelete, onDocUpdated }) {
   const confirm = useConfirm()
   const { showToast } = useToast()
+  const [doc, setDoc] = useState(initialDoc)
   const fileInfos = parseFileInfos(doc['File ID'])
   const [slideIdx, setSlideIdx] = useState(0)
   const [comments, setComments] = useState([])
   const [commentInput, setCommentInput] = useState('')
   const [commentSaving, setCommentSaving] = useState(false)
   const commentsEndRef = useRef(null)
+  const [transitioning, setTransitioning] = useState(false)
+  const [transitionLabel, setTransitionLabel] = useState('')
+  const [giaoViecForm, setGiaoViecForm] = useState(null) // null | { phuTrach, phoiHop[] }
 
   const currentFile = fileInfos[slideIdx] || null
   const previewUrl = currentFile
@@ -49,15 +75,29 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
 
   async function handleAddComment(e) {
     e.preventDefault()
-    if (!commentInput.trim()) return
-    setCommentSaving(true)
+    var content = commentInput.trim()
+    if (!content) return
+    var optimisticId = 'tmp-' + Date.now()
+    var optimisticComment = {
+      ID: optimisticId,
+      DocID: doc['ID'],
+      UserID: session?.userId,
+      'Tên người dùng': session?.username || 'Bạn',
+      'Nội dung': content,
+      'Thời gian': new Date().toISOString(),
+      _pending: true,
+    }
+    setComments(prev => [...prev, optimisticComment])
+    setCommentInput('')
+    setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
     try {
-      const r = await gasCall('api_addComment', token, doc['ID'], commentInput.trim())
-      setComments(prev => [...prev, r.data])
-      setCommentInput('')
-      setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
-    } catch(_) {}
-    finally { setCommentSaving(false) }
+      const r = await gasCall('api_addComment', token, doc['ID'], content)
+      setComments(prev => prev.map(c => c.ID === optimisticId ? r.data : c))
+    } catch(err) {
+      setComments(prev => prev.filter(c => c.ID !== optimisticId))
+      setCommentInput(prev => prev || content)
+      showToast(err.message || 'Không thể gửi bình luận', 'error')
+    }
   }
 
   function getCategoryName(id) {
@@ -85,11 +125,111 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
     })
   }
 
-  const diff = (Number(doc['Giá trị HĐ']) || 0) - (Number(doc['Giá trị thực hiện']) || 0)
+  // ── Workflow helpers ──
+  const status = doc['Tình trạng'] || ''
+  const role = session?.role || ''
+  const isPhuTrach = (() => {
+    const list = parseAssignees(doc['Phụ trách'])
+    return list.includes(String(session?.userId)) || list.includes(session?.username)
+  })()
+  const isPhoiHop = (() => {
+    const list = parseAssignees(doc['Người phối hợp'])
+    return list.includes(String(session?.userId)) || list.includes(session?.username)
+  })()
+  const COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  const canComment = COMMENT_ROLES.includes(role) || isPhuTrach || isPhoiHop
+  const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
+  const canEditDoc = role === 'Giám đốc'
+    ? status === 'Chờ duyệt'
+    : isFullAdmin
+
+  function getAvailableActions() {
+    const actions = []
+    if (isFullAdmin) {
+      // Admin sees all possible transitions for current status
+      if (!status || status === 'Chờ duyệt') actions.push({ key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', color: 'primary' })
+      if (status === 'Chờ xử lý') {
+        actions.push({ key: 'thuHoi', label: 'Thu hồi', icon: 'undo', color: 'amber' })
+        actions.push({ key: 'nhanViec', label: 'Nhận việc', icon: 'check_circle', color: 'blue' })
+      }
+      if (status === 'Đang xử lý') actions.push({ key: 'hoanThanh', label: 'Hoàn thành', icon: 'task_alt', color: 'emerald' })
+      return actions
+    }
+    if (role === 'Giám đốc') {
+      if (status === 'Chờ duyệt') actions.push({ key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', color: 'primary' })
+      if (status === 'Chờ xử lý') actions.push({ key: 'thuHoi', label: 'Thu hồi', icon: 'undo', color: 'amber' })
+    }
+    if (isPhuTrach && role !== 'Giám đốc') {
+      if (status === 'Chờ xử lý') actions.push({ key: 'nhanViec', label: 'Nhận việc', icon: 'check_circle', color: 'blue' })
+      if (status === 'Đang xử lý') actions.push({ key: 'hoanThanh', label: 'Hoàn thành', icon: 'task_alt', color: 'emerald' })
+    }
+    return actions
+  }
+
+  async function handleTransition(action, data) {
+    if (transitioning) return
+    const actionLabel = action === 'giaoViec'
+      ? 'Giao việc'
+      : action === 'thuHoi'
+        ? 'Thu hồi'
+        : action === 'nhanViec'
+          ? 'Nhận việc'
+          : action === 'hoanThanh'
+            ? 'Hoàn thành'
+            : action
+    if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
+    setTransitionLabel(actionLabel)
+    setTransitioning(true)
+    try {
+      const res = await gasCall('api_transitionDocument', token, doc.ID, action, data)
+      setDoc(prev => ({ ...prev, ...res.data }))
+      showToast('Đã chuyển trạng thái', 'success')
+      setGiaoViecForm(null)
+      if (onDocUpdated) onDocUpdated()
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setTransitioning(false)
+      setTransitionLabel('')
+    }
+  }
+
+  function openGiaoViec() {
+    setGiaoViecForm({ phuTrach: '', phoiHop: parseAssignees(doc['Người phối hợp']) })
+  }
+
+  async function submitGiaoViec() {
+    if (!giaoViecForm.phuTrach) { showToast('Phải chọn người phụ trách', 'error'); return }
+    await handleTransition('giaoViec', {
+      'Phụ trách': giaoViecForm.phuTrach,
+      'Người phối hợp': giaoViecForm.phoiHop,
+    })
+  }
+
+  const availableActions = getAvailableActions()
+  const primaryGiaoViecAction = role === 'Giám đốc' && status === 'Chờ duyệt'
+    ? availableActions.find(a => a.key === 'giaoViec')
+    : null
+  const workflowActions = primaryGiaoViecAction
+    ? availableActions.filter(a => a.key !== primaryGiaoViecAction.key)
+    : availableActions
+  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden">
+      <div className="relative bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden">
+
+        {transitioning && (
+          <div className="absolute inset-0 z-20 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center">
+              <Icon name="progress_activity" size={22} className="text-primary animate-spin" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-on-surface">Đang {transitionLabel ? transitionLabel.toLowerCase() : 'cập nhật trạng thái'}</p>
+              <p className="text-xs text-on-surface-variant">Vui lòng chờ trong giây lát…</p>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="bg-surface-container-low px-6 py-4 flex items-center gap-4 border-b border-outline-variant shrink-0">
@@ -100,8 +240,20 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
             <h3 className="font-semibold text-on-surface text-base truncate">{doc['Tên hồ sơ']}</h3>
             <p className="text-xs text-on-surface-variant">{doc['Số hồ sơ'] ? `Số hồ sơ: ${doc['Số hồ sơ']}` : 'Chưa có số hồ sơ'}</p>
           </div>
-          <button onClick={onClose}
-            className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={handleDownload} disabled={!currentFile || transitioning}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-40"
+              title="Tải về">
+              <Icon name="download" size={18} />
+            </button>
+            <button onClick={handleShare} disabled={!currentFile || transitioning}
+              className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-secondary/10 hover:text-secondary transition-colors disabled:opacity-40"
+              title="Chia sẻ">
+              <Icon name="share" size={18} />
+            </button>
+          </div>
+          <button onClick={onClose} disabled={transitioning}
+            className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors shrink-0 disabled:opacity-40">
             <Icon name="close" size={20} />
           </button>
         </div>
@@ -164,35 +316,112 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
           {/* Right: Sidebar */}
           <div className="w-96 border-l border-outline-variant overflow-y-auto flex flex-col shrink-0">
 
-            {/* Actions 2x2 */}
-            <div className="p-4 grid grid-cols-2 gap-2 border-b border-outline-variant">
-              <button onClick={handleDownload} disabled={!currentFile}
-                className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-surface-container-low text-on-surface hover:bg-primary/10 hover:text-primary transition-colors disabled:opacity-40 text-sm font-medium">
-                <Icon name="download" size={18} />
-                Tải về
-              </button>
-              <button onClick={handleShare} disabled={!currentFile}
-                className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-surface-container-low text-on-surface hover:bg-secondary/10 hover:text-secondary transition-colors disabled:opacity-40 text-sm font-medium">
-                <Icon name="share" size={18} />
-                Chia sẻ
-              </button>
-              <button onClick={onEdit}
-                className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-surface-container-low text-on-surface hover:bg-primary/10 hover:text-primary transition-colors text-sm font-medium">
-                <Icon name="edit" size={18} />
-                Chỉnh sửa
-              </button>
-              {isAdmin ? (
-                <button onClick={onDelete}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium">
-                  <Icon name="delete" size={18} />
-                  Xóa
+            {/* Actions */}
+            {hasSidebarActions && (
+            <div className="p-4 border-b border-outline-variant space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {canEditDoc && (
+                <button onClick={onEdit} disabled={transitioning}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-surface-container-low text-on-surface hover:bg-primary/10 hover:text-primary transition-colors text-sm font-medium disabled:opacity-40">
+                  <Icon name="edit" size={18} />
+                  Chỉnh sửa
                 </button>
-              ) : <div />}
+                )}
+                {primaryGiaoViecAction && (
+                <button onClick={openGiaoViec} disabled={transitioning}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-primary text-on-primary hover:bg-primary-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name={primaryGiaoViecAction.icon} size={18} />
+                  {primaryGiaoViecAction.label}
+                </button>
+                )}
+                {canDelete ? (
+                  <button onClick={onDelete} disabled={transitioning}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
+                    <Icon name="delete" size={18} />
+                    Xóa
+                  </button>
+                ) : (canEditDoc || primaryGiaoViecAction) ? <div /> : null}
+              </div>
+
+              {/* Workflow action buttons */}
+              {workflowActions.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {workflowActions.map(a => {
+                    const colorMap = {
+                      primary: 'bg-primary text-on-primary hover:bg-primary-700',
+                      blue: 'bg-blue-600 text-white hover:bg-blue-700',
+                      emerald: 'bg-emerald-600 text-white hover:bg-emerald-700',
+                      amber: 'bg-amber-500 text-white hover:bg-amber-600',
+                    }
+                    return (
+                      <button key={a.key} disabled={transitioning}
+                        onClick={() => a.key === 'giaoViec' ? openGiaoViec() : handleTransition(a.key)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-medium transition-colors disabled:opacity-50 shadow-md3-1 ${colorMap[a.color] || colorMap.primary}`}>
+                        <Icon name={a.icon} size={18} />
+                        {a.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Giao việc inline form */}
+              {giaoViecForm && (
+                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3 mt-2">
+                  <p className="text-xs font-semibold text-primary uppercase tracking-wide">Giao việc</p>
+                  <div>
+                    <label className="text-xs text-on-surface-variant mb-1 block">Người phụ trách *</label>
+                    <select className="w-full bg-surface-container-low border-none rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      value={giaoViecForm.phuTrach}
+                      onChange={e => setGiaoViecForm(f => ({ ...f, phuTrach: e.target.value }))}>
+                      <option value="">-- Chọn --</option>
+                      {(lookups.users || []).map(u => (
+                        <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-on-surface-variant mb-1 block">Người phối hợp</label>
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {giaoViecForm.phoiHop.map(a => {
+                        const dn = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)?.['Tên nhân viên'] || a
+                        return (
+                          <span key={a} className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full">
+                            {dn}
+                            <button type="button" onClick={() => setGiaoViecForm(f => ({ ...f, phoiHop: f.phoiHop.filter(x => x !== a) }))}
+                              className="hover:text-error"><Icon name="close" size={10} /></button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                    <select className="w-full bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      value=""
+                      onChange={e => {
+                        const v = e.target.value
+                        if (v && !giaoViecForm.phoiHop.includes(v) && v !== giaoViecForm.phuTrach) {
+                          setGiaoViecForm(f => ({ ...f, phoiHop: [...f.phoiHop, v] }))
+                        }
+                      }}>
+                      <option value="">+ Thêm...</option>
+                      {(lookups.users || []).filter(u => !giaoViecForm.phoiHop.includes(u['Tên đăng nhập']) && u['Tên đăng nhập'] !== giaoViecForm.phuTrach)
+                        .map(u => <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setGiaoViecForm(null)}
+                      className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
+                    <button onClick={submitGiaoViec} disabled={transitioning}
+                      className="px-4 py-1.5 text-xs bg-primary text-on-primary rounded-full disabled:opacity-50 hover:bg-primary-700 transition-colors shadow-md3-1">
+                      {transitioning ? 'Đang xử lý…' : 'Xác nhận giao việc'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+            )}
 
             {/* Classification */}
             <div className="p-4 border-b border-outline-variant">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Phân loại</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <p className="text-xs text-on-surface-variant mb-1">Danh mục</p>
@@ -209,31 +438,71 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                     {doc['Tình trạng'] || '—'}
                   </span>
                 </div>
+                <InfoRow icon="schedule" label="Ngày cập nhật" value={formatDate(doc['Ngày cập nhật'])} />
+                <InfoRow icon="attach_file" label="Số file đính kèm" value={String(fileInfos.length || 0)} />
               </div>
             </div>
 
             {/* Ownership */}
             <div className="p-4 border-b border-outline-variant">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Thông tin chủ thể</p>
               <div className="grid grid-cols-2 gap-3">
-                <InfoRow icon="corporate_fare" label="Phòng ban" value={doc['Phòng ban']} />
                 <InfoRow icon="calendar_today" label="Ngày ban hành" value={formatDate(doc['Ngày ban hành'])} />
                 <InfoRow icon="event" label="Ngày kết thúc" value={formatDate(doc['Ngày kết thúc'])} />
                 <div className="flex items-start gap-2">
-                  <Icon name="group" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                  <Icon name="person" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs text-on-surface-variant">Phụ trách</p>
                     {(() => {
                       const list = parseAssignees(doc['Phụ trách'])
                       if (!list.length) return <p className="text-sm text-on-surface">—</p>
+                      const u0 = (lookups.users || []).find(u => u['Tên đăng nhập'] === list[0])
+                      const dn = u0?.['Tên nhân viên'] || list[0]
+                      return (
+                        <div className="relative group inline-block mt-0.5">
+                          <span className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full cursor-default">
+                            <span className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                            {dn}
+                          </span>
+                          {u0?.['Email'] && (
+                            <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                <p className="text-surface/70">{u0['Email']}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Icon name="group" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs text-on-surface-variant">Người phối hợp</p>
+                    {(() => {
+                      const list = parseAssignees(doc['Người phối hợp'])
+                      if (!list.length) return <p className="text-sm text-on-surface">—</p>
                       return (
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          {list.map((a, i) => (
-                            <span key={i} title={String(a)} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
-                              <span className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">{String(a).charAt(0).toUpperCase()}</span>
-                              {a}
-                            </span>
-                          ))}
+                          {list.map((a, i) => {
+                            const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
+                            const dn = u?.['Tên nhân viên'] || a
+                            return (
+                              <div key={i} className="relative group inline-block">
+                                <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full cursor-default">
+                                  <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                                  {dn}
+                                </span>
+                                {u?.['Email'] && (
+                                  <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                    <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                      <p className="text-surface/70">{u['Email']}</p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )
                     })()}
@@ -244,61 +513,88 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
 
             {/* Business Context */}
             <div className="p-4 border-b border-outline-variant">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Bối cảnh kinh doanh</p>
               <div className="grid grid-cols-2 gap-3">
-                <InfoRow icon="account_tree" label="Dự án" value={doc['Dự án']} />
-                <InfoRow icon="inventory_2" label="Nhà cung cấp" value={doc['Nhà cung cấp']} />
-                {(doc['Giá trị HĐ'] || doc['Giá trị thực hiện']) && (
-                  <>
-                    <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
-                    <InfoRow icon="receipt_long" label="Giá trị TH" value={formatCurrency(doc['Giá trị thực hiện'])} />
-                    <div className="col-span-2">
-                      <InfoRow icon="balance" label="Chênh lệch" value={
-                        <span className={diff >= 0 ? 'text-emerald-700 font-semibold' : 'text-error font-semibold'}>{formatCurrency(diff)}</span>
-                      } />
-                    </div>
-                  </>
+                <InfoRow icon="account_tree" label="Dự án (Phòng ban)" value={doc['Dự án (Phòng ban)']} />
+                <InfoRow icon="inventory_2" label="NCC (Nơi ban hành)" value={doc['Nhà cung cấp (Nơi ban hành)']} />
+                {doc['Giá trị HĐ'] && (
+                  <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
                 )}
               </div>
             </div>
 
-            {/* Mô tả */}
-            {doc['Mô tả'] && (
+            {/* Ghi chú */}
+            {(doc['Mô tả'] || doc['Ghi chú']) && (
               <div className="p-4 border-b border-outline-variant">
                 <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Ghi chú</p>
-                <p className="text-sm text-on-surface leading-relaxed">{doc['Mô tả']}</p>
+                <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">{[doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join('\n')}</p>
+              </div>
+            )}
+
+            {/* Nơi lưu hồ sơ cứng */}
+            {doc['Nơi lưu hồ sơ cứng'] && (
+              <div className="p-4 border-b border-outline-variant">
+                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Nơi lưu hồ sơ cứng</p>
+                <div className="flex items-center gap-2">
+                  <Icon name="inventory_2" size={15} className="text-on-surface-variant shrink-0" />
+                  <p className="text-sm text-on-surface leading-relaxed">{doc['Nơi lưu hồ sơ cứng']}</p>
+                </div>
               </div>
             )}
 
             {/* Người tạo / cập nhật */}
             {(doc['Người tạo'] || doc['Người cập nhật']) && (
               <div className="p-4 border-b border-outline-variant">
-                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Lịch sử</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {doc['Người tạo'] && (
-                    <div className="flex items-start gap-2">
-                      <Icon name="person_add" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-on-surface-variant">Người tạo</p>
-                        <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full mt-0.5">
-                          <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{String(doc['Người tạo']).charAt(0).toUpperCase()}</span>
-                          {doc['Người tạo']}
-                        </span>
+                  {doc['Người tạo'] && (() => {
+                    const u = (lookups.users || []).find(x => x['Tên đăng nhập'] === doc['Người tạo'])
+                    const dn = u?.['Tên nhân viên'] || doc['Người tạo']
+                    return (
+                      <div className="flex items-start gap-2">
+                        <Icon name="person_add" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-on-surface-variant">Người tạo</p>
+                          <div className="relative group inline-block mt-0.5">
+                            <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full cursor-default">
+                              <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                              {dn}
+                            </span>
+                            {u?.['Email'] && (
+                              <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                  <p className="text-surface/70">{u['Email']}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {doc['Người cập nhật'] && (
-                    <div className="flex items-start gap-2">
-                      <Icon name="edit" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs text-on-surface-variant">Cập nhật bởi</p>
-                        <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full mt-0.5">
-                          <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{String(doc['Người cập nhật']).charAt(0).toUpperCase()}</span>
-                          {doc['Người cập nhật']}
-                        </span>
+                    )
+                  })()}
+                  {doc['Người cập nhật'] && (() => {
+                    const u = (lookups.users || []).find(x => x['Tên đăng nhập'] === doc['Người cập nhật'])
+                    const dn = u?.['Tên nhân viên'] || doc['Người cập nhật']
+                    return (
+                      <div className="flex items-start gap-2">
+                        <Icon name="edit" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-on-surface-variant">Cập nhật bởi</p>
+                          <div className="relative group inline-block mt-0.5">
+                            <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full cursor-default">
+                              <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                              {dn}
+                            </span>
+                            {u?.['Email'] && (
+                              <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                  <p className="text-surface/70">{u['Email']}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
                 </div>
               </div>
             )}
@@ -310,6 +606,7 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                 {comments.length === 0 && <p className="text-xs text-on-surface-variant text-center py-4">Chưa có bình luận</p>}
                 {comments.map((c, i) => {
                   const isMine = session && (c.UserID === session.userId || c['Tên người dùng'] === session.username)
+                  const commentMeta = isMine ? 'Bạn' : (c['Tên người dùng'] || '—')
                   return (
                     <div key={c.ID || i} className={`flex gap-1.5 ${isMine ? 'flex-row-reverse' : ''}`}>
                       {!isMine && (
@@ -317,31 +614,41 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                           {(c['Tên người dùng'] || '?').charAt(0).toUpperCase()}
                         </span>
                       )}
-                      <div className={`max-w-[80%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
-                        {!isMine && <span className="text-[10px] text-on-surface-variant">{c['Tên người dùng']}</span>}
-                        <span className={`px-3 py-1.5 rounded-2xl text-xs leading-snug ${isMine ? 'bg-primary text-on-primary rounded-tr-sm' : 'bg-surface-container-low text-on-surface rounded-tl-sm'}`}>
+                      <div className={`max-w-[80%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                        <div className={`flex items-center gap-1.5 text-[10px] text-on-surface-variant ${isMine ? 'justify-end' : 'justify-start'}`}>
+                          <span className="font-medium">{commentMeta}</span>
+                          <span className="opacity-50">•</span>
+                          <span>{formatDateTime(c['Thời gian'])}</span>
+                          {c._pending && (
+                            <>
+                              <span className="opacity-50">•</span>
+                              <span>Đang gửi…</span>
+                            </>
+                          )}
+                        </div>
+                        <span className={`px-3 py-1.5 rounded-2xl text-xs leading-snug ${isMine ? 'bg-primary text-on-primary rounded-tr-sm' : 'bg-surface-container-low text-on-surface rounded-tl-sm'} ${c._pending ? 'opacity-70' : ''}`}>
                           {c['Nội dung']}
                         </span>
-                        <span className="text-[10px] text-on-surface-variant">{c['Thời gian'] || ''}</span>
                       </div>
                     </div>
                   )
                 })}
                 <div ref={commentsEndRef} />
               </div>
+              {canComment && (
               <form onSubmit={handleAddComment} className="flex gap-2">
                 <input
-                  className="flex-1 text-sm bg-surface-container-low rounded-xl px-3 py-2 border-none focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder={commentSaving ? 'Đang gửi...' : 'Nhập bình luận...'}
+                  className="flex-1 text-sm bg-surface-container-low rounded-xl px-3 py-2 border-none focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="Nhập bình luận..."
                   value={commentInput}
                   onChange={e => setCommentInput(e.target.value)}
-                  disabled={commentSaving}
                 />
-                <button type="submit" disabled={commentSaving || !commentInput.trim()}
+                <button type="submit" disabled={!commentInput.trim()}
                   className="w-9 h-9 flex items-center justify-center rounded-xl bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0">
                   <Icon name="send" size={16} />
                 </button>
               </form>
+              )}
             </div>
 
             {/* File list */}
@@ -350,6 +657,11 @@ export default function DocumentPreview({ doc, lookups, isAdmin, token, session,
                 <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">
                   File đính kèm ({fileInfos.length})
                 </p>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <InfoRow icon="description" label="Tên file hiện tại" value={currentFile?.fileName || doc['Tên file'] || '—'} />
+                  <InfoRow icon="draft" label="Loại file" value={currentFile?.mimeType || doc['Loại file'] || '—'} />
+                  <InfoRow icon="deployed_code" label="Kích thước" value={formatFileSize(currentFile?.size || doc['Kích thước'])} />
+                </div>
                 <div className="space-y-1.5">
                   {fileInfos.map((fi, i) => (
                     <button

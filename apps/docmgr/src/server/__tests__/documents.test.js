@@ -1,88 +1,153 @@
 require('./setup.js')
 const { resetAll, setupRoleSheets, setupDocSheets, CAT_HEADERS, seedUser, createSession } = require('./helpers')
 
-let editorToken
+let directorToken
 
 beforeEach(() => {
   resetAll()
   setupRoleSheets()
   setupDocSheets()
 
-  seedUser(1, 'editor', 'e@test.com', 'Biên tập viên')
+  seedUser(1, 'director', 'd@test.com', 'Giám đốc')
   SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
-    [1, 'Hợp đồng', '', '', '']
+    [1, 'Hợp đồng', '', '', '', '', '']
   )
   invalidateSheetCache(SHEETS.DANH_MUC)
 
-  editorToken = createSession(1, 'editor', 'e@test.com', 'Biên tập viên')
+  directorToken = createSession(1, 'director', 'd@test.com', 'Giám đốc')
 })
 
 describe('createDocument', () => {
   test('creates document and returns record with ID', () => {
-    const result = createDocument(editorToken, {
+    const result = createDocument(directorToken, {
       'Tên hồ sơ': 'HĐ Mua sắm',
       'Danh mục': 1,
+      'Phụ trách': 1,
     }, null)
     expect(result.data['ID']).toBe(1)
-    // Phụ trách is now a JSON array string
+    // Phụ trách is now a JSON array string (single person)
     const assignees = JSON.parse(result.data['Phụ trách'])
     expect(assignees.map(String)).toContain('1')
   })
 
   test('throws without Tên hồ sơ', () => {
-    expect(() => createDocument(editorToken, { 'Danh mục': 1 }, null)).toThrow('bắt buộc')
+    expect(() => createDocument(directorToken, { 'Danh mục': 1 }, null)).toThrow('bắt buộc')
   })
 
-  test('calculates Chênh lệch correctly', () => {
-    const result = createDocument(editorToken, {
+  test('default Tình trạng is Chờ duyệt', () => {
+    const result = createDocument(directorToken, {
       'Tên hồ sơ': 'HĐ Test',
       'Danh mục': 1,
-      'Giá trị HĐ': 100,
-      'Giá trị thực hiện': 60,
     }, null)
-    expect(result.data['Chênh lệch']).toBe(40)
+    expect(result.data['Tình trạng']).toBe('Chờ duyệt')
   })
 })
 
 describe('getDocuments', () => {
   beforeEach(() => {
-    createDocument(editorToken, { 'Tên hồ sơ': 'Doc A', 'Danh mục': 1, 'Tình trạng': 'Hiệu lực' }, null)
-    createDocument(editorToken, { 'Tên hồ sơ': 'Doc B', 'Danh mục': 1, 'Tình trạng': 'Hết hạn' }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc A', 'Danh mục': 1, 'Tình trạng': 'Đang xử lý' }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc B', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành' }, null)
     invalidateSheetCache(SHEETS.HO_SO)
   })
 
-  test('returns all docs for editor', () => {
-    const result = getDocuments(editorToken, {})
+  test('returns all docs for director', () => {
+    const result = getDocuments(directorToken, {})
     expect(result.data).toHaveLength(2)
   })
 
   test('filters by trangThai', () => {
-    const result = getDocuments(editorToken, { tinhTrang: 'Hết hạn' })
+    const result = getDocuments(directorToken, { tinhTrang: 'Hoàn thành' })
     expect(result.data).toHaveLength(1)
     expect(result.data[0]['Tên hồ sơ']).toBe('Doc B')
   })
 
   test('filters by keyword', () => {
-    const result = getDocuments(editorToken, { keyword: 'doc a' })
+    const result = getDocuments(directorToken, { keyword: 'doc a' })
     expect(result.data).toHaveLength(1)
+  })
+
+  test('nhan vien sees docs from open categories and categories assigned directly or via group', () => {
+    seedUser(2, 'staff', 'staff@test.com', 'Nhân viên')
+    const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
+
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
+      [2, 'Direct', '', '', '', JSON.stringify(['2']), '', ''],
+      [3, 'Grouped', '', '', '', '', JSON.stringify(['1']), ''],
+      [4, 'Restricted', '', '', '', JSON.stringify(['999']), JSON.stringify(['9']), '']
+    )
+    SpreadsheetApp._sheets[SHEETS.NHOM]._rows.push(
+      [1, 'Team A', '', JSON.stringify(['2'])]
+    )
+    invalidateSheetCache(SHEETS.DANH_MUC)
+    invalidateSheetCache(SHEETS.NHOM)
+
+    createDocument(directorToken, { 'Tên hồ sơ': 'Open Doc', 'Danh mục': 1 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Direct Doc', 'Danh mục': 2 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Group Doc', 'Danh mục': 3 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Doc', 'Danh mục': 4 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const result = getDocuments(staffToken, {})
+    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['Direct Doc', 'Doc A', 'Doc B', 'Group Doc', 'Open Doc'])
+  })
+
+  test('truong phong follows the same category visibility rule as nhan vien', () => {
+    seedUser(3, 'manager', 'manager@test.com', 'Trưởng phòng')
+    const managerToken = createSession(3, 'manager', 'manager@test.com', 'Trưởng phòng')
+
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
+      [2, 'Open 2', '', '', '', '', '', ''],
+      [3, 'Direct Manager', '', '', '', JSON.stringify(['3']), '', ''],
+      [4, 'Blocked Manager', '', '', '', JSON.stringify(['999']), JSON.stringify(['9']), '']
+    )
+    invalidateSheetCache(SHEETS.DANH_MUC)
+
+    createDocument(directorToken, { 'Tên hồ sơ': 'Open Manager Doc', 'Danh mục': 2 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Direct Manager Doc', 'Danh mục': 3 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Manager Doc', 'Danh mục': 4 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const result = getDocuments(managerToken, {})
+    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['Direct Manager Doc', 'Doc A', 'Doc B', 'Open Manager Doc'])
   })
 })
 
 describe('updateDocument', () => {
-  test('updates field and recalculates Chênh lệch', () => {
-    createDocument(editorToken, {
+  test('updates text fields and Ghi chú', () => {
+    createDocument(directorToken, {
       'Tên hồ sơ': 'Hợp đồng A',
       'Danh mục': 1,
       'Giá trị HĐ': 100,
-      'Giá trị thực hiện': 50,
     }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
-    updateDocument(editorToken, 1, { 'Giá trị thực hiện': 80 }, null)
+    updateDocument(directorToken, 1, { 'Ghi chú': 'Test note', 'Giá trị HĐ': 200 }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
     const docs = getSheetData(SHEETS.HO_SO)
-    expect(docs[0]['Chênh lệch']).toBe(20)
+    expect(docs[0]['Ghi chú']).toBe('Test note')
+    expect(docs[0]['Giá trị HĐ']).toBe(200)
+  })
+})
+
+describe('transitionDocument', () => {
+  test('giaoViec returns updated document data for modal refresh', () => {
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'Workflow Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const result = transitionDocument(directorToken, 1, 'giaoViec', {
+      'Phụ trách': 'staff1',
+      'Người phối hợp': ['staff2'],
+    })
+
+    expect(result.data['Tình trạng']).toBe('Chờ xử lý')
+    expect(result.data['Người cập nhật']).toBe('director')
+    expect(result.data['Phụ trách']).toBe(JSON.stringify(['staff1']))
+    expect(result.data['Người phối hợp']).toBe(JSON.stringify(['staff2']))
   })
 })
 
@@ -92,7 +157,7 @@ describe('deleteDocument', () => {
   beforeEach(() => {
     seedUser(2, 'admin', 'a@test.com', 'admin')
     adminToken = createSession(2, 'admin', 'a@test.com', 'admin')
-    createDocument(editorToken, { 'Tên hồ sơ': 'To Delete', 'Danh mục': 1 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'To Delete', 'Danh mục': 1 }, null)
     invalidateSheetCache(SHEETS.HO_SO)
   })
 
@@ -104,7 +169,7 @@ describe('deleteDocument', () => {
   })
 
   test('removes the row from sheet', () => {
-    createDocument(editorToken, { 'Tên hồ sơ': 'Keep', 'Danh mục': 1 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Keep', 'Danh mục': 1 }, null)
     invalidateSheetCache(SHEETS.HO_SO)
     deleteDocument(adminToken, 1)
     invalidateSheetCache(SHEETS.HO_SO)
@@ -118,28 +183,26 @@ describe('deleteDocument', () => {
   })
 
   test('non-admin cannot delete', () => {
-    expect(() => deleteDocument(editorToken, 1)).toThrow()
+    expect(() => deleteDocument(directorToken, 1)).toThrow()
   })
 })
 
 describe('getDocumentStats', () => {
   test('returns correct totals and breakdown', () => {
-    createDocument(editorToken, {
-      'Tên hồ sơ': 'A', 'Danh mục': 1, 'Tình trạng': 'Hiệu lực',
-      'Giá trị HĐ': 100, 'Giá trị thực hiện': 60,
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'A', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt',
+      'Giá trị HĐ': 100,
     }, null)
-    createDocument(editorToken, {
-      'Tên hồ sơ': 'B', 'Danh mục': 1, 'Tình trạng': 'Hết hạn',
-      'Giá trị HĐ': 200, 'Giá trị thực hiện': 200,
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'B', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành',
+      'Giá trị HĐ': 200,
     }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const stats = getDocumentStats(editorToken)
+    const stats = getDocumentStats(directorToken)
     expect(stats.total).toBe(2)
-    expect(stats.byStatus['Hiệu lực']).toBe(1)
-    expect(stats.byStatus['Hết hạn']).toBe(1)
+    expect(stats.byStatus['Chờ duyệt']).toBe(1)
+    expect(stats.byStatus['Hoàn thành']).toBe(1)
     expect(stats.totalValue).toBe(300)
-    expect(stats.totalExecuted).toBe(260)
-    expect(stats.totalDiff).toBe(40)
   })
 })

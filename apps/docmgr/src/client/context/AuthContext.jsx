@@ -63,6 +63,17 @@ export function AuthProvider({ children }) {
     setAccessError('Đã đăng xuất. Vui lòng mở lại từ SSO Portal.')
   }, [session])
 
+  useEffect(() => {
+    function handleExpired() {
+      setSession(null)
+      localStorage.removeItem(TOKEN_KEY)
+      setAccessDenied(true)
+      setAccessError('Phiên đăng nhập đã hết hạn. Vui lòng mở lại từ SSO Portal.')
+    }
+    window.addEventListener('auth:sessionExpired', handleExpired)
+    return () => window.removeEventListener('auth:sessionExpired', handleExpired)
+  }, [])
+
   const value = { session, loading, accessDenied, accessError, logout }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

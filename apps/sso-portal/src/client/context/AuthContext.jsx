@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import gasCall from '../gasClient.js'
 
 const AuthContext = createContext(null)
@@ -12,6 +12,8 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [ssoToken, setSsoToken] = useState('')
   const [parentSheetId, setParentSheetId] = useState('')
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const expiredFiredRef = useRef(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(TOKEN_KEY)
@@ -36,6 +38,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback(async (email, password) => {
+    expiredFiredRef.current = false
     const res = await gasCall('api_login', email, password)
     localStorage.setItem(TOKEN_KEY, res.token)
     localStorage.setItem(SSO_TOKEN_KEY, res.ssoToken)
@@ -61,7 +64,34 @@ export function AuthProvider({ children }) {
     setSession(prev => prev ? { ...prev, ...updates } : prev)
   }, [])
 
-  const value = { session, loading, ssoToken, parentSheetId, login, logout, updateSession }
+  const expireSession = useCallback(() => {
+    if (expiredFiredRef.current) return
+    expiredFiredRef.current = true
+    setSessionExpired(true)
+  }, [])
+
+  const acknowledgeExpiry = useCallback(async () => {
+    setSessionExpired(false)
+    await logout()
+  }, [logout])
+
+  // Show expiry modal on any API call returning session expired
+  useEffect(() => {
+    window.__onSessionExpired = expireSession
+    return () => { window.__onSessionExpired = null }
+  }, [expireSession])
+
+  // Show expiry modal exactly when session expires
+  useEffect(() => {
+    if (!session) return
+    const SESSION_TTL_MS = 28800 * 1000 // 8 hours fallback
+    const ms = (session.expiresAt ? session.expiresAt - Date.now() : SESSION_TTL_MS) + 10000
+    if (ms <= 0) { expireSession(); return }
+    const timer = setTimeout(expireSession, ms)
+    return () => clearTimeout(timer)
+  }, [session, expireSession])
+
+  const value = { session, loading, ssoToken, parentSheetId, login, logout, updateSession, sessionExpired, acknowledgeExpiry }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

@@ -18,6 +18,8 @@ function doGet(e) {
     // SSO authentication via URL params from parent portal
     if (ssoEmail && ssoToken) {
       Logger.log('SSO params: email=' + ssoEmail + ', token=' + (ssoToken ? 'YES' : 'NO') + ', parentId=' + parentSheetId)
+      // Always read fresh APP_ROLES on SSO login so admin role changes take effect immediately
+      invalidateSheetCache(SHEETS.APP_ROLES)
       var ssoUser = ssoValidateToken(ssoEmail, ssoToken)
       Logger.log('SSO validate result: ' + (ssoUser ? 'user found ID=' + ssoUser['ID'] : 'null'))
       if (!ssoUser) {
@@ -88,7 +90,28 @@ function api_logout(token) {
 }
 
 function api_validateSession(token) {
-  return _wrap(function() { return validateSession(token) })
+  return _wrap(function() {
+    var session = validateSession(token)
+    if (!session) return null
+
+    // Re-read APP_ROLES to pick up any role changes made by admin since login
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var appRole = roles.find(function(r) {
+      return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID
+    })
+
+    if (appRole && appRole['Quyền'] !== session.role) {
+      // Role changed — rebuild session with new role
+      var perms = getPermissions(appRole)
+      var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE'
+      session.role = appRole['Quyền']
+      session.permissions = perms
+      session.canCreate = !!canCreate
+      cachePut('sess_' + token, session, SESSION_TTL)
+    }
+
+    return session
+  })
 }
 
 // ===== Lookup data API =====
@@ -120,6 +143,7 @@ function api_getDocuments(token, filters) {
   return _wrap(function() { return getDocuments(token, filters) })
 }
 
+
 function api_createDocument(token, data, fileInfos) {
   return _wrap(function() { return createDocument(token, data, fileInfos) })
 }
@@ -136,6 +160,10 @@ function api_getDocumentStats(token) {
   return _wrap(function() { return getDocumentStats(token) })
 }
 
+function api_transitionDocument(token, id, action, data) {
+  return _wrap(function() { return transitionDocument(token, id, action, data) })
+}
+
 // ===== Category API =====
 
 function api_addCategory(token, data) {
@@ -148,6 +176,17 @@ function api_addCategory(token, data) {
 function api_updateCategory(token, id, data) {
   return _wrap(function() {
     requireAdmin(token)
+    // Rename Drive folder if category name changed
+    if (data['Tên danh mục']) {
+      var cats = getSheetData(SHEETS.DANH_MUC)
+      var oldCat = cats.find(function(c) { return String(c['ID']) === String(id) })
+      if (oldCat && data['Tên danh mục'] !== oldCat['Tên danh mục']) {
+        try {
+          var oldPath = _resolveCategoryPath(id)
+          renameFolder(oldPath, data['Tên danh mục'])
+        } catch(e) { Logger.log('Rename folder error: ' + e.message) }
+      }
+    }
     return updateRow(SHEETS.DANH_MUC, id, data)
   })
 }
@@ -159,34 +198,41 @@ function api_deleteCategory(token, id) {
   })
 }
 
-// ===== Department API =====
+// ===== Group (Nhóm) API =====
 
-function api_addPhongBan(token, data) {
+function api_addNhom(token, data) {
   return _wrap(function() {
     requireAdmin(token)
-    return addRow(SHEETS.PHONG_BAN, data)
+    return addRow(SHEETS.NHOM, data)
   })
 }
 
-function api_updatePhongBan(token, id, data) {
+function api_updateNhom(token, id, data) {
   return _wrap(function() {
     requireAdmin(token)
-    return updateRow(SHEETS.PHONG_BAN, id, data)
+    return updateRow(SHEETS.NHOM, id, data)
   })
 }
 
-function api_deletePhongBan(token, id) {
+function api_deleteNhom(token, id) {
   return _wrap(function() {
     requireAdmin(token)
-    return deleteRow(SHEETS.PHONG_BAN, id)
+    return deleteRow(SHEETS.NHOM, id)
   })
 }
 
 // ===== Supplier API =====
 
+function _requireAdminOrVanThu(token) {
+  var session = requireAuth(token)
+  var allowed = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (allowed.indexOf(session.role) === -1) throw new Error('Không có quyền thực hiện thao tác này')
+  return session
+}
+
 function api_addNhaCungCap(token, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    _requireAdminOrVanThu(token)
     return addRow(SHEETS.NHA_CUNG_CAP, data)
   })
 }
@@ -209,7 +255,7 @@ function api_deleteNhaCungCap(token, id) {
 
 function api_addDuAn(token, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    _requireAdminOrVanThu(token)
     return addRow(SHEETS.DU_AN, data)
   })
 }
@@ -241,26 +287,65 @@ function api_getUsers(token) {
     if (!parentSheet) throw new Error('Không tìm thấy sheet _Người Dùng trong SSO Portal')
     var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
     var roles = getSheetData(SHEETS.APP_ROLES)
-    return parentUsers.map(function(u) {
-      var appRole = roles.find(function(r) {
-        return String(r['UserID']) === String(u['ID']) && r['AppID'] === APP_ID
+    var ownerEmail = ''
+    try { ownerEmail = getCentralSheet().getOwner().getEmail().toLowerCase() } catch(e) {}
+    return parentUsers
+      .filter(function(u) {
+        // Hide owner from permission management UI
+        return !(ownerEmail && u['Email'] && u['Email'].toLowerCase() === ownerEmail)
       })
-      return {
-        ID: u['ID'],
-        'Tên đăng nhập': u['Tên đăng nhập'],
-        'Email': u['Email'],
-        'Trạng thái': u['Trạng thái'],
-        'Quyền': appRole ? appRole['Quyền'] : '',
-        'Phân quyền chi tiết': appRole ? (appRole['Phân quyền chi tiết'] || '') : '',
-        'Phòng ban': u['Phòng ban'] || '',
-      }
-    })
+      .map(function(u) {
+        var appRole = roles.find(function(r) {
+          return String(r['UserID']) === String(u['ID']) && r['AppID'] === APP_ID
+        })
+        return {
+          ID: u['ID'],
+          'Tên đăng nhập': u['Tên đăng nhập'],
+          'Email': u['Email'],
+          'Trạng thái': u['Trạng thái'],
+          'Quyền': appRole ? appRole['Quyền'] : '',
+          'Phân quyền chi tiết': appRole ? (appRole['Phân quyền chi tiết'] || '') : '',
+          'Được tạo hồ sơ': appRole ? (appRole['Được tạo hồ sơ'] || '') : '',
+          'Phòng ban': u['Phòng ban'] || '',
+        }
+      })
   })
 }
 
 function api_updateUser(token, id, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    var session = requireAdmin(token)
+    // Giám đốc cannot change own role, privileged roles, or assign privileged roles
+    if (session.role === 'Giám đốc') {
+      if (String(id) === String(session.userId)) throw new Error('Không thể thay đổi quyền của chính mình')
+      var allRoles = getSheetData(SHEETS.APP_ROLES)
+      var targetRole = allRoles.find(function(r) { return String(r['UserID']) === String(id) && r['AppID'] === APP_ID })
+      if (targetRole && (targetRole['Quyền'] === 'Giám đốc' || targetRole['Quyền'] === 'admin')) {
+        throw new Error('Không thể thay đổi quyền của tài khoản quản trị')
+      }
+      if (data['Quyền'] === 'Giám đốc' || data['Quyền'] === 'admin') {
+        throw new Error('Giám đốc không thể gán quyền Giám đốc hoặc admin')
+      }
+    }
+    // Block changes to owner's role in this app
+    var ownerEmail = ''
+    try { ownerEmail = getCentralSheet().getOwner().getEmail().toLowerCase() } catch(e) {}
+    if (ownerEmail) {
+      var parentId = ssoGetParentSheetId()
+      if (parentId) {
+        try {
+          var parentSs = SpreadsheetApp.openById(parentId)
+          var parentSheet = parentSs.getSheetByName('_Người Dùng')
+          if (parentSheet) {
+            var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
+            var target = parentUsers.find(function(u) { return String(u['ID']) === String(id) })
+            if (target && target['Email'] && target['Email'].toLowerCase() === ownerEmail) {
+              throw new Error('Không thể thay đổi quyền của chủ sở hữu')
+            }
+          }
+        } catch(e) { if (e.message.indexOf('chủ sở hữu') !== -1) throw e }
+      }
+    }
     var roles = getSheetData(SHEETS.APP_ROLES)
     var existing = roles.find(function(r) {
       return String(r['UserID']) === String(id) && r['AppID'] === APP_ID
@@ -268,6 +353,7 @@ function api_updateUser(token, id, data) {
     var roleUpdates = {}
     if (data['Quyền'] !== undefined) roleUpdates['Quyền'] = data['Quyền']
     if (data['permissions'] !== undefined) roleUpdates['Phân quyền chi tiết'] = JSON.stringify(data['permissions'])
+    if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
     if (existing) {
       updateRow(SHEETS.APP_ROLES, existing['ID'], roleUpdates)
     } else {
@@ -286,7 +372,14 @@ function api_updateUser(token, id, data) {
 
 function api_removeUserRole(token, id) {
   return _wrap(function() {
-    requireAdmin(token)
+    var session = requireAdmin(token)
+    // Giám đốc cannot remove own role or peer Giám đốc
+    if (session.role === 'Giám đốc') {
+      if (String(id) === String(session.userId)) throw new Error('Không thể xóa quyền của chính mình')
+      var allRoles = getSheetData(SHEETS.APP_ROLES)
+      var targetRole = allRoles.find(function(r) { return String(r['UserID']) === String(id) && r['AppID'] === APP_ID })
+      if (targetRole && targetRole['Quyền'] === 'Giám đốc') throw new Error('Không thể xóa quyền của Giám đốc khác')
+    }
     var roles = getSheetData(SHEETS.APP_ROLES)
     var existing = roles.find(function(r) {
       return String(r['UserID']) === String(id) && r['AppID'] === APP_ID

@@ -40,10 +40,15 @@ function buildParentSelectOptions(cats, excludedIds) {
   return opts
 }
 
+function parseJsonArray(val) {
+  if (!val) return []
+  try { return typeof val === 'string' && val.charAt(0) === '[' ? JSON.parse(val).map(String) : [] } catch(_) { return [] }
+}
+
 export default function CategoryManager({ token, lookups, onUpdate }) {
   const [cats, setCats]   = useState(lookups.danhMuc || [])
   const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', cat? }
-  const [form, setForm]   = useState({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '' })
+  const [form, setForm]   = useState({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '', 'Người được xem': '', 'Nhóm được xem': '', 'Nơi lưu hồ sơ cứng': '' })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -53,7 +58,7 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
   useEffect(() => { setCats(lookups.danhMuc || []) }, [lookups.danhMuc])
 
   function openAdd() {
-    setForm({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '' })
+    setForm({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '', 'Người được xem': '', 'Nhóm được xem': '', 'Nơi lưu hồ sơ cứng': '' })
     setError('')
     setModal({ mode: 'create' })
   }
@@ -218,6 +223,58 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
             <label className={labelCls}>Mô tả</label>
             <textarea className={textareaCls + ' h-20'} value={form['Mô tả'] || ''}
               onChange={e => setForm(f => ({ ...f, 'Mô tả': e.target.value }))} placeholder="Ghi chú thêm..." />
+          </div>
+
+          <div className={fieldCls}>
+            <label className={labelCls}>Nơi lưu hồ sơ cứng</label>
+            <input className={inputCls} value={form['Nơi lưu hồ sơ cứng'] || ''}
+              onChange={e => setForm(f => ({ ...f, 'Nơi lưu hồ sơ cứng': e.target.value }))} placeholder="VD: Tủ A, Kệ 3..." />
+          </div>
+
+          {/* Người được xem */}
+          <div className={fieldCls}>
+            <label className={labelCls}>Người được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
+            <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
+              {(lookups.users || []).map(u => {
+                const current = parseJsonArray(form['Người được xem'])
+                const active = current.includes(String(u.ID))
+                const name = u['Tên nhân viên'] || u['Tên đăng nhập']
+                const label = u['Email'] ? `${name} (${u['Email']})` : name
+                return (
+                  <button key={u.ID} type="button"
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
+                    onClick={() => {
+                      const next = active ? current.filter(x => x !== String(u.ID)) : [...current, String(u.ID)]
+                      setForm(f => ({ ...f, 'Người được xem': next.length ? JSON.stringify(next) : '' }))
+                    }}>
+                    {label}
+                  </button>
+                )
+              })}
+              {(lookups.users || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có người dùng</span>}
+            </div>
+          </div>
+
+          {/* Nhóm được xem */}
+          <div className={fieldCls}>
+            <label className={labelCls}>Nhóm được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
+            <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
+              {(lookups.nhom || []).map(g => {
+                const current = parseJsonArray(form['Nhóm được xem'])
+                const active = current.includes(String(g.ID))
+                return (
+                  <button key={g.ID} type="button"
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-secondary text-on-secondary' : 'bg-surface-container text-on-surface-variant hover:bg-secondary/10'}`}
+                    onClick={() => {
+                      const next = active ? current.filter(x => x !== String(g.ID)) : [...current, String(g.ID)]
+                      setForm(f => ({ ...f, 'Nhóm được xem': next.length ? JSON.stringify(next) : '' }))
+                    }}>
+                    {g['Tên nhóm']}
+                  </button>
+                )
+              })}
+              {(lookups.nhom || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có nhóm</span>}
+            </div>
           </div>
         </div>
       </FormModal>

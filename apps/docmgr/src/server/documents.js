@@ -20,21 +20,46 @@ function getDocuments(token, filters) {
   var session = requireAuth(token)
   filters = filters || {}
 
-  var docs = getSheetData(SHEETS.HO_SO)
+  Logger.log('[getDocuments] role=' + session.role + ' userId=' + session.userId)
 
-  // Permission filter based on role
-  var GLOBAL_ROLES = ['admin', 'Quản trị viên', 'Biên tập viên', 'Giám đốc', 'Văn thư']
-  if (GLOBAL_ROLES.indexOf(session.role) === -1) {
-    // Trưởng phòng / Nhân viên: see docs in their department(s)
-    var userDepts = session.departments || []
-    if (userDepts.length > 0) {
-      docs = docs.filter(function(d) {
-        return userDepts.indexOf(d['Phòng ban']) !== -1
-      })
-    } else {
-      // Fallback: only own docs (legacy / no dept assigned)
-      docs = docs.filter(function(d) { return d['Phụ trách'] === session.userId })
-    }
+  var docs = getSheetData(SHEETS.HO_SO).map(function(d) {
+    // Normalize legacy status values on the fly
+    var normalized = _normalizeStatus(d['Tình trạng'])
+    return normalized !== d['Tình trạng'] ? Object.assign({}, d, { 'Tình trạng': normalized }) : d
+  })
+
+  // Category visibility filter (admin, Quản trị viên, Giám đốc, Văn thư see everything)
+  var CAT_EXEMPT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  Logger.log('[getDocuments] catExempt=' + (CAT_EXEMPT_ROLES.indexOf(session.role) !== -1) + ' totalDocs=' + docs.length)
+  if (CAT_EXEMPT_ROLES.indexOf(session.role) === -1) {
+    var categories = getSheetData(SHEETS.DANH_MUC)
+    var groups = getSheetData(SHEETS.NHOM)
+    var userIdStr = String(session.userId)
+    // Find which groups this user belongs to
+    var userGroupIds = []
+    groups.forEach(function(g) {
+      var members = _parseAssignees(g['Thành viên'])
+      if (members.indexOf(userIdStr) !== -1 || members.indexOf(session.username) !== -1) {
+        userGroupIds.push(String(g.ID))
+      }
+    })
+
+    docs = docs.filter(function(d) {
+      var catId = String(d['Danh mục'] || '')
+      var cat = categories.find(function(c) { return String(c.ID) === catId })
+      if (!cat) return true // uncategorized docs are visible
+      var allowedUsers = _parseAssignees(cat['Người được xem'])
+      var allowedGroups = _parseAssignees(cat['Nhóm được xem'])
+      // Empty = everyone can see
+      if (allowedUsers.length === 0 && allowedGroups.length === 0) return true
+      // Check user in allowed users
+      if (allowedUsers.indexOf(userIdStr) !== -1 || allowedUsers.indexOf(session.username) !== -1) return true
+      // Check user's groups intersect with allowed groups
+      for (var i = 0; i < userGroupIds.length; i++) {
+        if (allowedGroups.indexOf(userGroupIds[i]) !== -1) return true
+      }
+      return false
+    })
   }
 
   // Status filter
@@ -47,19 +72,14 @@ function getDocuments(token, filters) {
     docs = docs.filter(function(d) { return String(d['Danh mục']) === String(filters.danhMucId) })
   }
 
-  // Department filter
-  if (filters.phongBan) {
-    docs = docs.filter(function(d) { return String(d['Phòng ban']) === String(filters.phongBan) })
-  }
-
   // Project filter
   if (filters.duAn) {
-    docs = docs.filter(function(d) { return String(d['Dự án']) === String(filters.duAn) })
+    docs = docs.filter(function(d) { return String(d['Dự án (Phòng ban)']) === String(filters.duAn) })
   }
 
   // Supplier filter
   if (filters.nhaCungCap) {
-    docs = docs.filter(function(d) { return String(d['Nhà cung cấp']) === String(filters.nhaCungCap) })
+    docs = docs.filter(function(d) { return String(d['Nhà cung cấp (Nơi ban hành)']) === String(filters.nhaCungCap) })
   }
 
   // Person in charge filter
@@ -82,10 +102,10 @@ function getDocuments(token, filters) {
       return (
         (d['Tên hồ sơ'] || '').toLowerCase().indexOf(kw) !== -1 ||
         (d['Số hồ sơ'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Phòng ban'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Dự án'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Nhà cung cấp'] || '').toLowerCase().indexOf(kw) !== -1 ||
+        (d['Dự án (Phòng ban)'] || '').toLowerCase().indexOf(kw) !== -1 ||
+        (d['Nhà cung cấp (Nơi ban hành)'] || '').toLowerCase().indexOf(kw) !== -1 ||
         (d['Mô tả'] || '').toLowerCase().indexOf(kw) !== -1 ||
+        (d['Ghi chú'] || '').toLowerCase().indexOf(kw) !== -1 ||
         String(d['Phụ trách'] || '').toLowerCase().indexOf(kw) !== -1
       )
     })
@@ -128,22 +148,22 @@ function createDocument(token, data, fileInfos) {
   var record = {
     'Tên hồ sơ': data['Tên hồ sơ'],
     'Danh mục': data['Danh mục'],
-    'Phòng ban': data['Phòng ban'] || '',
     'Số hồ sơ': data['Số hồ sơ'] || '',
-    'Dự án': data['Dự án'] || '',
-    'Nhà cung cấp': data['Nhà cung cấp'] || '',
+    'Dự án (Phòng ban)': (data['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': (data['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
     'Ngày ban hành': data['Ngày ban hành'] || '',
     'Ngày kết thúc': data['Ngày kết thúc'] || '',
     'Giá trị HĐ': data['Giá trị HĐ'] || 0,
-    'Giá trị thực hiện': data['Giá trị thực hiện'] || 0,
-    'Chênh lệch': _calcDiff(data['Giá trị HĐ'], data['Giá trị thực hiện']),
-    'Tình trạng': data['Tình trạng'] || 'Hiệu lực',
-    'Mô tả': data['Mô tả'] || '',
+    'Tình trạng': data['Tình trạng'] || 'Chờ duyệt',
+    'Mô tả': '',
     'File ID': fileIdCol,
     'Tên file': fileNameCol,
     'Loại file': uploadedFiles.length > 0 ? uploadedFiles[0].mimeType : '',
     'Kích thước': '',
-    'Phụ trách': _buildAssignees(data['Phụ trách'], session.userId),
+    'Phụ trách': data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : '',
+    'Người phối hợp': _buildAssignees(data['Người phối hợp'], null),
+    'Ghi chú': data['Ghi chú'] || '',
+    'Nơi lưu hồ sơ cứng': data['Nơi lưu hồ sơ cứng'] || '',
     'Ngày cập nhật': new Date().toISOString(),
     'Người tạo': session.username,
     'Người cập nhật': session.username,
@@ -161,9 +181,13 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
+  if (session.role === 'Văn thư') {
+    throw new Error('Văn thư không thể chỉnh sửa hồ sơ sau khi đã tạo')
+  }
+
   // Permission: viewer/dept user can only edit docs they are assigned to
-  if (session.role !== 'Quản trị viên' && session.role !== 'Biên tập viên' &&
-      session.role !== 'admin' && session.role !== 'Giám đốc' && session.role !== 'Văn thư') {
+  if (session.role !== 'Quản trị viên' &&
+      session.role !== 'admin' && session.role !== 'Giám đốc') {
     var existingAssignees = _parseAssignees(doc['Phụ trách'])
     var userId = String(session.userId)
     var uname  = session.username
@@ -175,22 +199,16 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   var updates = {}
 
   var textFields = [
-    'Tên hồ sơ', 'Danh mục', 'Phòng ban', 'Số hồ sơ',
-    'Dự án', 'Nhà cung cấp', 'Ngày ban hành', 'Ngày kết thúc',
-    'Tình trạng', 'Mô tả'
+    'Tên hồ sơ', 'Danh mục', 'Số hồ sơ',
+    'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ngày ban hành', 'Ngày kết thúc',
+    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng'
   ]
+  updates['Mô tả'] = '' // deprecated — migrated into Ghi chú
   textFields.forEach(function(f) {
-    if (data[f] !== undefined) updates[f] = data[f]
+    if (data[f] !== undefined) updates[f] = typeof data[f] === 'string' ? data[f].trim() : data[f]
   })
 
-  // Recalc diff when value fields change
-  var giaTriHD = data['Giá trị HĐ'] !== undefined ? data['Giá trị HĐ'] : doc['Giá trị HĐ']
-  var giaTriTH = data['Giá trị thực hiện'] !== undefined ? data['Giá trị thực hiện'] : doc['Giá trị thực hiện']
   if (data['Giá trị HĐ'] !== undefined) updates['Giá trị HĐ'] = data['Giá trị HĐ']
-  if (data['Giá trị thực hiện'] !== undefined) updates['Giá trị thực hiện'] = data['Giá trị thực hiện']
-  if (data['Giá trị HĐ'] !== undefined || data['Giá trị thực hiện'] !== undefined) {
-    updates['Chênh lệch'] = _calcDiff(giaTriHD, giaTriTH)
-  }
 
   // Multi-file handling
   // Normalize inputs
@@ -223,14 +241,28 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
     }
   })
 
+  // Move kept files to new category folder if category changed
+  var oldCatId = String(doc['Danh mục'] || '')
+  var newCatId = String(updates['Danh mục'] !== undefined ? updates['Danh mục'] : doc['Danh mục'] || '')
+  if (oldCatId !== newCatId && keptFiles.length > 0) {
+    var newCatPath = _resolveCategoryPath(newCatId)
+    keptFiles.forEach(function(f) {
+      try { moveFile(f.fileId, newCatPath) } catch(e) { Logger.log('Move file error: ' + e.message) }
+    })
+  }
+
   var allFiles = keptFiles.concat(newlyUploaded)
   updates['File ID'] = allFiles.length > 0 ? JSON.stringify(allFiles) : ''
   updates['Tên file'] = allFiles.map(function(f) { return f.fileName }).join(', ')
   if (allFiles.length > 0) updates['Loại file'] = allFiles[0].mimeType
 
-  // Update Phụ trách if provided
+  // Update Phụ trách if provided (single person)
   if (data['Phụ trách'] !== undefined) {
-    updates['Phụ trách'] = _buildAssignees(data['Phụ trách'], session.userId)
+    updates['Phụ trách'] = data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : ''
+  }
+  // Update Người phối hợp if provided (multiple people)
+  if (data['Người phối hợp'] !== undefined) {
+    updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
   }
   updates['Người cập nhật'] = session.username
   updates['Ngày cập nhật'] = new Date().toISOString()
@@ -255,7 +287,8 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
 
 function deleteDocument(token, id) {
   var session = requireAuth(token)
-  requireAdmin(token)
+  var deleteRoles = ['admin', 'Quản trị viên']
+  if (deleteRoles.indexOf(session.role) === -1) throw new Error('Chỉ quản trị viên mới có quyền xóa hồ sơ')
 
   var docs = getSheetData(SHEETS.HO_SO)
   var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
@@ -280,28 +313,39 @@ function getDocumentStats(token) {
   var total = docs.length
   var byStatus = {}
   var totalValue = 0
-  var totalExecuted = 0
 
   docs.forEach(function(d) {
     var s = d['Tình trạng'] || 'Không rõ'
     byStatus[s] = (byStatus[s] || 0) + 1
     totalValue += Number(d['Giá trị HĐ']) || 0
-    totalExecuted += Number(d['Giá trị thực hiện']) || 0
   })
 
   return {
     total: total,
     byStatus: byStatus,
     totalValue: totalValue,
-    totalExecuted: totalExecuted,
-    totalDiff: totalValue - totalExecuted,
   }
 }
 
 // ── private helpers ──────────────────────────────────────────────────────────
 
-function _calcDiff(hdVal, thVal) {
-  return (Number(hdVal) || 0) - (Number(thVal) || 0)
+// Normalize legacy status values to the 4-status workflow
+var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
+var STATUS_MIGRATION_MAP = {
+  'Có hiệu lực':   'Hoàn thành',
+  'Hết hiệu lực':  'Hoàn thành',
+  'Đã ký':         'Hoàn thành',
+  'Bị hủy':        'Hoàn thành',
+  'Hủy':           'Hoàn thành',
+  'Nháp':          'Chờ duyệt',
+  'Chờ ký':        'Chờ duyệt',
+  'Pending':       'Chờ duyệt',
+}
+
+function _normalizeStatus(status) {
+  if (!status) return 'Chờ duyệt'
+  if (VALID_STATUSES.indexOf(status) !== -1) return status
+  return STATUS_MIGRATION_MAP[status] || 'Chờ duyệt'
 }
 
 function _resolveCategoryName(categoryId) {
@@ -342,7 +386,7 @@ function _parseAssignees(phuTrach) {
   return [String(phuTrach)]
 }
 
-// Build JSON array string for Phụ trách from input (array, string, or null → default to userId)
+// Build JSON array string for assignees from input (array, string, or null)
 function _buildAssignees(input, defaultUserId) {
   if (Array.isArray(input) && input.length > 0) {
     return JSON.stringify(input.map(String))
@@ -351,7 +395,101 @@ function _buildAssignees(input, defaultUserId) {
     if (input.charAt(0) === '[') return input // already JSON
     return JSON.stringify([input])
   }
-  return JSON.stringify([String(defaultUserId)])
+  if (defaultUserId) return JSON.stringify([String(defaultUserId)])
+  return ''
+}
+
+// ── Workflow transitions ─────────────────────────────────────────────────────
+
+/**
+ * Allowed transitions per action:
+ *   Văn thư:   trinhDuyet (→ Chờ duyệt), luuTaiLieu (→ Hoàn thành)
+ *   Giám đốc:  giaoViec (Chờ duyệt → Chờ xử lý), thuHoi (Chờ xử lý → Chờ duyệt)
+ *   Phụ trách: nhanViec (Chờ xử lý → Đang xử lý), hoanThanh (Đang xử lý → Hoàn thành)
+ *   Admin:     all
+ */
+var WORKFLOW_ACTIONS = {
+  trinhDuyet: { from: null, to: 'Chờ duyệt', roles: ['Văn thư'] },
+  luuTaiLieu: { from: null, to: 'Hoàn thành', roles: ['Văn thư'] },
+  giaoViec:   { from: 'Chờ duyệt', to: 'Chờ xử lý', roles: ['Giám đốc'] },
+  thuHoi:     { from: 'Chờ xử lý', to: 'Chờ duyệt', roles: ['Giám đốc'] },
+  nhanViec:   { from: 'Chờ xử lý', to: 'Đang xử lý', roles: ['_phuTrach'] },
+  hoanThanh:  { from: 'Đang xử lý', to: 'Hoàn thành', roles: ['_phuTrach'] },
+}
+
+function transitionDocument(token, id, action, data) {
+  var session = requireAuth(token)
+  var rule = WORKFLOW_ACTIONS[action]
+  if (!rule) throw new Error('Hành động không hợp lệ: ' + action)
+
+  var docs = getSheetData(SHEETS.HO_SO)
+  var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
+  if (!doc) throw new Error('Không tìm thấy hồ sơ')
+
+  // Admin can do anything
+  var isAdmin = session.role === 'admin' || session.role === 'Quản trị viên'
+  if (!isAdmin) {
+    // Check role
+    var allowed = false
+    for (var i = 0; i < rule.roles.length; i++) {
+      if (rule.roles[i] === '_phuTrach') {
+        var assignees = _parseAssignees(doc['Phụ trách'])
+        if (assignees.indexOf(String(session.userId)) !== -1 || assignees.indexOf(session.username) !== -1) {
+          allowed = true
+        }
+      } else if (session.role === rule.roles[i]) {
+        allowed = true
+      }
+    }
+    if (!allowed) throw new Error('Bạn không có quyền thực hiện hành động này')
+
+    // Check current status (null = any status allowed for create actions)
+    if (rule.from && doc['Tình trạng'] !== rule.from) {
+      throw new Error('Hồ sơ đang ở trạng thái "' + doc['Tình trạng'] + '", không thể ' + action)
+    }
+  }
+
+  var updates = {
+    'Tình trạng': rule.to,
+    'Người cập nhật': session.username,
+    'Ngày cập nhật': new Date().toISOString(),
+  }
+
+  // Giao việc: require Phụ trách
+  if (action === 'giaoViec') {
+    data = data || {}
+    if (!data['Phụ trách']) throw new Error('Phải chọn người phụ trách')
+    updates['Phụ trách'] = JSON.stringify([String(data['Phụ trách'])])
+    if (data['Người phối hợp'] !== undefined) {
+      updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
+    }
+  }
+
+  // Phụ trách can add collaborators when nhanViec
+  if (action === 'nhanViec' && data && data['Người phối hợp'] !== undefined) {
+    updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
+  }
+
+  updateRow(SHEETS.HO_SO, id, updates)
+  var updated = Object.assign({}, doc, updates)
+
+  // When Phụ trách changes (giaoViec), mark doc as unread for the new assignee
+  if (updates['Phụ trách']) {
+    var newAssignees = _parseAssignees(updates['Phụ trách'])
+    var daDocRows = getSheetData(SHEETS.DA_DOC)
+    newAssignees.forEach(function(uid) {
+      if (String(uid) !== String(session.userId) && uid !== session.username) {
+        var entries = daDocRows.filter(function(r) {
+          return (String(r['UserID']) === String(uid) || r['UserID'] === uid) && String(r['DocID']) === String(id)
+        })
+        entries.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
+      }
+    })
+    invalidateSheetCache(SHEETS.DA_DOC)
+  }
+
+  logAudit(session, action, 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id, from: doc['Tình trạng'], to: rule.to }))
+  return { data: updated }
 }
 
 // ── Comment functions ────────────────────────────────────────────────────────
@@ -367,6 +505,20 @@ function getComments(token, docId) {
 function addComment(token, docId, content) {
   var session = requireAuth(token)
   if (!content || !String(content).trim()) throw new Error('Nội dung không được để trống')
+
+  var COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (COMMENT_ROLES.indexOf(session.role) === -1) {
+    var allDocs = getSheetData(SHEETS.HO_SO)
+    var targetDoc = allDocs.find(function(d) { return String(d['ID']) === String(docId) })
+    if (!targetDoc) throw new Error('Không tìm thấy hồ sơ')
+    var docAssignees = _parseAssignees(targetDoc['Phụ trách'])
+    var docCollaborators = _parseAssignees(targetDoc['Người phối hợp'])
+    var uid = String(session.userId)
+    if (docAssignees.indexOf(uid) === -1 && docAssignees.indexOf(session.username) === -1 &&
+        docCollaborators.indexOf(uid) === -1 && docCollaborators.indexOf(session.username) === -1) {
+      throw new Error('Bạn không có quyền bình luận')
+    }
+  }
 
   var record = {
     'DocID': docId,

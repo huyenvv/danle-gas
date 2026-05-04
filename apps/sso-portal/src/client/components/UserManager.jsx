@@ -11,7 +11,7 @@ export default function UserManager() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ 'Email': '', 'Phòng ban': '' })
+  const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState(null)
   const [search, setSearch] = useState('')
@@ -45,7 +45,7 @@ export default function UserManager() {
       }
       setShowForm(false)
       setEditId(null)
-      setFormData({ 'Email': '', 'Phòng ban': '' })
+      setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
       await loadUsers()
     } catch (err) {
       addToast(err.message, 'error')
@@ -96,7 +96,7 @@ export default function UserManager() {
 
   function startEdit(user) {
     setEditId(user.ID)
-    setFormData({ 'Email': user['Email'], 'Phòng ban': user['Phòng ban'] })
+    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] })
     setShowForm(true)
   }
 
@@ -105,6 +105,7 @@ export default function UserManager() {
     const q = search.toLowerCase()
     return (u['Tên đăng nhập'] || '').toLowerCase().includes(q)
       || (u['Email'] || '').toLowerCase().includes(q)
+      || (u['Tên nhân viên'] || '').toLowerCase().includes(q)
   })
 
   if (loading) {
@@ -123,7 +124,7 @@ export default function UserManager() {
           <h2 className="text-lg font-bold text-on-surface">Người dùng</h2>
           <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">{users.length}</span>
         </div>
-        <button onClick={() => { setEditId(null); setFormData({ 'Email': '', 'Phòng ban': '' }); setShowForm(true) }}
+        <button onClick={() => { setEditId(null); setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' }); setShowForm(true) }}
           className="px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium flex items-center gap-2 hover:bg-primary-700 transition">
           <span className="material-symbols-outlined text-lg">person_add</span>
           Thêm
@@ -148,6 +149,7 @@ export default function UserManager() {
               <tr className="bg-surface-container">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant">Tên đăng nhập</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant">Email</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant">Tên nhân viên</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant">Phòng ban</th>
                 {isOwner && <th className="text-center px-4 py-3 text-xs font-semibold text-on-surface-variant">Quản trị</th>}
                 <th className="text-left px-4 py-3 text-xs font-semibold text-on-surface-variant">Trạng thái</th>
@@ -160,6 +162,7 @@ export default function UserManager() {
                 <tr key={u.ID} className="border-t border-outline-variant/20 hover:bg-surface-container-low/50 transition">
                   <td className="px-4 py-3 font-medium text-on-surface">{u['Tên đăng nhập']}</td>
                   <td className="px-4 py-3 text-on-surface-variant">{u['Email']}</td>
+                  <td className="px-4 py-3 text-on-surface-variant">{u['Tên nhân viên'] || '—'}</td>
                   <td className="px-4 py-3 text-on-surface-variant">{u['Phòng ban']}</td>
                   {isOwner && (
                     <td className="px-4 py-3 text-center">
@@ -232,6 +235,13 @@ export default function UserManager() {
                   onChange={e => setFormData(f => ({ ...f, 'Email': e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
                   placeholder="vd: huyenvv@gmail.com" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Tên nhân viên</label>
+                <input type="text" value={formData['Tên nhân viên']}
+                  onChange={e => setFormData(f => ({ ...f, 'Tên nhân viên': e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
+                  placeholder="vd: Nguyễn Văn A" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Phòng ban</label>

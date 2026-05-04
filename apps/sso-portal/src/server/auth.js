@@ -31,10 +31,12 @@ function login(email, password) {
     userId: user['ID'],
     username: user['Tên đăng nhập'],
     email: user['Email'],
+    displayName: user['Tên nhân viên'] || user['Email'],
     role: isAdmin ? 'admin' : 'user',
     isOwner: isOwner,
     mustChangePass: mustChange,
     ssoToken: ssoToken,
+    expiresAt: new Date().getTime() + SESSION_TTL * 1000,
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
 
@@ -71,12 +73,22 @@ function portalChangePassword(token, oldPassword, newPassword) {
   return { success: true }
 }
 
+function _getOwnerEmail() {
+  try { return getAppSheet().getOwner().getEmail().toLowerCase() } catch(e) { return '' }
+}
+
+function _isOwnerUser(user) {
+  var ownerEmail = _getOwnerEmail()
+  return !!(ownerEmail && user['Email'] && user['Email'].toLowerCase() === ownerEmail)
+}
+
 function portalAdminResetPassword(token, targetUserId) {
   requireAdmin(token)
 
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
   if (!user) throw new Error('Không tìm thấy tài khoản')
+  if (_isOwnerUser(user)) throw new Error('Không thể thay đổi mật khẩu tài khoản chủ sở hữu')
 
   var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
   updateRow(SHEETS.USERS, targetUserId, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
@@ -86,6 +98,9 @@ function portalAdminResetPassword(token, targetUserId) {
 function portalLockUser(token, targetUserId) {
   var session = requireAdmin(token)
   if (String(session.userId) === String(targetUserId)) throw new Error('Không thể tự khóa tài khoản của mình')
+  var users = getSheetData(SHEETS.USERS)
+  var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
+  if (user && _isOwnerUser(user)) throw new Error('Không thể khóa tài khoản chủ sở hữu')
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Locked' })
   return { success: true }
 }
@@ -115,6 +130,7 @@ function getUsers(token) {
       ID: u['ID'],
       'Tên đăng nhập': u['Tên đăng nhập'],
       'Email': u['Email'],
+      'Tên nhân viên': u['Tên nhân viên'] || '',
       'Trạng thái': u['Trạng thái'],
       'MustChangePass': u['MustChangePass'],
       'Đăng nhập cuối': u['Đăng nhập cuối'],
@@ -149,6 +165,7 @@ function addUser(token, data) {
     'Tên đăng nhập': username,
     'Mật khẩu': passwordHash,
     'Email': email,
+    'Tên nhân viên': data['Tên nhân viên'] || '',
     'Trạng thái': 'Active',
     'MustChangePass': 'TRUE',
     'Đăng nhập cuối': '',
@@ -167,9 +184,13 @@ function addUser(token, data) {
 
 function updateUser(token, id, data) {
   requireAdmin(token)
+  var users = getSheetData(SHEETS.USERS)
+  var target = users.find(function(u) { return String(u['ID']) === String(id) })
+  if (target && _isOwnerUser(target)) throw new Error('Không thể thay đổi thông tin tài khoản chủ sở hữu')
   var updateData = {}
   if (data['Tên đăng nhập'] !== undefined) updateData['Tên đăng nhập'] = data['Tên đăng nhập']
   if (data['Email'] !== undefined) updateData['Email'] = data['Email']
+  if (data['Tên nhân viên'] !== undefined) updateData['Tên nhân viên'] = data['Tên nhân viên']
   if (data['Phòng ban'] !== undefined) updateData['Phòng ban'] = data['Phòng ban']
   if (data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
   if (Object.keys(updateData).length > 0) updateRow(SHEETS.USERS, id, updateData)
@@ -243,7 +264,11 @@ function _notifyNewUser(email, username) {
 
     body = body.replace(/\{username\}/g, username).replace(/\{password\}/g, DEFAULT_PASSWORD)
 
-    MailApp.sendEmail(email, subject, body)
+    var mailOptions = {}
+    if (config['MAIL_SENDER_NAME']) mailOptions.name = config['MAIL_SENDER_NAME']
+    // Use GmailApp to support sending from a Gmail alias (must be configured in Gmail → Settings → Accounts → Send mail as)
+    if (config['MAIL_SENDER_EMAIL']) mailOptions.from = config['MAIL_SENDER_EMAIL']
+    GmailApp.sendEmail(email, subject, body, mailOptions)
   } catch(e) {
     Logger.log('Email notification error: ' + e.message)
   }

@@ -14,11 +14,10 @@ export function formatDate(dateStr) {
 
 export function statusColor(status) {
   const map = {
-    'Hiệu lực':      'bg-emerald-100 text-emerald-800',
-    'Hết hạn':       'bg-error-container text-on-error-container',
-    'Sắp hết hạn':   'bg-amber-100 text-amber-800',
-    'Chờ duyệt':     'bg-primary/10 text-primary',
-    'Đã thanh lý':   'bg-surface-container text-on-surface-variant',
+    'Chờ duyệt':     'bg-amber-100 text-amber-800',
+    'Chờ xử lý':     'bg-primary/10 text-primary',
+    'Đang xử lý':    'bg-blue-100 text-blue-800',
+    'Hoàn thành':     'bg-emerald-100 text-emerald-800',
   }
   return map[status] || 'bg-surface-container text-on-surface-variant'
 }

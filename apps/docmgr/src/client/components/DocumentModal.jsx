@@ -1,11 +1,38 @@
 import { useState, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import gasCall from '../gasClient.js'
 import { dataCache } from '../utils/dataCache.js'
 import { formatCurrency } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
 
-const STATUS_OPTIONS = ['Hiệu lực', 'Hết hạn', 'Sắp hết hạn', 'Chờ duyệt', 'Đã thanh lý']
+const STATUS_OPTIONS = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
+
+function toDateInput(val) {
+  if (!val) return ''
+  const s = String(val).trim()
+  // Exact YYYY-MM-DD — return directly (no timezone issue)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // DD/MM/YYYY (Vietnamese input format)
+  const dmyMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2].padStart(2,'0')}-${dmyMatch[1].padStart(2,'0')}`
+  // ISO string with time (e.g. GAS serialized Date) — use local parts to handle timezone
+  try {
+    const d = new Date(s)
+    if (isNaN(d.getTime())) return ''
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  } catch { return '' }
+}
+
+function parseAssignees(v) {
+  if (!v) return []
+  if (typeof v === 'string' && v.charAt(0) === '[') { try { return JSON.parse(v).map(String) } catch(_) {} }
+  return [String(v)]
+}
 const MAX_FILE_MB = 20
 
 function buildCategoryOptions(danhMuc) {
@@ -22,8 +49,6 @@ function buildCategoryOptions(danhMuc) {
   walk('', 0)
   return opts
 }
-
-const DEPT_RESTRICTED_ROLES = ['Trưởng phòng', 'Nhân viên']
 
 function formatCompact(n) {
   if (n >= 1000000000) return (n / 1000000000).toFixed(n % 1000000000 === 0 ? 0 : 1) + 'B'
@@ -43,30 +68,41 @@ function parseSuggestions(raw) {
 
 export default function DocumentModal({ mode, doc, lookups: initialLookups, token, session, onClose, onSaved, docs }) {
   const isEdit = mode === 'edit'
-  const isDeptRestricted = session && DEPT_RESTRICTED_ROLES.includes(session.role)
-  const defaultPhongBan = isDeptRestricted ? (session.departments?.[0] || '') : ''
 
-  const initialAssignees = isEdit && doc?.['Phụ trách']
-    ? (() => { try { const v = doc['Phụ trách']; return (typeof v === 'string' && v.charAt(0) === '[') ? JSON.parse(v) : [v] } catch(_) { return [String(doc['Phụ trách'])] } })()
-    : (session ? [session.username] : [])
+  // Phụ trách: single person (parse from JSON array)
+  const initialPhuTrach = isEdit && doc?.['Phụ trách']
+    ? (() => { try { const v = doc['Phụ trách']; const arr = (typeof v === 'string' && v.charAt(0) === '[') ? JSON.parse(v) : [v]; return String(arr[0] || '') } catch(_) { return String(doc['Phụ trách']) } })()
+    : ''
 
-  const [form, setForm] = useState(isEdit ? { ...doc, 'Phòng ban': doc['Phòng ban'] || defaultPhongBan } : {
+  // Người phối hợp: multi-select (parse from JSON array)
+  const initialCollaborators = isEdit && doc?.['Người phối hợp']
+    ? (() => { try { const v = doc['Người phối hợp']; return (typeof v === 'string' && v.charAt(0) === '[') ? JSON.parse(v) : (v ? [v] : []) } catch(_) { return [] } })()
+    : []
+
+  const [form, setForm] = useState(isEdit ? {
+    ...doc,
+    'Dự án (Phòng ban)': (doc['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': (doc['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Ngày ban hành': toDateInput(doc['Ngày ban hành']),
+    'Ngày kết thúc': toDateInput(doc['Ngày kết thúc']),
+    'Ghi chú': [doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join('\n'),
+  } : {
     'Tên hồ sơ': '',
     'Danh mục': '',
-    'Phòng ban': defaultPhongBan,
     'Số hồ sơ': '',
-    'Dự án': '',
-    'Nhà cung cấp': '',
+    'Dự án (Phòng ban)': '',
+    'Nhà cung cấp (Nơi ban hành)': '',
     'Ngày ban hành': '',
     'Ngày kết thúc': '',
     'Giá trị HĐ': '',
-    'Giá trị thực hiện': '',
-    'Tình trạng': 'Hiệu lực',
-    'Mô tả': '',
+    'Tình trạng': 'Chờ duyệt',
+    'Ghi chú': '',
+    'Nơi lưu hồ sơ cứng': '',
   })
-  const [assignees, setAssignees] = useState(initialAssignees)
-  const [assigneeSearch, setAssigneeSearch] = useState('')
-  const [currencyTyping, setCurrencyTyping] = useState(null) // 'hd' | 'th'
+  const [phuTrach, setPhuTrach] = useState(initialPhuTrach)
+  const [collaborators, setCollaborators] = useState(initialCollaborators)
+  const [collabSearch, setCollabSearch] = useState('')
+  const [currencyTyping, setCurrencyTyping] = useState(null)
 
   const [files, setFiles]           = useState([])   // new files: [{file: File}]
   const [existingFiles, setExistingFiles] = useState(  // existing files in edit mode
@@ -81,7 +117,20 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const [quickSaving, setQuickSaving] = useState(false)
   const [lookups, setLookups]     = useState(initialLookups)
   const fileRef = useRef()
+  const statusOverrideRef = useRef(null)
   const { showToast } = useToast()
+  const confirm = useConfirm()
+
+  // Role-based UI
+  const role = session?.role || ''
+  const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
+  const isVanThu = role === 'Văn thư'
+  const canEditStatus = isAdminRole || isVanThu
+  const statusOptions = isVanThu ? ['Chờ duyệt', 'Hoàn thành'] : STATUS_OPTIONS
+  const canEditPhuTrach = isAdminRole
+  const canEditPhoiHop = isAdminRole
+  const canEditFields = isAdminRole || isVanThu
+  const canQuickAddLookup = isAdminRole || isVanThu
 
   function setField(key, val) {
     setForm(f => ({ ...f, [key]: val }))
@@ -107,7 +156,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     setFiles(prev => prev.filter((_, i) => i !== idx))
   }
 
-  function removeExistingFile(fileId) {
+  async function removeExistingFile(fileId, fileName) {
+    if (!await confirm(`Xoá file "${fileName || fileId}" khỏi hồ sơ này?`)) return
     setExistingFiles(prev => prev.filter(f => f.fileId !== fileId))
   }
 
@@ -124,7 +174,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         setLookups(fresh)
         // Auto-select newly added
         const newItem = fresh.duAn[fresh.duAn.length - 1]
-        if (newItem) setField('Dự án', newItem['Tên dự án viết tắt'])
+        if (newItem) setField('Dự án (Phòng ban)', newItem['Tên dự án viết tắt'])
       } else if (quickAdd === 'nhaCungCap') {
         if (!quickForm['Tên NCC viết tắt']) return
         await gasCall('api_addNhaCungCap', token, quickForm)
@@ -133,7 +183,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         dataCache.set('lookups', fresh)
         setLookups(fresh)
         const newItem = fresh.nhaCungCap[fresh.nhaCungCap.length - 1]
-        if (newItem) setField('Nhà cung cấp', newItem['Tên NCC viết tắt'])
+        if (newItem) setField('Nhà cung cấp (Nơi ban hành)', newItem['Tên NCC viết tắt'])
       }
       setQuickAdd(null)
       setQuickForm({})
@@ -161,14 +211,22 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       )
       const keepFileIds = existingFiles.map(f => f.fileId)
 
-      const submitForm = { ...form, 'Phụ trách': assignees.length ? JSON.stringify(assignees) : JSON.stringify([session?.username || '']) }
+      const submitForm = {
+        ...form,
+        'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : form['Tình trạng'],
+        'Phụ trách': phuTrach || '',
+        'Người phối hợp': collaborators.length ? collaborators : [],
+      }
+      statusOverrideRef.current = null
       if (isEdit) {
         await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds)
+        showToast('Đã cập nhật hồ sơ', 'success')
+        onSaved(null)
       } else {
-        await gasCall('api_createDocument', token, submitForm, fileInfos)
+        const created = await gasCall('api_createDocument', token, submitForm, fileInfos)
+        showToast('Đã thêm hồ sơ', 'success')
+        onSaved(created)
       }
-      showToast(isEdit ? 'Đã cập nhật hồ sơ' : 'Đã thêm hồ sơ', 'success')
-      onSaved()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -198,7 +256,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+        <form id="_docModalForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
           <div className="p-6 grid md:grid-cols-2 gap-x-8 gap-y-5">
 
             {/* ── LEFT COLUMN ── */}
@@ -208,73 +266,144 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 <input className={iCls} value={form['Tên hồ sơ']} onChange={e => setField('Tên hồ sơ', e.target.value)} placeholder="Nhập tên hồ sơ..." />
               </Field>
 
-              {/* Danh mục + Phòng ban */}
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Danh mục *">
-                  <select className={iCls} value={form['Danh mục']} onChange={e => setField('Danh mục', e.target.value)}>
+              {/* Danh mục */}
+              <Field label="Danh mục *">
+                <select className={iCls} value={form['Danh mục']} onChange={e => {
+                  const catId = e.target.value
+                  setField('Danh mục', catId)
+                  // Auto-fill Nơi lưu hồ sơ cứng from category
+                  const cat = (lookups.danhMuc || []).find(c => String(c.ID) === catId)
+                  if (cat && cat['Nơi lưu hồ sơ cứng']) {
+                    setField('Nơi lưu hồ sơ cứng', cat['Nơi lưu hồ sơ cứng'])
+                  }
+                }}>
+                  <option value="">-- Chọn --</option>
+                  {buildCategoryOptions(lookups.danhMuc || []).map(o => (
+                    <option key={o.id} value={o.id}>{o.label}</option>
+                  ))}
+                </select>
+              </Field>
+
+              {/* Phụ trách (single person) — only admin/GĐ can change */}
+              {canEditPhuTrach ? (
+                <Field label="Phụ trách">
+                  <select className={iCls} value={phuTrach} onChange={e => setPhuTrach(e.target.value)}>
                     <option value="">-- Chọn --</option>
-                    {buildCategoryOptions(lookups.danhMuc || []).map(o => (
-                      <option key={o.id} value={o.id}>{o.label}</option>
-                    ))}
+                    {(lookups.users || []).map(u => {
+                      const name = u['Tên nhân viên'] || u['Tên đăng nhập']
+                      const label = u['Email'] ? `${name} (${u['Email']})` : name
+                      return <option key={u.ID} value={u['Tên đăng nhập']}>{label}</option>
+                    })}
                   </select>
                 </Field>
-                <Field label="Phòng ban">
-                  {isDeptRestricted ? (
-                    <div className={iCls + ' text-on-surface-variant bg-surface-container'}>{form['Phòng ban'] || '—'}</div>
-                  ) : (
-                    <select className={iCls} value={form['Phòng ban']} onChange={e => setField('Phòng ban', e.target.value)}>
-                      <option value="">-- Chọn --</option>
-                      {(lookups.phongBan || []).map(p => <option key={p.ID} value={p['Tên phòng ban']}>{p['Tên phòng ban']}</option>)}
-                    </select>
-                  )}
+              ) : phuTrach ? (
+                <Field label="Phụ trách">
+                  {(() => {
+                    const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === phuTrach)
+                    const name = u?.['Tên nhân viên'] || phuTrach
+                    const email = u?.['Email'] || ''
+                    return (
+                      <div className="relative group inline-block w-full">
+                        <p className="text-sm text-on-surface bg-surface-container-low rounded-xl px-3 py-2.5 cursor-default">{name}</p>
+                        <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                            <p className="font-medium">{name}</p>
+                            {email && <p className="text-surface/70 text-[10px]">{email}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </Field>
-              </div>
+              ) : null}
 
-              {/* Phụ trách */}
-              <Field label="Phụ trách">
-                <div className="space-y-1.5">
-                  {assignees.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {assignees.map(a => (
-                        <span key={a} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2.5 py-1 rounded-full">
-                          <span className="w-4 h-4 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">{String(a).charAt(0).toUpperCase()}</span>
-                          {a}
-                          <button type="button" onClick={() => setAssignees(prev => prev.filter(x => x !== a))}
-                            className="ml-0.5 hover:text-error transition-colors">
-                            <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
-                          </button>
-                        </span>
-                      ))}
+              {/* Người phối hợp (multi-select) — admin/GĐ can edit, phụ trách can add */}
+              {(canEditPhoiHop || ((() => { const list = parseAssignees(doc?.['Phụ trách']); return list.includes(String(session?.userId)) || list.includes(session?.username) })() && isEdit)) ? (
+                <Field label="Người phối hợp">
+                  <div className="space-y-1.5">
+                    {collaborators.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {collaborators.map(a => {
+                          const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
+                          const displayName = u?.['Tên nhân viên'] || a
+                          const email = u?.['Email'] || ''
+                          return (
+                            <div key={a} className="relative group">
+                              <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2.5 py-1 rounded-full">
+                                <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{displayName.charAt(0).toUpperCase()}</span>
+                                {displayName}
+                                <button type="button" onClick={() => setCollaborators(prev => prev.filter(x => x !== a))}
+                                  className="ml-0.5 hover:text-error transition-colors">
+                                  <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
+                                </button>
+                              </span>
+                              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                  <p className="font-medium">{displayName}</p>
+                                  {email && <p className="text-surface/70 text-[10px]">{email}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    <div className="relative">
+                      <input className={iCls} placeholder="Thêm người phối hợp..."
+                        value={collabSearch}
+                        onChange={e => setCollabSearch(e.target.value)} />
+                      {collabSearch && (() => {
+                        const users = lookups.users || []
+                        const filtered = users.filter(u =>
+                          (u['Tên nhân viên'] || u['Tên đăng nhập']).toLowerCase().includes(collabSearch.toLowerCase()) &&
+                          !collaborators.includes(u['Tên đăng nhập']) &&
+                          u['Tên đăng nhập'] !== phuTrach
+                        )
+                        if (!filtered.length) return null
+                        return (
+                          <div className="absolute z-10 top-full mt-1 left-0 right-0 bg-white border border-outline-variant rounded-xl shadow-md3-3 max-h-40 overflow-y-auto">
+                            {filtered.map(u => {
+                              const dn = u['Tên nhân viên'] || u['Tên đăng nhập']
+                              return (
+                                <button key={u.ID} type="button"
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/5 flex items-center gap-2"
+                                  onClick={() => { setCollaborators(prev => [...prev, u['Tên đăng nhập']]); setCollabSearch('') }}>
+                                  <span className="w-6 h-6 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[10px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                                  <span>{dn}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
-                  )}
-                  <div className="relative">
-                    <input className={iCls} placeholder="Thêm người phụ trách..."
-                      value={assigneeSearch}
-                      onChange={e => setAssigneeSearch(e.target.value)} />
-                    {assigneeSearch && (() => {
-                      const users = lookups.users || []
-                      const filtered = users.filter(u =>
-                        u['Tên đăng nhập'].toLowerCase().includes(assigneeSearch.toLowerCase()) &&
-                        !assignees.includes(u['Tên đăng nhập'])
-                      )
-                      if (!filtered.length) return null
+                  </div>
+                </Field>
+              ) : collaborators.length > 0 ? (
+                <Field label="Người phối hợp">
+                  <div className="flex flex-wrap gap-1.5 bg-surface-container-low rounded-xl px-3 py-2.5">
+                    {collaborators.map(a => {
+                      const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
+                      const dn = u?.['Tên nhân viên'] || a
+                      const email = u?.['Email'] || ''
                       return (
-                        <div className="absolute z-10 top-full mt-1 left-0 right-0 bg-white border border-outline-variant rounded-xl shadow-md3-3 max-h-40 overflow-y-auto">
-                          {filtered.map(u => (
-                            <button key={u.ID} type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-primary/5 flex items-center gap-2"
-                              onClick={() => { setAssignees(prev => [...prev, u['Tên đăng nhập']]); setAssigneeSearch('') }}>
-                              <span className="w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center text-[10px] font-bold shrink-0">{u['Tên đăng nhập'].charAt(0).toUpperCase()}</span>
-                              <span>{u['Tên đăng nhập']}</span>
-                              {u['Phòng ban'] && <span className="text-xs text-on-surface-variant ml-auto">{u['Phòng ban']}</span>}
-                            </button>
-                          ))}
+                        <div key={a} className="relative group">
+                          <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2.5 py-1 rounded-full">
+                            <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                            {dn}
+                          </span>
+                          <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                              <p className="font-medium">{dn}</p>
+                              {email && <p className="text-surface/70 text-[10px]">{email}</p>}
+                            </div>
+                          </div>
                         </div>
                       )
-                    })()}
+                    })}
                   </div>
-                </div>
-              </Field>
+                </Field>
+              ) : null}
 
               {/* Ngày ban hành + Ngày kết thúc */}
               <div className="grid grid-cols-2 gap-4">
@@ -295,7 +424,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                       <span key={ef.fileId} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2.5 py-1 rounded-full">
                         <span className="material-symbols-outlined" style={{ fontSize: 13 }}>attach_file</span>
                         <span className="max-w-[120px] truncate">{ef.fileName || ef.fileId}</span>
-                        <button type="button" onClick={() => removeExistingFile(ef.fileId)}
+                        <button type="button" onClick={() => removeExistingFile(ef.fileId, ef.fileName)}
                           className="ml-0.5 hover:text-error transition-colors">
                           <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
                         </button>
@@ -346,39 +475,43 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
             {/* ── RIGHT COLUMN ── */}
             <div className="space-y-5">
-              {/* Dự án */}
-              <Field label="Dự án">
+              {/* Dự án (Phòng ban) */}
+              <Field label="Dự án (Phòng ban)">
                 <div className="flex gap-2">
-                  <select className={iCls + ' flex-1'} value={form['Dự án']} onChange={e => setField('Dự án', e.target.value)}>
+                  <select className={iCls + ' flex-1'} value={form['Dự án (Phòng ban)']} onChange={e => setField('Dự án (Phòng ban)', e.target.value)}>
                     <option value="">-- Chọn dự án --</option>
                     {(lookups.duAn || []).map(p => <option key={p.ID} value={p['Tên dự án viết tắt']}>
                       {p['Tên dự án đầy đủ'] ? `${p['Tên dự án đầy đủ']} (${p['Tên dự án viết tắt']})` : p['Tên dự án viết tắt']}
                     </option>)}
                   </select>
+                  {canQuickAddLookup && (
                   <button type="button"
                     onClick={() => { setQuickAdd('duAn'); setQuickForm({ 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '' }) }}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors shrink-0"
                     title="Thêm dự án mới">
                     <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add_circle</span>
                   </button>
+                  )}
                 </div>
               </Field>
 
-              {/* Nhà cung cấp */}
-              <Field label="Nhà cung cấp">
+              {/* Nhà cung cấp (Nơi ban hành) */}
+              <Field label="Nhà cung cấp (Nơi ban hành)">
                 <div className="flex gap-2">
-                  <select className={iCls + ' flex-1'} value={form['Nhà cung cấp']} onChange={e => setField('Nhà cung cấp', e.target.value)}>
+                  <select className={iCls + ' flex-1'} value={form['Nhà cung cấp (Nơi ban hành)']} onChange={e => setField('Nhà cung cấp (Nơi ban hành)', e.target.value)}>
                     <option value="">-- Chọn NCC --</option>
                     {(lookups.nhaCungCap || []).map(p => <option key={p.ID} value={p['Tên NCC viết tắt']}>
                       {p['Tên NCC đầy đủ'] ? `${p['Tên NCC đầy đủ']} (${p['Tên NCC viết tắt']})` : p['Tên NCC viết tắt']}
                     </option>)}
                   </select>
+                  {canQuickAddLookup && (
                   <button type="button"
                     onClick={() => { setQuickAdd('nhaCungCap'); setQuickForm({ 'Tên NCC viết tắt': '', 'Tên NCC đầy đủ': '' }) }}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors shrink-0"
                     title="Thêm NCC mới">
                     <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add_circle</span>
                   </button>
+                  )}
                 </div>
               </Field>
 
@@ -412,64 +545,36 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </div>
               )}
 
-              {/* Financial card */}
-              <div className="bg-surface-container-low rounded-2xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Tài chính</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Giá trị HĐ (VNĐ)">
-                    <input type="text" inputMode="numeric" className={iCls}
-                      value={form['Giá trị HĐ'] ? Number(String(form['Giá trị HĐ']).replace(/\./g, '')).toLocaleString('vi-VN') : ''}
-                      onChange={e => { setField('Giá trị HĐ', e.target.value.replace(/[^\d]/g, '')); setCurrencyTyping('hd') }}
-                      onBlur={() => setTimeout(() => setCurrencyTyping(null), 200)}
-                      placeholder="0" />
-                    {currencyTyping === 'hd' && parseSuggestions(form['Giá trị HĐ']).length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {parseSuggestions(form['Giá trị HĐ']).map(({ value, label }) => (
-                          <button key={value} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị HĐ', String(value)); setCurrencyTyping(null) }}
-                            className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full hover:bg-primary/20 transition-colors">
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
-                  <Field label="Giá trị thực hiện (VNĐ)">
-                    <input type="text" inputMode="numeric" className={iCls}
-                      value={form['Giá trị thực hiện'] ? Number(String(form['Giá trị thực hiện']).replace(/\./g, '')).toLocaleString('vi-VN') : ''}
-                      onChange={e => { setField('Giá trị thực hiện', e.target.value.replace(/[^\d]/g, '')); setCurrencyTyping('th') }}
-                      onBlur={() => setTimeout(() => setCurrencyTyping(null), 200)}
-                      placeholder="0" />
-                    {currencyTyping === 'th' && parseSuggestions(form['Giá trị thực hiện']).length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {parseSuggestions(form['Giá trị thực hiện']).map(({ value, label }) => (
-                          <button key={value} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị thực hiện', String(value)); setCurrencyTyping(null) }}
-                            className="px-2 py-0.5 bg-secondary/10 text-secondary text-xs rounded-full hover:bg-secondary/20 transition-colors">
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </Field>
-                </div>
-                {(form['Giá trị HĐ'] || form['Giá trị thực hiện']) && (
-                  <div className="flex items-center justify-between pt-1 border-t border-outline-variant">
-                    <span className="text-xs text-on-surface-variant">Chênh lệch</span>
-                    <span className={`text-sm font-semibold ${
-                      (Number(form['Giá trị HĐ']) || 0) - (Number(form['Giá trị thực hiện']) || 0) >= 0 ? 'text-emerald-700' : 'text-error'
-                    }`}>
-                      {formatCurrency((Number(form['Giá trị HĐ']) || 0) - (Number(form['Giá trị thực hiện']) || 0))}
-                    </span>
+              {/* Giá trị HĐ */}
+              <Field label="Giá trị HĐ (VNĐ)">
+                <input type="text" inputMode="numeric" className={iCls}
+                  value={form['Giá trị HĐ'] ? Number(String(form['Giá trị HĐ']).replace(/\./g, '')).toLocaleString('vi-VN') : ''}
+                  onChange={e => { setField('Giá trị HĐ', e.target.value.replace(/[^\d]/g, '')); setCurrencyTyping('hd') }}
+                  onBlur={() => setTimeout(() => setCurrencyTyping(null), 200)}
+                  placeholder="0" />
+                {currencyTyping === 'hd' && parseSuggestions(form['Giá trị HĐ']).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {parseSuggestions(form['Giá trị HĐ']).map(({ value, label }) => (
+                      <button key={value} type="button" onMouseDown={e => { e.preventDefault(); setField('Giá trị HĐ', String(value)); setCurrencyTyping(null) }}
+                        className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full hover:bg-primary/20 transition-colors">
+                        {label}
+                      </button>
+                    ))}
                   </div>
                 )}
-              </div>
+              </Field>
 
               {/* Tình trạng + Số hồ sơ */}
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Tình trạng">
-                  <select className={iCls} value={form['Tình trạng']} onChange={e => setField('Tình trạng', e.target.value)}>
-                    {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </Field>
+              <div className={`grid ${isEdit || !isVanThu ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
+                {/* Tình trạng — hidden for Văn thư in create mode (buttons handle status) */}
+                {(isEdit || !isVanThu) && (
+                  <Field label="Tình trạng">
+                    <select className={iCls} value={form['Tình trạng']} onChange={e => setField('Tình trạng', e.target.value)}
+                      disabled={!canEditStatus}>
+                      {statusOptions.map(s => <option key={s}>{s}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <Field label="Số hồ sơ">
                   <input className={iCls} value={form['Số hồ sơ']}
                     onChange={e => setField('Số hồ sơ', e.target.value)}
@@ -478,9 +583,14 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </Field>
               </div>
 
-              {/* Mô tả */}
-              <Field label="Mô tả">
-                <textarea className={iCls + ' resize-none h-20'} value={form['Mô tả']} onChange={e => setField('Mô tả', e.target.value)} placeholder="Ghi chú thêm..." />
+              {/* Ghi chú */}
+              <Field label="Ghi chú">
+                <textarea className={iCls + ' resize-none h-20'} value={form['Ghi chú'] || ''} onChange={e => setField('Ghi chú', e.target.value)} placeholder="Ghi chú..." />
+              </Field>
+
+              {/* Nơi lưu hồ sơ cứng */}
+              <Field label="Nơi lưu hồ sơ cứng">
+                <input className={iCls} value={form['Nơi lưu hồ sơ cứng'] || ''} onChange={e => setField('Nơi lưu hồ sơ cứng', e.target.value)} placeholder="VD: Tủ A, Kệ 3..." />
               </Field>
             </div>
           </div>
@@ -499,13 +609,29 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
               Hủy
             </button>
-            <button type="submit" disabled={uploading}
-              className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-                {uploading ? 'sync' : 'save'}
-              </span>
-              {uploading ? 'Đang lưu…' : isEdit ? 'Cập nhật' : 'Lưu tài liệu'}
-            </button>
+            {!isEdit && isVanThu ? (
+              <>
+                <button type="button" disabled={uploading}
+                  onClick={() => { statusOverrideRef.current = 'Hoàn thành'; flushSync(() => {}); document.getElementById('_docModalForm')?.requestSubmit() }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-full text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>inventory</span>
+                  {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
+                </button>
+                <button type="submit" disabled={uploading}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
+                  {uploading ? 'Đang lưu…' : 'Trình duyệt'}
+                </button>
+              </>
+            ) : (
+              <button type="submit" disabled={uploading}
+                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  {uploading ? 'sync' : 'save'}
+                </span>
+                {uploading ? 'Đang lưu…' : isEdit ? 'Cập nhật' : 'Lưu tài liệu'}
+              </button>
+            )}
           </div>
         </form>
       </div>

@@ -4,16 +4,55 @@
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run
 
 // ── Wrapper ──────────────────────────────────────────────────────────────────
+function _isSessionExpired(msg) {
+  return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
+}
+
+// GAS Call Queue to prevent concurrent request limits and auto-retry
+const _queue = []
+let _activeCount = 0
+const MAX_CONCURRENT = 3
+
+function _processQueue() {
+  if (_queue.length === 0 || _activeCount >= MAX_CONCURRENT) return
+  _activeCount++
+  const { fnName, args, resolve, reject, retries } = _queue.shift()
+
+  google.script.run
+    .withSuccessHandler(res => {
+      _activeCount--
+      _processQueue()
+      if (res && res.success) {
+        resolve(res.payload)
+      } else {
+        const errMsg = res ? res.error : 'Lỗi không xác định'
+        if (_isSessionExpired(errMsg)) {
+          window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
+        }
+        reject(new Error(errMsg))
+      }
+    })
+    .withFailureHandler(err => {
+      _activeCount--
+      const msg = err.message || String(err)
+      if (retries > 0 && !_isSessionExpired(msg)) {
+        setTimeout(() => {
+          _queue.push({ fnName, args, resolve, reject, retries: retries - 1 })
+          _processQueue()
+        }, 1000)
+      } else {
+        reject(new Error(msg))
+        _processQueue()
+      }
+    })
+    [fnName](...args)
+}
+
 function gasCall(fnName, ...args) {
   if (IS_GAS) {
     return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res && res.success) resolve(res.payload)
-          else reject(new Error(res ? res.error : 'Lỗi không xác định'))
-        })
-        .withFailureHandler(err => reject(new Error(err.message || String(err))))
-        [fnName](...args)
+      _queue.push({ fnName, args, resolve, reject, retries: 2 })
+      _processQueue()
     })
   }
   // Dev mock (never used in production build)
@@ -42,9 +81,9 @@ const _mockData = {
     { ID: 3, 'Tên danh mục': 'Báo cáo',   Icon: 'bar_chart', 'Mô tả': 'Báo cáo định kỳ', 'Danh mục cha': '' },
     { ID: 4, 'Tên danh mục': 'Hợp đồng XD', Icon: 'engineering', 'Mô tả': 'Hợp đồng xây dựng', 'Danh mục cha': 1 },
   ],
-  phongBan: [
-    { ID: 1, 'Tên phòng ban': 'Kỹ thuật', 'Mô tả': 'Phòng kỹ thuật', 'Danh mục cho phép': '' },
-    { ID: 2, 'Tên phòng ban': 'Kinh doanh', 'Mô tả': 'Phòng kinh doanh', 'Danh mục cho phép': '' },
+  nhom: [
+    { ID: 1, 'Tên nhóm': 'Nhóm Kỹ thuật', 'Mô tả': 'Nhóm kỹ thuật dự án', 'Thành viên': JSON.stringify([1, 2]) },
+    { ID: 2, 'Tên nhóm': 'Nhóm Kinh doanh', 'Mô tả': 'Nhóm kinh doanh', 'Thành viên': JSON.stringify([3]) },
   ],
   duAn: [
     { ID: 1, 'Tên dự án viết tắt': 'DA-01', 'Tên dự án đầy đủ': 'Dự án Xây dựng Trụ sở', 'Địa chỉ': 'HCM' },
@@ -55,9 +94,9 @@ const _mockData = {
     { ID: 2, 'Tên NCC viết tắt': 'XYZ Ltd', 'Tên NCC đầy đủ': 'Công ty CP XYZ', 'Mã số thuế': '067890', 'Điện thoại': '024-5678', 'Lĩnh vực kinh doanh': 'Xây dựng' },
   ],
   docs: [
-    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-01', 'Nhà cung cấp': 'ABC Corp', 'Phòng ban': 'Kỹ thuật', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Giá trị thực hiện': 80000000, 'Chênh lệch': 20000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]) },
-    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hiệu lực', 'Dự án': 'DA-02', 'Nhà cung cấp': '', 'Phòng ban': 'Kinh doanh', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Giá trị thực hiện': 0, 'Chênh lệch': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin', 'editor1']), 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]) },
-    { ID: 3, 'Tên hồ sơ': 'Hợp đồng xây dựng VP', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt', 'Dự án': 'DA-01', 'Nhà cung cấp': 'XYZ Ltd', 'Phòng ban': 'Kỹ thuật', 'Số hồ sơ': 'HS-003', 'Giá trị HĐ': 500000000, 'Giá trị thực hiện': 0, 'Chênh lệch': 500000000, 'Ngày ban hành': '2024-03-01', 'Ngày kết thúc': '2025-03-01', 'Ngày cập nhật': '2024-03-01', 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
+    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]) },
+    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]) },
+    { ID: 3, 'Tên hồ sơ': 'Hợp đồng xây dựng VP', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'XYZ Ltd', 'Số hồ sơ': 'HS-003', 'Giá trị HĐ': 500000000, 'Ngày ban hành': '2024-03-01', 'Ngày kết thúc': '2025-03-01', 'Ngày cập nhật': '2024-03-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': '', 'Ghi chú': 'Chờ GĐ duyệt', 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
   ],
 }
 
@@ -84,7 +123,7 @@ function _mockDelete(list, id) {
 const _ADMIN_PERMS = {
   hoSo:       { c: true, r: true, u: true, d: true },
   danhMuc:    { c: true, r: true, u: true, d: true },
-  phongBan:   { c: true, r: true, u: true, d: true },
+  nhom:       { c: true, r: true, u: true, d: true },
   nhaCungCap: { c: true, r: true, u: true, d: true },
   duAn:       { c: true, r: true, u: true, d: true },
   user:       { c: true, r: true, u: true, d: true },
@@ -103,33 +142,32 @@ async function mockCall(fn, ...args) {
     case 'api_validateSession':
       // In dev mode, auto-create session for testing
       if (!_mockSession) {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS }
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true }
       }
       return { ..._mockSession }
     case 'api_getAllData':
       return {
         danhMuc:     _mockData.danhMuc.map(i => ({ ...i })),
-        phongBan:    _mockData.phongBan.map(i => ({ ...i })),
+        nhom:        _mockData.nhom.map(i => ({ ...i })),
         duAn:        _mockData.duAn.map(i => ({ ...i })),
         nhaCungCap:  _mockData.nhaCungCap.map(i => ({ ...i })),
         users: [
-          { ID: 1, 'Tên đăng nhập': 'admin', 'Phòng ban': '', 'Quyền': 'admin' },
-          { ID: 2, 'Tên đăng nhập': 'editor1', 'Phòng ban': JSON.stringify(['Kỹ thuật']), 'Quyền': 'Nhân viên' },
-          { ID: 3, 'Tên đăng nhập': 'truongphong', 'Phòng ban': JSON.stringify(['Kỹ thuật']), 'Quyền': 'Trưởng phòng' },
+          { ID: 1, 'Tên đăng nhập': 'admin',       'Tên nhân viên': 'Admin Hệ thống',  'Email': 'admin@test.com',  'Quyền': 'admin' },
+          { ID: 2, 'Tên đăng nhập': 'editor1',      'Tên nhân viên': 'Nguyễn Văn A',    'Email': 'nva@test.com',    'Quyền': 'Nhân viên' },
+          { ID: 3, 'Tên đăng nhập': 'truongphong',  'Tên nhân viên': 'Trần Thị Bình',   'Email': 'ttb@test.com',    'Quyền': 'Trưởng phòng' },
         ],
       }
     case 'api_getDocuments':
       return { data: _mockData.docs.map(d => ({ ...d })) }
     case 'api_getDocumentStats': {
       const byStatus = {}
-      let totalValue = 0, totalExecuted = 0
+      let totalValue = 0
       _mockData.docs.forEach(d => {
         const s = d['Tình trạng'] || 'Không rõ'
         byStatus[s] = (byStatus[s] || 0) + 1
         totalValue += Number(d['Giá trị HĐ']) || 0
-        totalExecuted += Number(d['Giá trị thực hiện']) || 0
       })
-      return { total: _mockData.docs.length, byStatus, totalValue, totalExecuted, totalDiff: totalValue - totalExecuted }
+      return { total: _mockData.docs.length, byStatus, totalValue }
     }
     case 'api_createDocument':
       return _mockAdd(_mockData.docs, { ...(args[1] || {}), 'Ngày cập nhật': new Date().toISOString(), 'Phụ trách': JSON.stringify(['admin']), 'Người tạo': 'admin', 'Người cập nhật': 'admin' })
@@ -145,12 +183,12 @@ async function mockCall(fn, ...args) {
       return _mockUpdate(_mockData.danhMuc, args[1], args[2])
     case 'api_deleteCategory':
       return _mockDelete(_mockData.danhMuc, args[1])
-    case 'api_addPhongBan':
-      return _mockAdd(_mockData.phongBan, args[1])
-    case 'api_updatePhongBan':
-      return _mockUpdate(_mockData.phongBan, args[1], args[2])
-    case 'api_deletePhongBan':
-      return _mockDelete(_mockData.phongBan, args[1])
+    case 'api_addNhom':
+      return _mockAdd(_mockData.nhom, args[1])
+    case 'api_updateNhom':
+      return _mockUpdate(_mockData.nhom, args[1], args[2])
+    case 'api_deleteNhom':
+      return _mockDelete(_mockData.nhom, args[1])
     case 'api_addNhaCungCap':
       return _mockAdd(_mockData.nhaCungCap, args[1])
     case 'api_updateNhaCungCap':
@@ -202,6 +240,28 @@ async function mockCall(fn, ...args) {
     case 'api_getComments': {
       const docId = String(args[1])
       return { data: _mockComments.filter(c => String(c.DocID) === docId) }
+    }
+    case 'api_transitionDocument': {
+      const docId = args[1]
+      const action = args[2]
+      const tData = args[3] || {}
+      const idx = _mockData.docs.findIndex(d => String(d.ID) === String(docId))
+      if (idx === -1) throw new Error('Không tìm thấy hồ sơ')
+      const ACTIONS = {
+        trinhDuyet: 'Chờ duyệt', luuTaiLieu: 'Hoàn thành',
+        giaoViec: 'Chờ xử lý', thuHoi: 'Chờ duyệt',
+        nhanViec: 'Đang xử lý', hoanThanh: 'Hoàn thành',
+      }
+      if (!ACTIONS[action]) throw new Error('Hành động không hợp lệ: ' + action)
+      _mockData.docs[idx]['Tình trạng'] = ACTIONS[action]
+      if (action === 'giaoViec' && tData['Phụ trách']) {
+        _mockData.docs[idx]['Phụ trách'] = JSON.stringify([String(tData['Phụ trách'])])
+      }
+      if (tData['Người phối hợp'] !== undefined) {
+        _mockData.docs[idx]['Người phối hợp'] = Array.isArray(tData['Người phối hợp']) ? JSON.stringify(tData['Người phối hợp']) : ''
+      }
+      _mockData.docs[idx]['Ngày cập nhật'] = new Date().toISOString()
+      return { data: { ..._mockData.docs[idx] } }
     }
     case 'api_addComment': {
       const docId = String(args[1])

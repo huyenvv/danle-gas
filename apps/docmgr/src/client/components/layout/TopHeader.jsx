@@ -4,13 +4,27 @@ import Icon from '../common/Icon.jsx'
 const ROLE_LABELS = {
   'admin':          'Quản trị hệ thống',
   'Quản trị viên':  'Quản trị viên',
-  'Biên tập viên':  'Biên tập viên',
+  'Giám đốc':       'Giám đốc',
+  'Văn thư':        'Văn thư',
+  'Trưởng phòng':   'Trưởng phòng',
+  'Nhân viên':      'Nhân viên',
   'Xem':            'Chỉ xem',
+}
+
+const ROLE_COLORS = {
+  'admin':          'bg-red-100 text-red-700',
+  'Quản trị viên':  'bg-red-100 text-red-700',
+  'Giám đốc':       'bg-purple-100 text-purple-700',
+  'Văn thư':        'bg-blue-100 text-blue-700',
+  'Trưởng phòng':   'bg-gray-100 text-gray-600',
+  'Nhân viên':      'bg-gray-100 text-gray-600',
+  'Xem':            'bg-gray-100 text-gray-500',
 }
 
 export default function TopHeader({ username, email, role, onToggleSidebar, onBellClick, unreadCount = 0, hasNewUnread = false, companyName = '' }) {
   const initial = (username || email || 'U')[0].toUpperCase()
   const roleLabel = ROLE_LABELS[role] || role || ''
+  const roleColor = ROLE_COLORS[role] || 'bg-gray-100 text-gray-600'
 
   const [popoverOpen, setPopoverOpen] = useState(false)
   const popoverRef = useRef(null)
@@ -68,9 +82,14 @@ export default function TopHeader({ username, email, role, onToggleSidebar, onBe
           )}
         </div>
 
-        {/* Username text (hidden on small screens) */}
+        {/* Username + role badge (hidden on small screens) */}
         {username && (
-          <span className="hidden md:block text-sm font-medium text-on-surface max-w-[120px] truncate ml-1">{username}</span>
+          <div className="hidden md:flex items-center gap-2 ml-1">
+            <span className="text-sm font-medium text-on-surface max-w-[120px] truncate">{username}</span>
+            {roleLabel && (
+              <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${roleColor}`}>{roleLabel}</span>
+            )}
+          </div>
         )}
 
         {/* User avatar + popover */}

@@ -21,7 +21,7 @@ function ensureInitialized() {
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry'] },
+    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry'] },
     { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
   ]
@@ -38,6 +38,8 @@ function _ensureAllTabsExist(ss) {
       }
     }
   })
+  // Add any missing columns to existing sheets (schema upgrades)
+  ensureMissingColumns(ss, tabDefs)
 }
 
 function _seedAdminUser(ss) {
@@ -49,5 +51,5 @@ function _seedAdminUser(ss) {
   }
 
   var passwordHash = _hashPassword(ownerEmail, DEFAULT_PASSWORD)
-  usersSheet.appendRow([1, ownerEmail, passwordHash, ownerEmail, 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+  usersSheet.appendRow([1, ownerEmail, passwordHash, ownerEmail, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
 }

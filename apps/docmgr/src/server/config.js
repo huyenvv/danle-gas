@@ -5,7 +5,7 @@
 var SHEETS = {
   APP_ROLES: '_Phân Quyền',
   DANH_MUC: 'Danh Mục',
-  PHONG_BAN: 'Phòng Ban',
+  NHOM: 'Nhóm',
   DU_AN: 'Dự Án',
   NHA_CUNG_CAP: 'Nhà Cung Cấp',
   HO_SO: 'Hồ Sơ',
@@ -24,12 +24,12 @@ function ensureInitialized() {
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.APP_ROLES,     headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết'] },
-    { name: SHEETS.DANH_MUC,      headers: ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha'] },
-    { name: SHEETS.PHONG_BAN,     headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Danh mục cho phép'] },
+    { name: SHEETS.APP_ROLES,     headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết', 'Được tạo hồ sơ'] },
+    { name: SHEETS.DANH_MUC,      headers: ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha', 'Người được xem', 'Nhóm được xem', 'Nơi lưu hồ sơ cứng'] },
+    { name: SHEETS.NHOM,          headers: ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên'] },
     { name: SHEETS.DU_AN,         headers: ['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ'] },
     { name: SHEETS.NHA_CUNG_CAP,  headers: ['ID', 'Tên NCC viết tắt', 'Tên NCC đầy đủ', 'Địa chỉ', 'Mã số thuế', 'Điện thoại', 'Người đại diện', 'Số tài khoản', 'Tên ngân hàng', 'Lĩnh vực kinh doanh'] },
-    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Phòng ban', 'Ngày ban hành', 'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước', 'Mô tả', 'Số hồ sơ', 'Dự án', 'Nhà cung cấp', 'Giá trị HĐ', 'Giá trị thực hiện', 'Chênh lệch', 'Tình trạng', 'Phụ trách', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật'] },
+    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ', 'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật'] },
     { name: SHEETS.NHAT_KY,       headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
     { name: SHEETS.DA_DOC,        headers: ['ID', 'UserID', 'DocID', 'Thời gian'] },
     { name: SHEETS.COMMENTS,      headers: ['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },
@@ -43,6 +43,8 @@ function _ensureAllTabsExist(ss) {
       sheet.setFrozenRows(1)
     }
   })
+  // Add any missing columns to existing sheets (schema upgrades)
+  ensureMissingColumns(ss, tabDefs)
 
   // Seed default categories if empty
   var catSheet = ss.getSheetByName(SHEETS.DANH_MUC)

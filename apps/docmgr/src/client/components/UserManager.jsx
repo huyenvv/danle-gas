@@ -7,22 +7,22 @@ import { selectCls, labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
 
 const ROLE_OPTIONS = ['admin', 'Giám đốc', 'Trưởng phòng', 'Nhân viên', 'Văn thư']
+const DIRECTOR_BLOCKED_ROLES = ['admin', 'Giám đốc']
 
 const ROLE_BADGE = {
   'admin':          'bg-primary/10 text-primary',
   'Giám đốc':      'bg-violet-100 text-violet-700',
-  'Trưởng phòng':  'bg-amber-100 text-amber-700',
+  'Trưởng phòng':  'bg-surface-container text-on-surface-variant',
   'Nhân viên':     'bg-surface-container text-on-surface-variant',
   'Văn thư':      'bg-cyan-100 text-cyan-700',
   'Quản trị viên': 'bg-primary/10 text-primary',
-  'Biên tập viên': 'bg-secondary/10 text-secondary',
   'Xem':            'bg-surface-container text-on-surface-variant',
 }
 
 const MODULES = [
   { key: 'hoSo',       label: 'Hồ sơ' },
   { key: 'danhMuc',    label: 'Danh mục' },
-  { key: 'phongBan',   label: 'Phòng ban' },
+  { key: 'nhom',       label: 'Nhóm' },
   { key: 'nhaCungCap', label: 'Nhà cung cấp' },
   { key: 'duAn',       label: 'Dự án' },
   { key: 'user',       label: 'Người dùng' },
@@ -44,17 +44,18 @@ function fullPerms() {
 function parsePermissions(raw, role) {
   if (role === 'Quản trị viên' || role === 'admin' || role === 'Giám đốc') return fullPerms()
   try { const p = typeof raw === 'string' ? JSON.parse(raw) : raw; if (p && p.hoSo) return p } catch (_) { /* */ }
-  if (role === 'Biên tập viên' || role === 'Văn thư' || role === 'Trưởng phòng') return Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }]))
+  if (role === 'Văn thư') return Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }]))
   return defaultPerms()
 }
 
-export default function UserManager({ token }) {
+export default function UserManager({ token, session }) {
   const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [modal, setModal]     = useState(null) // null | { user }
   const [role, setRole]       = useState('Nhân viên')
   const [perms, setPerms]     = useState(defaultPerms())
+  const [canCreateDoc, setCanCreateDoc] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
@@ -80,6 +81,7 @@ export default function UserManager({ token }) {
     const currentRole = user['Quyền'] || 'Nhân viên'
     setRole(currentRole)
     setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
+    setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE')
     setFormError('')
     setModal({ user })
   }
@@ -89,7 +91,7 @@ export default function UserManager({ token }) {
   function handleRoleChange(newRole) {
     setRole(newRole)
     if (newRole === 'admin' || newRole === 'Giám đốc' || newRole === 'Quản trị viên') setPerms(fullPerms())
-    else if (newRole === 'Văn thư' || newRole === 'Trưởng phòng' || newRole === 'Biên tập viên') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
+    else if (newRole === 'Văn thư') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
     else setPerms(defaultPerms())
   }
 
@@ -107,6 +109,7 @@ export default function UserManager({ token }) {
       await gasCall('api_updateUser', token, modal.user.ID, {
         'Tên đăng nhập': modal.user['Tên đăng nhập'],
         'Quyền': role,
+        'Được tạo hồ sơ': canCreateDoc,
       })
       closeModal()
       showToast('Đã lưu phân quyền', 'success')
@@ -139,6 +142,16 @@ export default function UserManager({ token }) {
 
   const avatar = (name) => (name || '?')[0].toUpperCase()
   const isAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
+  const availableRoleOptions = session?.role === 'Giám đốc'
+    ? ROLE_OPTIONS.filter(r => DIRECTOR_BLOCKED_ROLES.indexOf(r) === -1)
+    : ROLE_OPTIONS
+
+  function canManage(user) {
+    if (session?.role !== 'Giám đốc') return true
+    if (String(user.ID) === String(session.userId)) return false
+    if (DIRECTOR_BLOCKED_ROLES.indexOf(user['Quyền']) !== -1) return false
+    return true
+  }
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -190,13 +203,14 @@ export default function UserManager({ token }) {
             <tr className="bg-surface-container-low border-b border-outline-variant">
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quyền</th>
+              <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Trạng thái (SSO)</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {filtered.length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
             )}
             {filtered.map(user => (
               <tr key={user.ID} className="hover:bg-surface-container-low transition-colors">
@@ -220,6 +234,18 @@ export default function UserManager({ token }) {
                     <span className="text-xs text-on-surface-variant italic">Chưa phân quyền</span>
                   )}
                 </td>
+                <td className="px-4 py-3 text-center hidden md:table-cell">
+                  {(() => {
+                    const r = user['Quyền']
+                    const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
+                    const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE'
+                    return canCreate ? (
+                      <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                    ) : (
+                      <Icon name="cancel" size={18} className="text-on-surface-variant/40 inline-block" />
+                    )
+                  })()}
+                </td>
                 <td className="px-4 py-3 hidden md:table-cell">
                   <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                     user['Trạng thái'] === 'Active'
@@ -232,15 +258,21 @@ export default function UserManager({ token }) {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1 justify-end">
-                    <button onClick={() => openEdit(user)}
-                      className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">
-                      {user['Quyền'] ? 'Sửa quyền' : 'Phân quyền'}
-                    </button>
-                    {user['Quyền'] && (
-                      <button onClick={() => handleRemoveRole(user)}
-                        className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">
-                        Xóa quyền
-                      </button>
+                    {canManage(user) ? (
+                      <>
+                        <button onClick={() => openEdit(user)}
+                          className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">
+                          {user['Quyền'] ? 'Sửa quyền' : 'Phân quyền'}
+                        </button>
+                        {user['Quyền'] && (
+                          <button onClick={() => handleRemoveRole(user)}
+                            className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">
+                            Xóa quyền
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-on-surface-variant italic px-2">—</span>
                     )}
                   </div>
                 </td>
@@ -282,9 +314,22 @@ export default function UserManager({ token }) {
             <div className={fieldCls}>
               <label className={labelCls}>Quyền</label>
               <select className={selectCls} value={role} onChange={e => handleRoleChange(e.target.value)}>
-                {ROLE_OPTIONS.map(r => <option key={r}>{r}</option>)}
+                {availableRoleOptions.map(r => <option key={r}>{r}</option>)}
               </select>
             </div>
+
+            {/* Được tạo hồ sơ — mainly for Nhân viên / Xem roles */}
+            {!isAdmin && role !== 'Văn thư' && (
+              <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                <input type="checkbox" id="canCreateDoc" checked={canCreateDoc}
+                  onChange={e => setCanCreateDoc(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                <label htmlFor="canCreateDoc" className="text-sm text-on-surface cursor-pointer select-none">
+                  Được tạo hồ sơ
+                </label>
+                <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo hồ sơ mới</span>
+              </div>
+            )}
 
             {/* Permission matrix — hidden, hardcoded per role for now */}
             {/* <div className="mt-5">

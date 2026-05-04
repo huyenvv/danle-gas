@@ -97,3 +97,42 @@ export async function prefetchLookups(token) {
 export async function refreshLookups(token) {
   return dataCache.fetch('lookups', () => gasCall('api_getAllData', token), { forceRefresh: true })
 }
+
+// ── Background polling ────────────────────────────────────────────────────────
+let _pollTimer = null
+const POLL_INTERVAL = 60_000 // 60s
+
+/**
+ * Start background polling for data freshness.
+ * Polls docs, unread count, and lookups every 60s.
+ * Listeners on 'docs', 'unreadCount', 'lookups' keys get notified on changes.
+ */
+export function startPolling(token) {
+  stopPolling()
+  _pollTimer = setInterval(async () => {
+    try {
+      // Refresh docs
+      const docsRes = await gasCall('api_getDocuments', token, {})
+      dataCache.set('docs', docsRes.data || [])
+
+      // Refresh unread count
+      const unreadRes = await gasCall('api_getUnreadCount', token)
+      dataCache.set('unreadCount', unreadRes.count || 0)
+
+      // Refresh lookups if stale
+      if (dataCache.isStale('lookups')) {
+        const lookups = await gasCall('api_getAllData', token)
+        dataCache.set('lookups', lookups)
+      }
+    } catch (_) {
+      // Silently ignore polling errors
+    }
+  }, POLL_INTERVAL)
+}
+
+export function stopPolling() {
+  if (_pollTimer) {
+    clearInterval(_pollTimer)
+    _pollTimer = null
+  }
+}

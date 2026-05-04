@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import gasCall from '../gasClient.js'
@@ -25,18 +25,36 @@ export default function Dashboard() {
   const [loadingApps, setLoadingApps] = useState(true)
   const [showChangePass, setShowChangePass] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const pollTimerRef = useRef(null)
+  const autoOpenDoneRef = useRef(false)
 
-  function loadApps() {
+  const LAST_APP_KEY = 'sso_last_app_id'
+
+  const loadApps = useCallback((isInitial) => {
     setLoadingApps(true)
     gasCall('api_getApps', session.token)
-      .then(data => { setApps(data); setLoadingApps(false) })
+      .then(data => {
+        setApps(data)
+        setLoadingApps(false)
+        // Auto-open cached app only on first load
+        if (isInitial && !autoOpenDoneRef.current) {
+          autoOpenDoneRef.current = true
+          const lastId = localStorage.getItem(LAST_APP_KEY)
+          if (lastId) {
+            const cached = data.find(a => String(a.ID) === lastId && a['Trạng thái'] === 'Active' && a['Webapp URL'])
+            if (cached) setActiveApp(cached)
+          }
+        }
+      })
       .catch(err => { addToast(err.message, 'error'); setLoadingApps(false) })
-  }
+  }, [session.token])
 
-  useEffect(() => { loadApps() }, [])
-
-  // Reload apps when switching back to apps tab
-  useEffect(() => { if (tab === 'apps') loadApps() }, [tab])
+  useEffect(() => {
+    loadApps(true)
+    // Poll every 60 seconds for fresh app list
+    pollTimerRef.current = setInterval(() => loadApps(false), 60000)
+    return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current) }
+  }, [loadApps])
 
   function openApp(app) {
     if (!app['Webapp URL']) {
@@ -47,6 +65,7 @@ export default function Dashboard() {
       addToast('Phiên SSO không hợp lệ. Vui lòng đăng nhập lại.', 'error')
       return
     }
+    localStorage.setItem(LAST_APP_KEY, String(app.ID))
     setActiveApp(app)
   }
 
@@ -66,7 +85,7 @@ export default function Dashboard() {
         apps={apps.filter(a => a['Webapp URL'])}
         activeApp={activeApp}
         onSwitch={openApp}
-        onBack={() => setActiveApp(null)}
+        onBack={() => { localStorage.removeItem(LAST_APP_KEY); setActiveApp(null) }}
       />
     )
   }
@@ -134,22 +153,30 @@ export default function Dashboard() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 page-enter">
         {tab === 'apps' && (
-          loadingApps ? (
-            <div className="flex items-center justify-center py-20">
-              <span className="material-symbols-outlined text-4xl text-primary animate-pulse">apps</span>
+          <>
+            <div className="flex justify-end mb-4">
+              <button onClick={loadApps} title="Làm mới danh sách"
+                className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors">
+                <span className="material-symbols-outlined text-base">refresh</span>
+              </button>
             </div>
-          ) : apps.length === 0 ? (
-            <div className="text-center py-20">
-              <span className="material-symbols-outlined text-5xl text-outline-variant">apps</span>
-              <p className="mt-3 text-on-surface-variant">Chưa có ứng dụng nào</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {apps.filter(a => a['Trạng thái'] === 'Active').map(app => (
-                <AppCard key={app.ID} app={app} onClick={() => openApp(app)} />
-              ))}
-            </div>
-          )
+            {loadingApps ? (
+              <div className="flex items-center justify-center py-20">
+                <span className="material-symbols-outlined text-4xl text-primary animate-pulse">apps</span>
+              </div>
+            ) : apps.length === 0 ? (
+              <div className="text-center py-20">
+                <span className="material-symbols-outlined text-5xl text-outline-variant">apps</span>
+                <p className="mt-3 text-on-surface-variant">Chưa có ứng dụng nào</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {apps.filter(a => a['Trạng thái'] === 'Active').map(app => (
+                  <AppCard key={app.ID} app={app} onClick={() => openApp(app)} />
+                ))}
+              </div>
+            )}
+          </>
         )}
         {tab === 'users' && <UserManager />}
         {tab === 'app-mgr' && <AppManager apps={apps} setApps={setApps} />}

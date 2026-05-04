@@ -65,22 +65,22 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
           <div>
             <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Mật khẩu cũ</label>
             <input type="password" value={oldPass} onChange={e => setOldPass(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
-              autoFocus autoComplete="current-password" />
+              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition disabled:opacity-60 disabled:cursor-not-allowed"
+              autoFocus autoComplete="current-password" disabled={loading} />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Mật khẩu mới</label>
             <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
-              autoComplete="new-password" />
+              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition disabled:opacity-60 disabled:cursor-not-allowed"
+              autoComplete="new-password" disabled={loading} />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Xác nhận mật khẩu mới</label>
             <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
-              autoComplete="new-password" />
+              className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary transition disabled:opacity-60 disabled:cursor-not-allowed"
+              autoComplete="new-password" disabled={loading} />
             {confirmPass && !passwordsMatch && (
               <p className="text-xs text-error mt-1">Mật khẩu xác nhận không khớp</p>
             )}
@@ -104,19 +104,24 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
 
           <div className="flex gap-3 pt-1">
             {!forced && (
-              <button type="button" onClick={onClose}
-                className="flex-1 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-medium hover:bg-surface-container transition">
+              <button type="button" onClick={onClose} disabled={loading}
+                className="flex-1 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-medium hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed transition">
                 Hủy
               </button>
             )}
             {forced && (
-              <button type="button" onClick={logout}
-                className="flex-1 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-medium hover:bg-surface-container transition">
+              <button type="button" onClick={logout} disabled={loading}
+                className="flex-1 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-medium hover:bg-surface-container disabled:opacity-50 disabled:cursor-not-allowed transition">
                 Đăng xuất
               </button>
             )}
             <button type="submit" disabled={!canSubmit}
-              className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+              className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+              {loading ? (
+                <span className="material-symbols-outlined animate-spin text-lg">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-lg">key</span>
+              )}
               {loading ? 'Đang xử lý...' : 'Đổi mật khẩu'}
             </button>
           </div>

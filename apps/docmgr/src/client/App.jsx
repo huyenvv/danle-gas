@@ -27,7 +27,14 @@ function AppInner() {
           </div>
           <h2 className="text-xl font-bold text-on-surface">Không có quyền truy cập</h2>
           <p className="text-sm text-on-surface-variant leading-relaxed">{accessError}</p>
-          <p className="text-xs text-on-surface-variant">Vui lòng truy cập qua SSO Portal hoặc liên hệ quản trị viên.</p>
+          <p className="text-xs text-on-surface-variant">Nếu quản trị viên vừa cấp quyền cho bạn, hãy tải lại trang để cập nhật.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1"
+          >
+            <span className="material-symbols-outlined text-base">refresh</span>
+            Tải lại trang
+          </button>
         </div>
       </div>
     )

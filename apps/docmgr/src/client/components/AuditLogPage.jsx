@@ -5,10 +5,23 @@ import Icon from './common/Icon.jsx'
 import { formatDate } from '../utils/format.js'
 
 const ACTION_COLORS = {
-  'Tạo':       'bg-emerald-100 text-emerald-800',
-  'Sửa':       'bg-primary/10 text-primary',
-  'Xóa':       'bg-error-container text-on-error-container',
-  'Đăng nhập': 'bg-secondary/10 text-secondary',
+  'Tạo':        'bg-emerald-100 text-emerald-800',
+  'Sửa':        'bg-primary/10 text-primary',
+  'Xóa':        'bg-error-container text-on-error-container',
+  'Đăng nhập':  'bg-secondary/10 text-secondary',
+  'Phân quyền': 'bg-amber-100 text-amber-800',
+  'Xóa quyền':  'bg-orange-100 text-orange-800',
+  'Workflow':   'bg-purple-100 text-purple-800',
+  'Giao việc':  'bg-teal-100 text-teal-800',
+}
+
+const TYPE_COLORS = {
+  'Hồ sơ':    'bg-primary/10 text-primary',
+  'Danh mục': 'bg-secondary/10 text-secondary',
+  'Người dùng': 'bg-amber-100 text-amber-800',
+  'Nhóm':     'bg-teal-100 text-teal-800',
+  'Dự án':    'bg-indigo-100 text-indigo-800',
+  'Nhà cung cấp': 'bg-orange-100 text-orange-800',
 }
 
 const PAGE_SIZE = 20
@@ -116,17 +129,35 @@ export default function AuditLogPage({ token }) {
                     {log['Thời gian'] ? formatDate(log['Thời gian']) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium text-on-surface text-xs">{log['Người dùng'] || '—'}</p>
-                      <p className="text-xs text-on-surface-variant">{log['Email'] || ''}</p>
-                    </div>
+                    {log['Người dùng'] ? (
+                      <div className="relative group inline-flex items-center gap-1.5">
+                        <span className="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] font-bold shrink-0">
+                          {log['Người dùng'].charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-xs font-medium text-on-surface">{log['Người dùng']}</span>
+                        {log['Email'] && (
+                          <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                              <p className="font-medium">{log['Người dùng']}</p>
+                              <p className="text-surface/70 text-[10px]">{log['Email']}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : '—'}
                   </td>
                   <td className="px-4 py-3">
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[log['Hành động']] || 'bg-surface-container text-on-surface-variant'}`}>
                       {log['Hành động'] || '—'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-on-surface-variant text-xs">{log['Loại'] || '—'}</td>
+                  <td className="px-4 py-3">
+                    {log['Loại'] ? (
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[log['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>
+                        {log['Loại']}
+                      </span>
+                    ) : '—'}
+                  </td>
                   <td className="px-4 py-3 text-on-surface text-xs max-w-[160px] truncate">{log['Đối tượng'] || '—'}</td>
                   <td className="px-4 py-3 text-on-surface-variant text-xs max-w-[200px] truncate">{log['Chi tiết'] || '—'}</td>
                 </tr>

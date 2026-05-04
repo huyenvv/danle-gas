@@ -12,7 +12,8 @@ global.SpreadsheetApp = {
       _rows: rows ? rows.map(r => [...r]) : [[]],
       getName()   { return this._name },
       getLastRow() { return this._rows.length },
-      getLastColumn() { return this._rows[0] ? this._rows[0].length : 0 },
+      getLastColumn()  { return this._rows[0] ? this._rows[0].length : 0 },
+      getMaxColumns()  { return this._rows[0] ? this._rows[0].length : 0 },
       getDataRange() {
         const rows = this._rows
         return {
@@ -47,6 +48,8 @@ global.SpreadsheetApp = {
     return {
       getSheetByName(name) { return sheets[name] || null },
       getSheets()          { return Object.values(sheets) },
+      getId()              { return 'mock-spreadsheet-id' },
+      getOwner()           { return { getEmail() { return 'owner@test.com' } } },
       insertSheet(name) {
         SpreadsheetApp._addSheet(name, [[]])
         return sheets[name]
@@ -115,46 +118,42 @@ global.DriveApp = {
   _reset()   { this._files = {} },
   getFolderById(id) {
     const files = this._files
-    return {
-      getFoldersByName(n) {
-        let hasNext = false
-        const match = Object.values(files).find(f => f.name === n && f.isFolder)
-        if (match) hasNext = true
-        return { hasNext: () => hasNext, next: () => match }
-      },
-      createFolder(n) {
-        const f = { id: 'folder_' + n, name: n, isFolder: true }
-        files[f.id] = f
-        return {
-          getId()  { return f.id },
-          createFile(blob) {
-            const fid = 'file_' + Date.now()
-            files[fid] = { id: fid, name: blob.getName(), trashed: false }
-            return {
-              getId()     { return fid },
-              getUrl()    { return 'https://drive.google.com/file/d/' + fid },
-              setSharing(){}
-            }
+    const self = this
+    // Returns a folder "handle" — raw file object augmented with folder-API methods
+    function makeFolderHandle(f) {
+      return Object.assign(f, {
+        getId()  { return f.id },
+        setName(nm) { f.name = nm },
+        getFoldersByName(n) {
+          const match = Object.values(files).find(fi => fi.name === n && fi.isFolder)
+          return { hasNext: () => !!match, next: () => match ? makeFolderHandle(match) : null }
+        },
+        createFolder(n) {
+          const nf = { id: 'folder_' + n, name: n, isFolder: true }
+          files[nf.id] = nf
+          return makeFolderHandle(nf)
+        },
+        createFile(blob) {
+          const fid = 'file_' + Date.now()
+          files[fid] = { id: fid, name: blob.getName(), trashed: false }
+          return {
+            getId()     { return fid },
+            getUrl()    { return 'https://drive.google.com/file/d/' + fid },
+            setSharing(){}
           }
-        }
-      },
-      createFile(blob) {
-        const fid = 'file_' + Date.now()
-        files[fid] = { id: fid, name: blob.getName(), trashed: false }
-        return {
-          getId()     { return fid },
-          getUrl()    { return 'https://drive.google.com/file/d/' + fid },
-          setSharing(){}
-        }
-      },
-      getId() { return id }
+        },
+      })
     }
+    // Ensure root pseudo-folder exists
+    if (!files[id]) files[id] = { id, name: 'root', isFolder: true }
+    return makeFolderHandle(files[id])
   },
   getFileById(id) {
     const files = this._files
     return {
       setTrashed(v) { if (files[id]) files[id].trashed = v },
       getUrl()      { return 'https://drive.google.com/file/d/' + id },
+      moveTo(folder) { /* no-op in mock */ },
     }
   }
 }

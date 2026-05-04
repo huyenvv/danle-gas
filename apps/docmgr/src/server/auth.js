@@ -11,20 +11,10 @@ var DEFAULT_PERMS = {
   'Quản trị viên': null,
   'admin':         null,
   'Giám đốc':      null,
-  'Biên tập viên': {
-    hoSo:       { c: true,  r: true,  u: true,  d: false },
-    danhMuc:    { c: false, r: true,  u: false, d: false },
-    phongBan:   { c: false, r: true,  u: false, d: false },
-    nhaCungCap: { c: false, r: true,  u: false, d: false },
-    duAn:       { c: false, r: true,  u: false, d: false },
-    user:       { c: false, r: false, u: false, d: false },
-    caiDat:     { c: false, r: false, u: false, d: false },
-    allowedCategories: [],
-  },
   'Văn thư': {
     hoSo:       { c: true,  r: true,  u: true,  d: false },
     danhMuc:    { c: false, r: true,  u: false, d: false },
-    phongBan:   { c: false, r: true,  u: false, d: false },
+    nhom:       { c: false, r: true,  u: false, d: false },
     nhaCungCap: { c: false, r: true,  u: false, d: false },
     duAn:       { c: false, r: true,  u: false, d: false },
     user:       { c: false, r: false, u: false, d: false },
@@ -32,9 +22,9 @@ var DEFAULT_PERMS = {
     allowedCategories: [],
   },
   'Trưởng phòng': {
-    hoSo:       { c: true,  r: true,  u: true,  d: false },
+    hoSo:       { c: false, r: true,  u: false, d: false },
     danhMuc:    { c: false, r: true,  u: false, d: false },
-    phongBan:   { c: false, r: true,  u: false, d: false },
+    nhom:       { c: false, r: true,  u: false, d: false },
     nhaCungCap: { c: false, r: true,  u: false, d: false },
     duAn:       { c: false, r: true,  u: false, d: false },
     user:       { c: false, r: false, u: false, d: false },
@@ -44,7 +34,7 @@ var DEFAULT_PERMS = {
   'Nhân viên': {
     hoSo:       { c: false, r: true,  u: false, d: false },
     danhMuc:    { c: false, r: true,  u: false, d: false },
-    phongBan:   { c: false, r: true,  u: false, d: false },
+    nhom:       { c: false, r: true,  u: false, d: false },
     nhaCungCap: { c: false, r: true,  u: false, d: false },
     duAn:       { c: false, r: true,  u: false, d: false },
     user:       { c: false, r: false, u: false, d: false },
@@ -54,7 +44,7 @@ var DEFAULT_PERMS = {
   'Xem': {
     hoSo:       { c: false, r: true,  u: false, d: false },
     danhMuc:    { c: false, r: true,  u: false, d: false },
-    phongBan:   { c: false, r: true,  u: false, d: false },
+    nhom:       { c: false, r: true,  u: false, d: false },
     nhaCungCap: { c: false, r: true,  u: false, d: false },
     duAn:       { c: false, r: true,  u: false, d: false },
     user:       { c: false, r: false, u: false, d: false },
@@ -66,7 +56,7 @@ var DEFAULT_PERMS = {
 var FULL_ADMIN_PERMS = {
   hoSo:       { c: true, r: true, u: true, d: true },
   danhMuc:    { c: true, r: true, u: true, d: true },
-  phongBan:   { c: true, r: true, u: true, d: true },
+  nhom:       { c: true, r: true, u: true, d: true },
   nhaCungCap: { c: true, r: true, u: true, d: true },
   duAn:       { c: true, r: true, u: true, d: true },
   user:       { c: true, r: true, u: true, d: true },
@@ -108,6 +98,9 @@ function ssoCreateSession(user, appRole) {
     }
   } catch(e) {}
 
+  var perms = getPermissions(appRole)
+  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE'
+
   var token = generateUuid()
   var sessionData = {
     userId: user['ID'],
@@ -116,7 +109,8 @@ function ssoCreateSession(user, appRole) {
     role: appRole['Quyền'],
     mustChangePass: false,
     departments: depts,
-    permissions: getPermissions(appRole),
+    permissions: perms,
+    canCreate: !!canCreate,
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
   return token

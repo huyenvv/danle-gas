@@ -1,18 +1,22 @@
 import Icon from './common/Icon.jsx'
 
 const NAV_ITEMS = [
-  { key: 'documents',   icon: 'description',   label: 'Hồ sơ',         admin: false },
-  { key: 'categories',  icon: 'folder_open',   label: 'Danh mục',      admin: false },
-  { key: 'departments', icon: 'corporate_fare',label: 'Phòng ban',     admin: true  },
-  { key: 'suppliers',   icon: 'inventory_2',   label: 'Nhà cung cấp',  admin: true  },
-  { key: 'projects',    icon: 'account_tree',  label: 'Dự án',         admin: true  },
-  { key: 'users',       icon: 'group',         label: 'Người dùng',    admin: true  },
-  { key: 'auditlogs',   icon: 'history',       label: 'Nhật ký',       admin: true  },
-  { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: true  },
+  { key: 'documents',   icon: 'description',   label: 'Hồ sơ',         admin: false, superAdmin: false },
+  { key: 'categories',  icon: 'folder_open',   label: 'Danh mục',      admin: false, superAdmin: false, hiddenRoles: ['Văn thư'] },
+  { key: 'groups',      icon: 'groups',        label: 'Nhóm',          admin: true,  superAdmin: false },
+  { key: 'suppliers',   icon: 'inventory_2',   label: 'Nhà cung cấp',  admin: false, superAdmin: false },
+  { key: 'projects',    icon: 'account_tree',  label: 'Dự án',         admin: false, superAdmin: false },
+  { key: 'users',       icon: 'group',         label: 'Người dùng',    admin: true,  superAdmin: false },
+  { key: 'auditlogs',   icon: 'history',       label: 'Nhật ký',       admin: true,  superAdmin: false },
+  { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
 ]
 
-export default function Sidebar({ page, onPage, isAdmin, onCreateDoc, collapsed }) {
-  const visibleItems = NAV_ITEMS.filter(item => !item.admin || isAdmin)
+export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, collapsed, role }) {
+  const limitedDocOnlyRoles = ['Nhân viên', 'Trưởng phòng']
+  const visibleItems = NAV_ITEMS.filter(item => {
+    if (limitedDocOnlyRoles.includes(role)) return item.key === 'documents'
+    return (!item.admin || isAdmin) && (!item.superAdmin || isSuperAdmin) && (!item.hiddenRoles || !item.hiddenRoles.includes(role))
+  })
 
   return (
     <aside
@@ -30,17 +34,19 @@ export default function Sidebar({ page, onPage, isAdmin, onCreateDoc, collapsed 
         )}
       </div>
 
-      {/* "Tạo hồ sơ mới" CTA */}
-      <div className={`pt-4 pb-2 shrink-0 ${collapsed ? 'px-2' : 'px-3'}`}>
-        <button
-          onClick={onCreateDoc}
-          title="Tạo hồ sơ mới"
-          className={`w-full flex items-center gap-2 bg-primary text-on-primary rounded-full py-2.5 font-medium text-sm hover:bg-primary-700 transition-colors shadow-md3-2 ${collapsed ? 'justify-center px-0' : 'px-4'}`}
-        >
-          <Icon name="add" size={18} />
-          {!collapsed && <span>Tạo hồ sơ mới</span>}
-        </button>
-      </div>
+      {/* "Tạo hồ sơ mới" CTA — only shown when user has create permission */}
+      {onCreateDoc && (
+        <div className={`pt-4 pb-2 shrink-0 ${collapsed ? 'px-2' : 'px-3'}`}>
+          <button
+            onClick={onCreateDoc}
+            title="Tạo hồ sơ mới"
+            className={`w-full flex items-center gap-2 bg-primary text-on-primary rounded-full py-2.5 font-medium text-sm hover:bg-primary-700 transition-colors shadow-md3-2 ${collapsed ? 'justify-center px-0' : 'px-4'}`}
+          >
+            <Icon name="add" size={18} />
+            {!collapsed && <span>Tạo hồ sơ mới</span>}
+          </button>
+        </div>
+      )}
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2 space-y-0.5 px-2">

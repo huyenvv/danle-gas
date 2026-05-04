@@ -2,13 +2,24 @@
 
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run
 
+function _isSessionExpired(msg) {
+  return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
+}
+
 function gasCall(fnName, ...args) {
   if (IS_GAS) {
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(res => {
-          if (res && res.success) resolve(res.payload)
-          else reject(new Error(res ? res.error : 'Lỗi không xác định'))
+          if (res && res.success) {
+            resolve(res.payload)
+          } else {
+            const errMsg = res ? res.error : 'Lỗi không xác định'
+            if (_isSessionExpired(errMsg) && typeof window.__onSessionExpired === 'function') {
+              window.__onSessionExpired()
+            }
+            reject(new Error(errMsg))
+          }
         })
         .withFailureHandler(err => reject(new Error(err.message || String(err))))
         [fnName](...args)
@@ -24,9 +35,9 @@ let _mockSession = null
 let _nextId = 10
 
 const _mockUsers = [
-  { ID: 1, 'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '', 'Quyền': 'Quản trị' },
-  { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv.it@gmail.com', 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kỹ thuật', 'Quyền': '' },
-  { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '' },
+  { ID: 1, 'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com', 'Tên nhân viên': '', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '', 'Quyền': 'Quản trị' },
+  { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv.it@gmail.com', 'Tên nhân viên': 'Vũ Văn Huyên', 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kỹ thuật', 'Quyền': '' },
+  { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Tên nhân viên': 'Nguyễn Văn A', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '' },
 ]
 
 const _mockApps = [
@@ -44,15 +55,15 @@ async function mockCall(fn, ...args) {
       const [email, password] = args
       const loginEmail = (email || '').toLowerCase()
       if (loginEmail === 'admin@test.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 1, username: 'admin@test.com', email: 'admin@test.com', role: 'admin', isOwner: true, mustChangePass: false, ssoToken: 'mock-sso-token' }
+        _mockSession = { userId: 1, username: 'admin@test.com', email: 'admin@test.com', displayName: 'admin@test.com', role: 'admin', isOwner: true, mustChangePass: false, ssoToken: 'mock-sso-token' }
         return { token: 'mock-token', ssoToken: 'mock-sso-token', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
       }
       if (loginEmail === 'huyenvv.it@gmail.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 2, username: 'huyenvv', email: 'huyenvv.it@gmail.com', role: 'user', isOwner: false, mustChangePass: true, ssoToken: 'mock-sso-token-2' }
+        _mockSession = { userId: 2, username: 'huyenvv', email: 'huyenvv.it@gmail.com', displayName: 'Vũ Văn Huyên', role: 'user', isOwner: false, mustChangePass: true, ssoToken: 'mock-sso-token-2' }
         return { token: 'mock-token-2', ssoToken: 'mock-sso-token-2', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
       }
       if (loginEmail === 'nv1@test.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 3, username: 'nhanvien1', email: 'nv1@test.com', role: 'user', isOwner: false, mustChangePass: false, ssoToken: 'mock-sso-token-3' }
+        _mockSession = { userId: 3, username: 'nhanvien1', email: 'nv1@test.com', displayName: 'Nguyễn Văn A', role: 'user', isOwner: false, mustChangePass: false, ssoToken: 'mock-sso-token-3' }
         return { token: 'mock-token-3', ssoToken: 'mock-sso-token-3', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
       }
       throw new Error('Email hoặc mật khẩu không đúng')

@@ -73,6 +73,30 @@ export default function SettingsPage() {
           {config.MAIL_ENABLED === 'TRUE' && (
             <>
               <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Email người gửi (Gmail alias)</label>
+                <input type="email" value={config.MAIL_SENDER_EMAIL || ''}
+                  onChange={e => updateConfig('MAIL_SENDER_EMAIL', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
+                  placeholder="vd: noreply@company.com" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Tên hiển thị người gửi</label>
+                <input type="text" value={config.MAIL_SENDER_NAME || ''}
+                  onChange={e => updateConfig('MAIL_SENDER_NAME', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition"
+                  placeholder="vd: Hệ thống quản lý" />
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 text-xs text-amber-800 flex items-start gap-2">
+                <span className="material-symbols-outlined text-sm mt-0.5">info</span>
+                <div className="space-y-1">
+                  <p>Để gửi từ email khác (không phải tài khoản deploy script), bạn cần thêm email đó làm <strong>alias</strong> trong Gmail: <strong>Settings → Accounts and Import → Send mail as → Add another email address</strong>.</p>
+                  <p>Sau khi xác minh alias xong, nhập email alias vào ô "Email người gửi" ở trên. GAS sẽ tự xác thực qua OAuth — không cần mật khẩu hay token riêng.</p>
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1.5">Tiêu đề email (tạo user mới)</label>
                 <input type="text" value={config.MAIL_SUBJECT_NEW_USER || ''}
                   onChange={e => updateConfig('MAIL_SUBJECT_NEW_USER', e.target.value)}

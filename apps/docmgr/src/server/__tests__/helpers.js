@@ -2,15 +2,16 @@
 // Updated for SSO model: users are managed by parent app, this app only manages roles.
 
 // ── Header constants matching config.js ──────────────────────────────────────
-var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết']
+var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết', 'Được tạo hồ sơ']
 var DOC_HEADERS = [
-  'ID', 'Tên hồ sơ', 'Danh mục', 'Phòng ban', 'Ngày ban hành',
-  'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước',
-  'Mô tả', 'Số hồ sơ', 'Dự án', 'Nhà cung cấp', 'Giá trị HĐ',
-  'Giá trị thực hiện', 'Chênh lệch', 'Tình trạng', 'Phụ trách',
+  'ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc',
+  'File ID', 'Tên file', 'Loại file', 'Kích thước',
+  'Mô tả', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
+  'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng',
   'Ngày cập nhật', 'Người tạo', 'Người cập nhật'
 ]
-var CAT_HEADERS = ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha']
+var CAT_HEADERS = ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha', 'Người được xem', 'Nhóm được xem', 'Nơi lưu hồ sơ cứng']
+var NHOM_HEADERS = ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên']
 
 // ── Reset all mocks ──────────────────────────────────────────────────────────
 function resetAll() {
@@ -28,6 +29,7 @@ function setupRoleSheets() {
 function setupDocSheets() {
   SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS])
   SpreadsheetApp._addSheet(SHEETS.DANH_MUC, [CAT_HEADERS])
+  SpreadsheetApp._addSheet(SHEETS.NHOM, [NHOM_HEADERS])
   SpreadsheetApp._addSheet(SHEETS.DA_DOC, [['ID', 'UserID', 'DocID', 'Thời gian']])
   SpreadsheetApp._addSheet(SHEETS.COMMENTS, [['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian']])
 }
@@ -61,6 +63,7 @@ module.exports = {
   ROLE_HEADERS: ROLE_HEADERS,
   DOC_HEADERS: DOC_HEADERS,
   CAT_HEADERS: CAT_HEADERS,
+  NHOM_HEADERS: NHOM_HEADERS,
   resetAll: resetAll,
   setupRoleSheets: setupRoleSheets,
   setupDocSheets: setupDocSheets,
