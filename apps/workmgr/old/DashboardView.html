@@ -1,0 +1,214 @@
+<!-- Dashboard View -->
+<div class="dashboard-view">
+  <div class="stats-grid">
+    <div class="stat-card primary">
+      <span class="material-icons-outlined stat-icon">folder_open</span>
+      <div class="stat-label">Tổng Dự Án</div>
+      <div class="stat-value">{{ dashboardData?.projectStats?.total || 0 }}</div>
+      <div class="stat-change">
+        <span class="badge badge-info">{{ dashboardData?.projectStats?.inProgress || 0 }} đang thực hiện</span>
+      </div>
+    </div>
+    <div class="stat-card accent">
+      <span class="material-icons-outlined stat-icon">task_alt</span>
+      <div class="stat-label">Tổng Công Việc</div>
+      <div class="stat-value">{{ dashboardData?.taskStats?.total || 0 }}</div>
+      <div class="stat-change">
+        <span class="badge badge-success">{{ dashboardData?.taskStats?.completed || 0 }} hoàn thành</span>
+      </div>
+    </div>
+    <div class="stat-card success">
+      <span class="material-icons-outlined stat-icon">people</span>
+      <div class="stat-label">Thành Viên</div>
+      <div class="stat-value">{{ dashboardData?.memberStats?.total || 0 }}</div>
+      <div class="stat-change">
+        <span class="badge badge-success">{{ dashboardData?.memberStats?.active || 0 }} hoạt động</span>
+      </div>
+    </div>
+    <div class="stat-card danger">
+      <span class="material-icons-outlined stat-icon">warning</span>
+      <div class="stat-label">Quá Hạn</div>
+      <div class="stat-value">{{ dashboardData?.overdueTasks || 0 }}</div>
+      <div class="stat-change">
+        <span class="badge badge-danger" v-if="dashboardData?.overdueTasks > 0">Cần xử lý</span>
+        <span class="badge badge-success" v-else>Tốt</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Budget Overview -->
+  <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);" v-if="canManage">
+    <div class="stat-card info">
+      <span class="material-icons-outlined stat-icon">account_balance</span>
+      <div class="stat-label">Tổng Ngân Sách</div>
+      <div class="stat-value money">{{ formatMoney(dashboardData?.totalBudget || 0) }}</div>
+    </div>
+    <div class="stat-card warning">
+      <span class="material-icons-outlined stat-icon">payments</span>
+      <div class="stat-label">Chi Phí Thực Tế</div>
+      <div class="stat-value money">{{ formatMoney(dashboardData?.totalActualCost || 0) }}</div>
+      <div class="stat-change" v-if="dashboardData?.totalBudget">
+        <span :class="budgetUsagePercent > 80 ? 'text-danger' : 'text-success'">
+          {{ budgetUsagePercent }}% ngân sách
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">pie_chart</span>Trạng Thái Công Việc</h4>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrapper">
+          <canvas id="taskStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">bar_chart</span>Công Việc Theo Mức Độ</h4>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrapper">
+          <canvas id="priorityChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">show_chart</span>Xu Hướng Tuần</h4>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrapper">
+          <canvas id="weeklyTrendChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">donut_large</span>Trạng Thái Dự Án</h4>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrapper">
+          <canvas id="projectStatusChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member Task Distribution & Progress -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">group_work</span>Phân Bổ Công Việc</h4>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrapper">
+          <canvas id="memberTaskChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">speed</span>Tiến Độ Dự Án</h4>
+      </div>
+      <div class="card-body">
+        <div v-for="p in (dashboardData?.projectProgress || [])" :key="p.name" style="margin-bottom:16px">
+          <div class="flex-between mb-8">
+            <span style="font-size:13px;font-weight:600">{{ p.name }}</span>
+            <span class="progress-text">{{ p.progress }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{width: p.progress + '%', background: getProgressColor(p.progress)}"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <span class="badge" :class="getStatusBadgeClass(p.status)">{{ p.status }}</span>
+          </div>
+        </div>
+        <div v-if="!dashboardData?.projectProgress?.length" class="empty-state sm">
+          <p>Chưa có dữ liệu dự án</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overdue & Upcoming Tasks -->
+  <div class="charts-grid">
+    <div class="card">
+      <div class="card-header">
+        <h4 style="color:var(--danger)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">schedule</span>Công Việc Quá Hạn</h4>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div v-if="!dashboardData?.overdueTasksList?.length" class="empty-state sm">
+          <span class="material-icons-outlined text-success">check_circle</span>
+          <p>Không có công việc quá hạn</p>
+        </div>
+        <div v-else>
+          <div v-for="t in dashboardData.overdueTasksList" :key="t['Mã CV']" class="activity-item" style="padding:12px 16px">
+            <div class="activity-icon-wrap" style="background:var(--danger-light);color:var(--danger)">
+              <span class="material-icons-outlined">error</span>
+            </div>
+            <div class="activity-body">
+              <strong>{{ t['Tiêu Đề'] }}</strong>
+              <p>{{ t['Người Thực Hiện'] || 'Chưa giao' }} · {{ t['Tên Dự Án'] }}</p>
+              <small>Hạn: {{ t['Ngày Hết Hạn'] }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h4 style="color:var(--warning)"><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">upcoming</span>Sắp Đến Hạn (7 ngày)</h4>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div v-if="!dashboardData?.upcomingTasks?.length" class="empty-state sm">
+          <span class="material-icons-outlined">event_available</span>
+          <p>Không có công việc sắp đến hạn</p>
+        </div>
+        <div v-else>
+          <div v-for="t in dashboardData.upcomingTasks" :key="t['Mã CV']" class="activity-item" style="padding:12px 16px">
+            <div class="activity-icon-wrap" style="background:var(--warning-light);color:var(--warning)">
+              <span class="material-icons-outlined">schedule</span>
+            </div>
+            <div class="activity-body">
+              <strong>{{ t['Tiêu Đề'] }}</strong>
+              <p>{{ t['Người Thực Hiện'] || 'Chưa giao' }} · {{ t['Trạng Thái'] }}</p>
+              <small>Hạn: {{ t['Ngày Hết Hạn'] }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Activities -->
+  <div class="card">
+    <div class="card-header">
+      <h4><span class="material-icons-outlined" style="font-size:18px;vertical-align:middle;margin-right:6px">history</span>Hoạt Động Gần Đây</h4>
+      <button class="btn btn-sm btn-ghost" @click="navigateTo('activities')">Xem tất cả</button>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div v-for="a in (dashboardData?.recentActivities || []).slice(0,8)" :key="a['Mã HĐ']" class="activity-item" style="padding:12px 16px">
+        <div class="activity-icon-wrap" :class="getActivityIconClass(a['Loại'])">
+          <span class="material-icons-outlined">{{ getActivityIcon(a['Loại']) }}</span>
+        </div>
+        <div class="activity-body">
+          <strong>{{ a['Loại'] }}</strong>
+          <p>{{ a['Mô Tả'] }}</p>
+          <small>{{ a['Người Thực Hiện'] }} · {{ a['Ngày Tạo'] }}</small>
+        </div>
+      </div>
+      <div v-if="!dashboardData?.recentActivities?.length" class="empty-state sm">
+        <p>Chưa có hoạt động</p>
+      </div>
+    </div>
+  </div>
+</div>

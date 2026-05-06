@@ -17,7 +17,10 @@
     "build:license": "npm run build -w apps/license-server",
     "deploy:sso": "node scripts/deploy.js --app sso-portal",
     "deploy:docmgr": "node scripts/deploy.js --app docmgr",
-    "deploy:license": "node scripts/deploy.js --app license-server"
+    "deploy:license": "node scripts/deploy.js --app license-server",
+    "dev:workmgr": "npm run dev -w apps/workmgr",
+    "build:workmgr": "npm run build -w apps/workmgr",
+    "deploy:workmgr": "node scripts/deploy.js --app workmgr"
   },
   "devDependencies": {
     "@google/clasp": "^3.3.0",

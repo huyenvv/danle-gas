@@ -1,0 +1,42 @@
+<!-- Calendar View -->
+<div class="calendar-view-page">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <select class="filter-select" v-model="calendarProjectFilter" @change="buildCalendar">
+        <option value="">Tất cả dự án</option>
+        <option v-for="p in projects" :key="p['Mã DA']" :value="p['Mã DA']">{{ p['Tên Dự Án'] }}</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-sm btn-ghost" @click="calendarMonth -= 1; if(calendarMonth < 0){calendarMonth=11;calendarYear-=1}; buildCalendar()">
+        <span class="material-icons">chevron_left</span>
+      </button>
+      <strong style="min-width:150px;text-align:center;font-size:15px">
+        Tháng {{ calendarMonth + 1 }} / {{ calendarYear }}
+      </strong>
+      <button class="btn btn-sm btn-ghost" @click="calendarMonth += 1; if(calendarMonth > 11){calendarMonth=0;calendarYear+=1}; buildCalendar()">
+        <span class="material-icons">chevron_right</span>
+      </button>
+      <button class="btn btn-sm btn-ghost" @click="goToToday">
+        <span class="material-icons-outlined">today</span> Hôm Nay
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body" style="padding:0">
+      <div class="calendar-grid">
+        <div v-for="day in ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']" :key="day" class="calendar-header-cell">{{ day }}</div>
+        <div v-for="(cell, idx) in calendarCells" :key="idx" class="calendar-cell" :class="{'today': cell.isToday, 'other-month': cell.isOtherMonth}" @click="onCalendarCellClick(cell)">
+          <div class="calendar-date">{{ cell.day }}</div>
+          <div v-for="(evt, ei) in cell.events.slice(0, 3)" :key="ei" class="calendar-event" :class="evt.type" :title="evt.title" @click.stop="onCalendarEventClick(evt)">
+            {{ evt.title }}
+          </div>
+          <div v-if="cell.events.length > 3" style="font-size:10px;color:var(--text-muted);padding:0 6px;cursor:pointer">
+            +{{ cell.events.length - 3 }} khác
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

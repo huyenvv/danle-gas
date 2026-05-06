@@ -1,0 +1,219 @@
+<!-- Project List View -->
+<div class="project-list-view">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-bar" style="min-width:240px">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" v-model="projectSearch" placeholder="Tìm kiếm dự án..." @input="filterProjects">
+      </div>
+      <select class="filter-select" v-model="projectStatusFilter" @change="loadProjects">
+        <option value="">Tất cả trạng thái</option>
+        <option>Lên Kế Hoạch</option>
+        <option>Đang Thực Hiện</option>
+        <option>Hoàn Thành</option>
+        <option>Tạm Dừng</option>
+        <option>Đã Hủy</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" @click="openProjectDialog('add')" v-if="canManage">
+        <span class="material-icons-outlined">add</span>
+        Tạo Dự Án
+      </button>
+    </div>
+  </div>
+
+  <div class="card" style="position:relative">
+    <div class="loading-overlay" v-if="projectsLoading">
+      <div class="loading-spinner"></div>
+      <span style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th @click="sortProjects('Mã DA')" :class="{sorted: projectSortKey === 'Mã DA'}">
+              Mã <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Mã DA' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th @click="sortProjects('Tên Dự Án')" :class="{sorted: projectSortKey === 'Tên Dự Án'}">
+              Tên Dự Án <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Tên Dự Án' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th @click="sortProjects('Trạng Thái')" :class="{sorted: projectSortKey === 'Trạng Thái'}">
+              Trạng Thái <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Trạng Thái' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th @click="sortProjects('Mức Độ Ưu Tiên')" :class="{sorted: projectSortKey === 'Mức Độ Ưu Tiên'}">
+              Ưu Tiên <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Mức Độ Ưu Tiên' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th @click="sortProjects('Ngân Sách')" :class="{sorted: projectSortKey === 'Ngân Sách'}">
+              Ngân Sách <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Ngân Sách' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th>Leader</th>
+            <th @click="sortProjects('Tiến Độ')" :class="{sorted: projectSortKey === 'Tiến Độ'}">
+              Tiến Độ <span class="material-icons sort-icon">{{ projectSortDir === 'asc' && projectSortKey === 'Tiến Độ' ? 'arrow_upward' : 'arrow_downward' }}</span>
+            </th>
+            <th>Thao Tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="filteredProjectList.length === 0">
+            <td colspan="8" class="text-center" style="padding:40px">
+              <span class="material-icons-outlined text-muted" style="font-size:40px">folder_off</span>
+              <p class="text-muted mt-8">Không có dự án nào</p>
+            </td>
+          </tr>
+          <tr v-for="p in filteredProjectList" :key="p['Mã DA']">
+            <td data-label="Mã"><strong>{{ p['Mã DA'] }}</strong></td>
+            <td data-label="Tên Dự Án">
+              <div>
+                <strong style="color:var(--primary)">{{ p['Tên Dự Án'] }}</strong>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">{{ truncateText(p['Mô Tả'], 60) }}</div>
+              </div>
+            </td>
+            <td data-label="Trạng Thái"><span class="badge" :class="getStatusBadgeClass(p['Trạng Thái'])">{{ p['Trạng Thái'] }}</span></td>
+            <td data-label="Ưu Tiên"><span class="priority-badge" :class="getPriorityClass(p['Mức Độ Ưu Tiên'])">{{ p['Mức Độ Ưu Tiên'] }}</span></td>
+            <td data-label="Ngân Sách" class="money">{{ formatMoney(p['Ngân Sách']) }}</td>
+            <td data-label="Leader">{{ p['Leader'] || '—' }}</td>
+            <td data-label="Tiến Độ">
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="progress-bar" style="width:80px"><div class="progress-fill" :style="{width: (p['Tiến Độ']||0) + '%', background: getProgressColor(p['Tiến Độ']||0)}"></div></div>
+                <span class="progress-text">{{ p['Tiến Độ'] || 0 }}%</span>
+              </div>
+            </td>
+            <td data-label="Thao Tác">
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-sm btn-ghost" @click="openProjectDialog('edit', p)" title="Sửa" v-if="canManage">
+                  <span class="material-icons-outlined" style="font-size:16px">edit</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" @click="viewProjectTasks(p)" title="Xem công việc">
+                  <span class="material-icons-outlined" style="font-size:16px">visibility</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" style="color:var(--danger)" @click="confirmDeleteProject(p)" title="Xóa" v-if="isOwner">
+                  <span class="material-icons-outlined" style="font-size:16px">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Project Dialog -->
+  <div class="modal-overlay" v-if="showProjectDialog" @click.self="showProjectDialog = false">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3><span class="material-icons-outlined">{{ projectDialogMode === 'add' ? 'add_circle' : 'edit' }}</span>{{ projectDialogMode === 'add' ? 'Tạo Dự Án Mới' : 'Cập Nhật Dự Án' }}</h3>
+        <button class="icon-btn" @click="showProjectDialog = false" style="color:#fff"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group" :class="{'has-error': projectErrors.tenDuAn}">
+            <label><span class="material-icons-outlined label-icon">drive_file_rename_outline</span>Tên dự án *</label>
+            <input type="text" v-model="projectForm.tenDuAn" @keyup="validateProjectField('tenDuAn')" placeholder="Nhập tên dự án">
+            <span class="error-text" v-if="projectErrors.tenDuAn">{{ projectErrors.tenDuAn }}</span>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">flag</span>Trạng thái</label>
+            <select v-model="projectForm.trangThai">
+              <option>Lên Kế Hoạch</option>
+              <option>Đang Thực Hiện</option>
+              <option>Hoàn Thành</option>
+              <option>Tạm Dừng</option>
+              <option>Đã Hủy</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label><span class="material-icons-outlined label-icon">description</span>Mô tả</label>
+          <textarea v-model="projectForm.moTa" placeholder="Mô tả ngắn về dự án" rows="3"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">priority_high</span>Mức độ ưu tiên</label>
+            <select v-model="projectForm.mucDoUuTien">
+              <option>Thấp</option>
+              <option>Trung Bình</option>
+              <option>Cao</option>
+            </select>
+          </div>
+          <div class="form-group" :class="{'has-error': projectErrors.nganSach}">
+            <label><span class="material-icons-outlined label-icon">payments</span>Ngân sách (VNĐ)</label>
+            <input type="text" :value="formatMoneyInput(projectForm.nganSach)" @input="projectForm.nganSach = unformatMoney($event.target.value)" @keyup="validateProjectField('nganSach')" placeholder="0">
+            <span class="error-text" v-if="projectErrors.nganSach">{{ projectErrors.nganSach }}</span>
+          </div>
+        </div>
+        <div class="form-row" v-if="projectDialogMode === 'edit'">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">payments</span>Chi phí thực tế (VNĐ)</label>
+            <input type="text" :value="formatMoneyInput(projectForm.chiPhiThucTe)" @input="projectForm.chiPhiThucTe = unformatMoney($event.target.value)" placeholder="0">
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">speed</span>Tiến độ (%)</label>
+            <input type="number" v-model.number="projectForm.tienDo" min="0" max="100" placeholder="0">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" :class="{'has-error': projectErrors.ngayBatDau}">
+            <label><span class="material-icons-outlined label-icon">event</span>Ngày bắt đầu *</label>
+            <input type="date" v-model="projectForm.ngayBatDau" @change="validateProjectField('ngayBatDau')">
+            <span class="error-text" v-if="projectErrors.ngayBatDau">{{ projectErrors.ngayBatDau }}</span>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">event</span>Ngày kết thúc dự kiến</label>
+            <input type="date" v-model="projectForm.ngayKetThuc">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">person</span>Leader</label>
+            <select v-model="projectForm.maLeader" @change="onLeaderChange">
+              <option value="">-- Chọn Leader --</option>
+              <option v-for="m in masterData.members.filter(m => m['Vai Trò'] !== 'Thành Viên')" :key="m['Mã TV']" :value="m['Mã TV']">{{ m['Họ và Tên'] }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">groups</span>Thành viên tham gia</label>
+            <select multiple v-model="projectForm.thanhVienList" style="height:100px">
+              <option v-for="m in masterData.members" :key="m['Mã TV']" :value="m['Mã TV']">{{ m['Họ và Tên'] }} ({{ m['Phòng Ban'] }})</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label><span class="material-icons-outlined label-icon">notes</span>Ghi chú</label>
+          <textarea v-model="projectForm.ghiChu" placeholder="Ghi chú thêm" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" @click="showProjectDialog = false" :disabled="projectSaving">Hủy</button>
+        <button class="btn btn-primary" @click="saveProject" :disabled="projectSaving">
+          <span class="spinner-sm" v-if="projectSaving"></span>
+          <span class="material-icons-outlined" v-else>save</span>
+          {{ projectSaving ? 'Đang lưu...' : 'Lưu' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Dialog -->
+  <div class="modal-overlay" v-if="showDeleteConfirm" @click.self="showDeleteConfirm = false">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header" style="background:var(--danger)">
+        <h3><span class="material-icons-outlined">warning</span>Xác Nhận Xóa</h3>
+        <button class="icon-btn" @click="showDeleteConfirm = false" style="color:#fff"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body text-center">
+        <span class="material-icons-outlined" style="font-size:56px;color:var(--danger);margin-bottom:12px">delete_forever</span>
+        <p>Bạn có chắc chắn muốn xóa <strong>{{ deleteTarget?.name }}</strong>?</p>
+        <p class="text-muted" style="font-size:12px;margin-top:4px">Hành động này không thể hoàn tác.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" @click="showDeleteConfirm = false" :disabled="deleting">Hủy</button>
+        <button class="btn btn-danger" @click="executeDelete" :disabled="deleting">
+          <span class="spinner-sm" v-if="deleting"></span>
+          <span class="material-icons-outlined" v-else>delete</span>
+          {{ deleting ? 'Đang xóa...' : 'Xóa' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

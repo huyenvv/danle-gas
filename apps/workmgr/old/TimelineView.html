@@ -1,0 +1,66 @@
+<!-- Timeline View -->
+<div class="timeline-view-page">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <select class="filter-select" v-model="timelineProjectFilter" @change="buildTimeline">
+        <option value="">Tất cả dự án</option>
+        <option v-for="p in projects" :key="p['Mã DA']" :value="p['Mã DA']">{{ p['Tên Dự Án'] }}</option>
+      </select>
+      <select class="filter-select" v-model="timelineView" @change="buildTimeline">
+        <option value="week">Tuần</option>
+        <option value="month">Tháng</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-sm btn-ghost" @click="timelineOffset -= 1; buildTimeline()">
+        <span class="material-icons">chevron_left</span>
+      </button>
+      <button class="btn btn-sm btn-ghost" @click="timelineOffset = 0; buildTimeline()">Hôm Nay</button>
+      <button class="btn btn-sm btn-ghost" @click="timelineOffset += 1; buildTimeline()">
+        <span class="material-icons">chevron_right</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body" style="overflow-x:auto;position:relative">
+      <div style="min-width:900px">
+        <!-- Date Headers -->
+        <div style="display:flex">
+          <div style="width:200px;flex-shrink:0"></div>
+          <div style="flex:1;display:flex;border-bottom:1px solid var(--border)">
+            <div v-for="(day, idx) in timelineDays" :key="idx" class="timeline-header-cell" :style="{width: timelineCellWidth + 'px', minWidth: timelineCellWidth + 'px'}"
+                 :class="{'today': isToday(day)}">
+              {{ formatTimelineDate(day) }}
+            </div>
+          </div>
+        </div>
+        
+        <!-- Task Rows -->
+        <div v-for="item in timelineItems" :key="item.id" class="timeline-row" style="border-bottom:1px solid var(--border)">
+          <div class="timeline-label" :title="item.label">
+            <span class="priority-badge" :class="getPriorityClass(item.priority)" style="margin-right:4px;font-size:8px">{{ item.priority?.charAt(0) }}</span>
+            {{ item.label }}
+          </div>
+          <div class="timeline-bar-container" style="position:relative">
+            <div class="timeline-bar" :style="{
+              left: item.barLeft + 'px',
+              width: Math.max(item.barWidth, 20) + 'px',
+              background: item.color
+            }" :title="item.label + ' (' + item.startStr + ' - ' + item.endStr + ')'">
+              {{ truncateText(item.label, 15) }}
+            </div>
+          </div>
+        </div>
+        
+        <div v-if="timelineItems.length === 0" class="empty-state" style="padding:40px">
+          <span class="material-icons-outlined">timeline</span>
+          <p>Không có dữ liệu timeline</p>
+        </div>
+        
+        <!-- Today Line -->
+        <div v-if="todayLineLeft >= 0" class="timeline-today-line" :style="{left: (200 + todayLineLeft) + 'px'}"></div>
+      </div>
+    </div>
+  </div>
+</div>

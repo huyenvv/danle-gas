@@ -1,0 +1,198 @@
+<!-- Task List View -->
+<div class="task-list-view">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-bar" style="min-width:240px">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" v-model="taskSearch" placeholder="Tìm kiếm công việc...">
+      </div>
+      <select class="filter-select" v-model="taskProjectFilter" @change="loadTasks">
+        <option value="">Tất cả dự án</option>
+        <option v-for="p in projects" :key="p['Mã DA']" :value="p['Mã DA']">{{ p['Tên Dự Án'] }}</option>
+      </select>
+      <select class="filter-select" v-model="taskStatusFilter" @change="loadTasks">
+        <option value="">Tất cả trạng thái</option>
+        <option>Cần Làm</option>
+        <option>Đang Thực Hiện</option>
+        <option>Đang Xem Xét</option>
+        <option>Hoàn Thành</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" @click="openTaskDialog('add')" v-if="canManage">
+        <span class="material-icons-outlined">add</span>
+        Tạo Công Việc
+      </button>
+    </div>
+  </div>
+
+  <div class="card" style="position:relative">
+    <div class="loading-overlay" v-if="tasksLoading">
+      <div class="loading-spinner"></div>
+      <span style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th @click="sortTasks('Mã CV')" :class="{sorted: taskSortKey === 'Mã CV'}">Mã <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Mã CV' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Tiêu Đề')" :class="{sorted: taskSortKey === 'Tiêu Đề'}">Tiêu Đề <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Tiêu Đề' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Tên Dự Án')" :class="{sorted: taskSortKey === 'Tên Dự Án'}">Dự Án <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Tên Dự Án' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Người Thực Hiện')" :class="{sorted: taskSortKey === 'Người Thực Hiện'}">Người Thực Hiện <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Người Thực Hiện' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Trạng Thái')" :class="{sorted: taskSortKey === 'Trạng Thái'}">Trạng Thái <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Trạng Thái' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Mức Độ Ưu Tiên')" :class="{sorted: taskSortKey === 'Mức Độ Ưu Tiên'}">Ưu Tiên <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Mức Độ Ưu Tiên' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th @click="sortTasks('Ngày Hết Hạn')" :class="{sorted: taskSortKey === 'Ngày Hết Hạn'}">Hạn <span class="material-icons sort-icon">{{ taskSortDir === 'asc' && taskSortKey === 'Ngày Hết Hạn' ? 'arrow_upward' : 'arrow_downward' }}</span></th>
+            <th>Thao Tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="filteredTaskList.length === 0">
+            <td colspan="8" class="text-center" style="padding:40px">
+              <span class="material-icons-outlined text-muted" style="font-size:40px">task</span>
+              <p class="text-muted mt-8">Không có công việc nào</p>
+            </td>
+          </tr>
+          <tr v-for="t in filteredTaskList" :key="t['Mã CV']" :style="{borderLeft: isOverdue(t) ? '3px solid var(--danger)' : ''}">
+            <td data-label="Mã"><strong>{{ t['Mã CV'] }}</strong></td>
+            <td data-label="Tiêu Đề">
+              <div>
+                <a href="#" @click.prevent="openTaskDetail(t)" style="font-weight:600;color:var(--primary);text-decoration:none">{{ t['Tiêu Đề'] }}</a>
+                <div v-if="t['Nhãn']" style="margin-top:4px">
+                  <span v-for="label in String(t['Nhãn']).split(',')" :key="label" class="badge badge-ghost" style="font-size:9px;padding:1px 6px;margin-right:4px">{{ label.trim() }}</span>
+                </div>
+              </div>
+            </td>
+            <td data-label="Dự Án">{{ t['Tên Dự Án'] || '—' }}</td>
+            <td data-label="Người TH">
+              <div class="flex-center gap-8" v-if="t['Người Thực Hiện']">
+                <div class="mini-avatar" style="width:24px;height:24px;font-size:10px;background:var(--primary-lighter);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700">{{ t['Người Thực Hiện']?.charAt(0) }}</div>
+                {{ t['Người Thực Hiện'] }}
+              </div>
+              <span v-else class="text-muted">Chưa giao</span>
+            </td>
+            <td data-label="Trạng Thái"><span class="badge" :class="getStatusBadgeClass(t['Trạng Thái'])">{{ t['Trạng Thái'] }}</span></td>
+            <td data-label="Ưu Tiên"><span class="priority-badge" :class="getPriorityClass(t['Mức Độ Ưu Tiên'])">{{ t['Mức Độ Ưu Tiên'] }}</span></td>
+            <td data-label="Hạn" :style="{color: isOverdue(t) ? 'var(--danger)' : ''}">
+              {{ formatDateShort(t['Ngày Hết Hạn']) || '—' }}
+              <span v-if="isOverdue(t)" class="material-icons-outlined" style="font-size:14px;vertical-align:middle;color:var(--danger)">warning</span>
+            </td>
+            <td data-label="Thao Tác">
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-sm btn-ghost" @click="openTaskDetail(t)" title="Chi tiết">
+                  <span class="material-icons-outlined" style="font-size:16px">visibility</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" @click="openTaskDialog('edit', t)" title="Sửa" v-if="canEditTask(t)">
+                  <span class="material-icons-outlined" style="font-size:16px">edit</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" style="color:var(--danger)" @click="confirmDeleteTask(t)" title="Xóa" v-if="canManage">
+                  <span class="material-icons-outlined" style="font-size:16px">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Task Form Dialog -->
+  <div class="modal-overlay" v-if="showTaskDialog" @click.self="showTaskDialog = false">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3><span class="material-icons-outlined">{{ taskDialogMode === 'add' ? 'add_task' : 'edit' }}</span>{{ taskDialogMode === 'add' ? 'Tạo Công Việc' : 'Cập Nhật Công Việc' }}</h3>
+        <button class="icon-btn" @click="showTaskDialog = false" style="color:#fff"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" :class="{'has-error': taskErrors.tieuDe}">
+          <label><span class="material-icons-outlined label-icon">title</span>Tiêu đề *</label>
+          <input type="text" v-model="taskForm.tieuDe" @keyup="validateTaskField('tieuDe')" placeholder="Nhập tiêu đề công việc">
+          <span class="error-text" v-if="taskErrors.tieuDe">{{ taskErrors.tieuDe }}</span>
+        </div>
+        <div class="form-group">
+          <label><span class="material-icons-outlined label-icon">description</span>Mô tả</label>
+          <textarea v-model="taskForm.moTa" placeholder="Mô tả chi tiết" rows="3"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group" :class="{'has-error': taskErrors.maDuAn}">
+            <label><span class="material-icons-outlined label-icon">folder</span>Dự án *</label>
+            <select v-model="taskForm.maDuAn" @change="onTaskProjectChange">
+              <option value="">-- Chọn dự án --</option>
+              <option v-for="p in projects" :key="p['Mã DA']" :value="p['Mã DA']">{{ p['Tên Dự Án'] }}</option>
+            </select>
+            <span class="error-text" v-if="taskErrors.maDuAn">{{ taskErrors.maDuAn }}</span>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">person</span>Người thực hiện</label>
+            <select v-model="taskForm.maNguoiThucHien" @change="onAssigneeChange">
+              <option value="">-- Chọn người --</option>
+              <option v-for="m in masterData.members.filter(m => m['Trạng Thái'] === 'Hoạt Động')" :key="m['Mã TV']" :value="m['Mã TV']">{{ m['Họ và Tên'] }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">flag</span>Trạng thái</label>
+            <select v-model="taskForm.trangThai">
+              <option>Cần Làm</option>
+              <option>Đang Thực Hiện</option>
+              <option>Đang Xem Xét</option>
+              <option>Hoàn Thành</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">priority_high</span>Mức độ ưu tiên</label>
+            <select v-model="taskForm.mucDoUuTien">
+              <option>Thấp</option>
+              <option>Trung Bình</option>
+              <option>Cao</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">event</span>Ngày bắt đầu</label>
+            <input type="date" v-model="taskForm.ngayBatDau">
+          </div>
+          <div class="form-group" :class="{'has-error': taskErrors.ngayHetHan}">
+            <label><span class="material-icons-outlined label-icon">event</span>Ngày hết hạn *</label>
+            <input type="date" v-model="taskForm.ngayHetHan" @change="validateTaskField('ngayHetHan')">
+            <span class="error-text" v-if="taskErrors.ngayHetHan">{{ taskErrors.ngayHetHan }}</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">payments</span>Chi phí ước tính (VNĐ)</label>
+            <input type="text" :value="formatMoneyInput(taskForm.chiPhiUocTinh)" @input="taskForm.chiPhiUocTinh = unformatMoney($event.target.value)" placeholder="0">
+          </div>
+          <div class="form-group" v-if="taskDialogMode === 'edit'">
+            <label><span class="material-icons-outlined label-icon">payments</span>Chi phí thực tế (VNĐ)</label>
+            <input type="text" :value="formatMoneyInput(taskForm.chiPhiThucTe)" @input="taskForm.chiPhiThucTe = unformatMoney($event.target.value)" placeholder="0">
+          </div>
+        </div>
+        <div class="form-row" v-if="taskDialogMode === 'edit'">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">speed</span>Tiến độ (%)</label>
+            <input type="number" v-model.number="taskForm.tienDo" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">label</span>Nhãn (phân cách bằng dấu phẩy)</label>
+            <input type="text" v-model="taskForm.nhan" placeholder="Bug, Feature, Design...">
+          </div>
+        </div>
+        <div class="form-group">
+          <label><span class="material-icons-outlined label-icon">notes</span>Ghi chú</label>
+          <textarea v-model="taskForm.ghiChu" placeholder="Ghi chú" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" @click="showTaskDialog = false" :disabled="taskSaving">Hủy</button>
+        <button class="btn btn-primary" @click="saveTask" :disabled="taskSaving">
+          <span class="spinner-sm" v-if="taskSaving"></span>
+          <span class="material-icons-outlined" v-else>save</span>
+          {{ taskSaving ? 'Đang lưu...' : 'Lưu' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,555 @@
+<script>
+function callServer(fn, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(r => { try { resolve(typeof r === 'string' ? JSON.parse(r) : r); } catch(e) { resolve(r); } })
+      .withFailureHandler(e => reject(e))
+      [fn](...args);
+  });
+}
+
+const { createApp, ref, reactive, computed, watch, onMounted, nextTick } = Vue;
+
+createApp({
+  setup() {
+    // ── Core State ──
+    const appLoading = ref(true);
+    const currentUser = ref(null);
+    const currentView = ref('dashboard');
+    const sidebarCollapsed = ref(false);
+    const showMobileMenu = ref(false);
+    const showNotifPanel = ref(false);
+    const toasts = ref([]);
+    const showDeleteConfirm = ref(false);
+    const deleteTarget = ref(null);
+    const deleting = ref(false);
+    const showPassword = ref(false);
+
+    // ── Login ──
+    const loginForm = reactive({ username: '', password: '' });
+    const loginErrors = reactive({ username: '', password: '' });
+    const loginError = ref('');
+    const loginLoading = ref(false);
+
+    // ── Master Data ──
+    const masterData = reactive({ members: [], departments: [], labels: [], settings: {} });
+    const projects = ref([]);
+    const tasks = ref([]);
+    const notifications = ref([]);
+    const activities = ref([]);
+
+    // ── Menu ──
+    const menuItems = [
+      { id: 'dashboard', label: 'Tổng Quan', icon: 'dashboard', shortLabel: 'Tổng Quan', roles: ['all'] },
+      { id: 'projects', label: 'Dự Án', icon: 'folder_open', shortLabel: 'Dự Án', roles: ['all'] },
+      { id: 'kanban', label: 'Kanban', icon: 'view_kanban', shortLabel: 'Kanban', roles: ['all'] },
+      { id: 'tasks', label: 'Công Việc', icon: 'task_alt', shortLabel: 'Việc', roles: ['all'] },
+      { id: 'timeline', label: 'Timeline', icon: 'timeline', shortLabel: 'Timeline', roles: ['Chủ Doanh Nghiệp', 'Leader'] },
+      { id: 'calendar', label: 'Lịch', icon: 'calendar_month', shortLabel: 'Lịch', roles: ['all'] },
+      { id: 'members', label: 'Thành Viên', icon: 'people', shortLabel: 'TV', roles: ['Chủ Doanh Nghiệp', 'Leader'] },
+      { id: 'activities', label: 'Hoạt Động', icon: 'history', shortLabel: 'Log', roles: ['Chủ Doanh Nghiệp', 'Leader'] }
+    ];
+
+    const filteredMenuItems = computed(() => menuItems.filter(i => i.roles.includes('all') || i.roles.includes(currentUser.value?.role)));
+    const mobileNavItems = computed(() => filteredMenuItems.value.slice(0, 5));
+    const currentMenuItem = computed(() => menuItems.find(i => i.id === currentView.value));
+    const isOwner = computed(() => currentUser.value?.role === 'Chủ Doanh Nghiệp');
+    const canManage = computed(() => ['Chủ Doanh Nghiệp', 'Leader'].includes(currentUser.value?.role));
+    const unreadNotifCount = computed(() => notifications.value.filter(n => n['Đã Đọc'] === 'Chưa').length);
+
+    // ── Auth ──
+    function validateLoginField(field) {
+      if (field === 'username') loginErrors.username = loginForm.username.trim() ? '' : 'Vui lòng nhập tên đăng nhập';
+      if (field === 'password') loginErrors.password = loginForm.password.trim() ? '' : 'Vui lòng nhập mật khẩu';
+    }
+
+    async function handleLogin() {
+      validateLoginField('username');
+      validateLoginField('password');
+      if (loginErrors.username || loginErrors.password) return;
+      loginLoading.value = true;
+      loginError.value = '';
+      try {
+        const res = await callServer('login', loginForm.username, loginForm.password);
+        if (res.success) {
+          currentUser.value = res.user;
+          localStorage.setItem('qlda_user', JSON.stringify(res.user));
+          showToast('Đăng nhập thành công!', 'success');
+          await loadAppData();
+        } else { loginError.value = res.message; }
+      } catch (e) { loginError.value = 'Lỗi kết nối: ' + e.message; }
+      loginLoading.value = false;
+    }
+
+    function handleLogout() {
+      currentUser.value = null;
+      localStorage.removeItem('qlda_user');
+      currentView.value = 'dashboard';
+      showMobileMenu.value = false;
+    }
+
+    // ── Navigation ──
+    function navigateTo(view) { currentView.value = view; loadViewData(view); }
+    function getBreadcrumb() { return 'Trang chủ / ' + (currentMenuItem.value?.label || ''); }
+
+    // ── Toast ──
+    function showToast(message, type) {
+      type = type || 'info';
+      toasts.value.push({ message, type });
+      setTimeout(() => toasts.value.shift(), 4000);
+    }
+
+    // ── Formatters ──
+    function formatMoney(val) { const n = Number(val) || 0; return n.toLocaleString('vi-VN') + ' ₫'; }
+    function formatMoneyInput(val) { const n = Number(val) || 0; return n ? n.toLocaleString('vi-VN') : ''; }
+    function unformatMoney(str) { return Number(String(str).replace(/[^\d]/g, '')) || 0; }
+    function truncateText(str, max) { if (!str) return ''; return str.length > max ? str.substring(0, max) + '...' : str; }
+    function formatDateShort(d) { if (!d) return ''; const s = String(d); if (s.includes('/')) { const p = s.split(/[/\s]/); return p[0] + '/' + p[1]; } return s.substring(0, 10); }
+
+    function parseDateLocal(str) {
+      if (!str) return new Date(0);
+      if (str instanceof Date) return str;
+      const s = String(str).trim();
+      if (s.includes('/')) { const p = s.split(/[/\s:]/); return new Date(+p[2], +p[1]-1, +p[0], +(p[3]||0), +(p[4]||0)); }
+      const d = new Date(s); return isNaN(d.getTime()) ? new Date(0) : d;
+    }
+
+    function isOverdue(task) {
+      if (!task || task['Trạng Thái'] === 'Hoàn Thành') return false;
+      const d = parseDateLocal(task['Ngày Hết Hạn']);
+      return d.getTime() > 0 && d < new Date();
+    }
+
+    function isToday(date) { const t = new Date(); return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear(); }
+
+    // ── Badge helpers ──
+    function getStatusBadgeClass(st) {
+      const m = { 'Lên Kế Hoạch': 'badge-info', 'Đang Thực Hiện': 'badge-accent', 'Hoàn Thành': 'badge-success', 'Tạm Dừng': 'badge-warning', 'Đã Hủy': 'badge-danger', 'Cần Làm': 'badge-info', 'Đang Xem Xét': 'badge-primary' };
+      return m[st] || 'badge-ghost';
+    }
+    function getPriorityClass(p) { return { 'Cao': 'priority-high', 'Trung Bình': 'priority-medium', 'Thấp': 'priority-low' }[p] || 'priority-medium'; }
+    function getRoleBadgeClass(r) { return { 'Chủ Doanh Nghiệp': 'badge-danger', 'Leader': 'badge-accent', 'Thành Viên': 'badge-primary' }[r] || 'badge-ghost'; }
+    function getProgressColor(p) { if (p >= 80) return 'var(--success)'; if (p >= 40) return 'var(--accent)'; return 'var(--info)'; }
+
+    function getNotifIcon(type) { return { 'Giao Việc': 'assignment_ind', 'Bình Luận': 'chat', 'Hệ Thống': 'info' }[type] || 'notifications'; }
+    function getNotifIconClass(type) { return { 'Giao Việc': 'task', 'Bình Luận': 'comment', 'Hệ Thống': 'system' }[type] || 'system'; }
+    function getActivityIcon(type) { if (String(type).includes('Tạo')) return 'add_circle'; if (String(type).includes('Cập Nhật') || String(type).includes('Trạng Thái')) return 'edit'; if (String(type).includes('Xóa')) return 'delete'; return 'history'; }
+    function getActivityIconClass(type) { if (String(type).includes('Tạo')) return 'create'; if (String(type).includes('Cập Nhật') || String(type).includes('Trạng Thái')) return 'update'; if (String(type).includes('Xóa')) return 'delete'; return 'status'; }
+
+    const budgetUsagePercent = computed(() => {
+      const b = dashboardData.value?.totalBudget || 0;
+      return b ? Math.round((dashboardData.value?.totalActualCost || 0) / b * 100) : 0;
+    });
+
+    // ── Notifications ──
+    async function markNotifRead(n) { if (n['Đã Đọc'] === 'Chưa') { n['Đã Đọc'] = 'Đã Đọc'; try { await callServer('markNotificationRead', n['Mã TB']); } catch(e){} } }
+    async function markAllRead() { notifications.value.forEach(n => n['Đã Đọc'] = 'Đã Đọc'); try { await callServer('markAllNotificationsRead', currentUser.value?.id); } catch(e){} showNotifPanel.value = false; }
+
+    // ── DASHBOARD ──
+    const dashboardData = ref(null);
+    const dashboardLoading = ref(false);
+    let chartInstances = {};
+
+    async function loadDashboard() {
+      dashboardLoading.value = true;
+      try {
+        const res = await callServer('getDashboard', currentUser.value?.id, currentUser.value?.role);
+        if (res.success) { dashboardData.value = res.data; await nextTick(); renderCharts(); }
+      } catch (e) { console.error('Dashboard:', e); }
+      dashboardLoading.value = false;
+    }
+
+    function renderCharts() {
+      Object.values(chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
+      chartInstances = {};
+      const d = dashboardData.value; if (!d) return;
+      const fontFamily = "'Plus Jakarta Sans', sans-serif";
+      const defaultOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { font: { family: fontFamily, size: 12 } } } } };
+
+      const el1 = document.getElementById('taskStatusChart');
+      if (el1) { chartInstances.taskStatus = new Chart(el1, { type: 'doughnut', data: { labels: ['Cần Làm', 'Đang TH', 'Xem Xét', 'Hoàn Thành'], datasets: [{ data: [d.taskStats.todo, d.taskStats.inProgress, d.taskStats.review, d.taskStats.completed], backgroundColor: ['#0277bd', '#c9963b', '#7c3aed', '#2e7d32'], borderWidth: 2, borderColor: '#fff' }] }, options: { ...defaultOpts, cutout: '65%' } }); }
+
+      const el2 = document.getElementById('priorityChart');
+      if (el2) { chartInstances.priority = new Chart(el2, { type: 'bar', data: { labels: ['Cao', 'Trung Bình', 'Thấp'], datasets: [{ label: 'Số lượng', data: [d.priorityStats.high, d.priorityStats.medium, d.priorityStats.low], backgroundColor: ['#b71c1c', '#e65100', '#2e7d32'] }] }, options: { ...defaultOpts, plugins: { ...defaultOpts.plugins, legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: fontFamily } } }, x: { ticks: { font: { family: fontFamily } } } } } }); }
+
+      const el3 = document.getElementById('weeklyTrendChart');
+      if (el3 && d.weeklyTrend) { chartInstances.weekly = new Chart(el3, { type: 'line', data: { labels: d.weeklyTrend.map(w => w.label), datasets: [{ label: 'Hoàn thành', data: d.weeklyTrend.map(w => w.completed), borderColor: '#2e7d32', backgroundColor: 'rgba(46,125,50,0.1)', fill: true, tension: 0.3 }, { label: 'Tạo mới', data: d.weeklyTrend.map(w => w.created), borderColor: '#0277bd', backgroundColor: 'rgba(2,119,189,0.1)', fill: true, tension: 0.3 }] }, options: { ...defaultOpts, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: fontFamily } } }, x: { ticks: { font: { family: fontFamily, size: 10 } } } } } }); }
+
+      const el4 = document.getElementById('projectStatusChart');
+      if (el4) { chartInstances.projStatus = new Chart(el4, { type: 'pie', data: { labels: ['Lên KH', 'Đang TH', 'Hoàn Thành', 'Tạm Dừng', 'Đã Hủy'], datasets: [{ data: [d.projectStats.planning, d.projectStats.inProgress, d.projectStats.completed, d.projectStats.paused, d.projectStats.cancelled], backgroundColor: ['#0277bd', '#c9963b', '#2e7d32', '#e65100', '#b71c1c'], borderWidth: 2, borderColor: '#fff' }] }, options: defaultOpts }); }
+
+      const el5 = document.getElementById('memberTaskChart');
+      if (el5 && d.memberTaskStats) { const labels = d.memberTaskStats.slice(0,8).map(m => m.name.length > 8 ? m.name.substring(0,8)+'…' : m.name); chartInstances.memberTask = new Chart(el5, { type: 'bar', data: { labels, datasets: [{ label: 'Cần Làm', data: d.memberTaskStats.slice(0,8).map(m => m.todo), backgroundColor: '#0277bd' }, { label: 'Đang TH', data: d.memberTaskStats.slice(0,8).map(m => m.inProgress), backgroundColor: '#c9963b' }, { label: 'Xong', data: d.memberTaskStats.slice(0,8).map(m => m.completed), backgroundColor: '#2e7d32' }] }, options: { ...defaultOpts, scales: { x: { stacked: true, ticks: { font: { family: fontFamily, size: 10 } } }, y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { family: fontFamily } } } } } }); }
+    }
+
+    // ── Initialize all method groups BEFORE loadViewData so functions are in scope ──
+    const _proj = projectMethods();
+    const _task = taskMethods();
+    const _member = memberMethods();
+    const _kanban = kanbanMethods();
+    const _timeline = timelineMethods();
+    const _calendar = calendarMethods();
+    const _activity = activityMethods();
+
+    // ── Data Loading (AFTER method groups so we can reference their functions) ──
+    async function loadAppData() {
+      try {
+        const [allData, projRes, notifRes] = await Promise.all([
+          callServer('getAllData', currentUser.value?.id, currentUser.value?.role),
+          callServer('getProjects', { role: currentUser.value?.role, userId: currentUser.value?.id }),
+          callServer('getNotifications', currentUser.value?.id)
+        ]);
+        if (allData.success) Object.assign(masterData, allData.data);
+        if (projRes.success) projects.value = projRes.data;
+        if (notifRes.success) notifications.value = notifRes.data;
+      } catch (e) { console.error('loadAppData:', e); }
+      loadViewData(currentView.value);
+    }
+
+    function loadViewData(view) {
+      if (view === 'dashboard') loadDashboard();
+      else if (view === 'projects') _proj.loadProjects();
+      else if (view === 'tasks') _task.loadTasks();
+      else if (view === 'kanban') _kanban.loadKanbanTasks();
+      else if (view === 'members') _member.loadMembers();
+      else if (view === 'timeline') _timeline.buildTimeline();
+      else if (view === 'calendar') _calendar.buildCalendar();
+      else if (view === 'activities') _activity.loadActivities();
+    }
+
+    // ── DELETE HANDLER ──
+    async function executeDelete() {
+      deleting.value = true;
+      const t = deleteTarget.value;
+      try {
+        let r;
+        if(t.type==='project') r = await callServer('deleteProject', t.id);
+        else if(t.type==='task') r = await callServer('deleteTask', t.id);
+        else if(t.type==='member') r = await callServer('deleteMember', t.id);
+        if(r && r.success) { showToast('Xóa thành công','success'); showDeleteConfirm.value = false; loadViewData(currentView.value); }
+        else showToast(r?.message || 'Lỗi xóa','error');
+      } catch(e) { showToast('Lỗi: '+e.message,'error'); }
+      deleting.value = false;
+    }
+
+    // ── Init ──
+    onMounted(async () => {
+      const saved = localStorage.getItem('qlda_user');
+      if (saved) { try { currentUser.value = JSON.parse(saved); await loadAppData(); } catch(e) { localStorage.removeItem('qlda_user'); } }
+      appLoading.value = false;
+    });
+
+    return {
+      appLoading, currentUser, currentView, sidebarCollapsed, showMobileMenu, showNotifPanel, toasts,
+      showDeleteConfirm, deleteTarget, deleting, showPassword, executeDelete,
+      loginForm, loginErrors, loginError, loginLoading,
+      masterData, projects, tasks, notifications, activities,
+      menuItems, filteredMenuItems, mobileNavItems, currentMenuItem, isOwner, canManage, unreadNotifCount,
+      validateLoginField, handleLogin, handleLogout, navigateTo, getBreadcrumb, showToast,
+      formatMoney, formatMoneyInput, unformatMoney, truncateText, formatDateShort, parseDateLocal, isOverdue, isToday,
+      getStatusBadgeClass, getPriorityClass, getRoleBadgeClass, getProgressColor,
+      getNotifIcon, getNotifIconClass, getActivityIcon, getActivityIconClass,
+      budgetUsagePercent, dashboardData, dashboardLoading, loadDashboard,
+      markNotifRead, markAllRead, loadViewData,
+      ..._proj, ..._task, ..._member, ..._kanban,
+      ..._timeline, ..._calendar, ..._activity
+    };
+
+    // ── PROJECT METHODS ──
+    function projectMethods() {
+      const projectSearch = ref('');
+      const projectStatusFilter = ref('');
+      const projectsLoading = ref(false);
+      const projectSortKey = ref('');
+      const projectSortDir = ref('desc');
+      const showProjectDialog = ref(false);
+      const projectDialogMode = ref('add');
+      const projectForm = reactive({ tenDuAn:'', moTa:'', trangThai:'Lên Kế Hoạch', mucDoUuTien:'Trung Bình', nganSach:0, chiPhiThucTe:0, ngayBatDau:'', ngayKetThuc:'', maLeader:'', tenLeader:'', thanhVienList:[], tienDo:0, ghiChu:'', maDuAn:'' });
+      const projectErrors = reactive({ tenDuAn:'', nganSach:'', ngayBatDau:'' });
+      const projectSaving = ref(false);
+
+      const filteredProjectList = computed(() => {
+        let list = [...projects.value];
+        if (projectSearch.value) { const q = projectSearch.value.toLowerCase(); list = list.filter(p => String(p['Tên Dự Án']||'').toLowerCase().includes(q) || String(p['Mã DA']||'').toLowerCase().includes(q)); }
+        if (projectSortKey.value) { list.sort((a,b) => { let va = a[projectSortKey.value]||'', vb = b[projectSortKey.value]||''; if(typeof va==='number'||!isNaN(va)) { va=Number(va)||0; vb=Number(vb)||0; } else { va=String(va).toLowerCase(); vb=String(vb).toLowerCase(); } return projectSortDir.value==='asc' ? (va>vb?1:-1) : (va<vb?1:-1); }); }
+        return list;
+      });
+
+      async function loadProjects() {
+        projectsLoading.value = true;
+        try { const r = await callServer('getProjects', { role: currentUser.value?.role, userId: currentUser.value?.id, status: projectStatusFilter.value }); if(r.success) projects.value = r.data; } catch(e){}
+        projectsLoading.value = false;
+      }
+
+      function sortProjects(key) { if(projectSortKey.value===key) projectSortDir.value = projectSortDir.value==='asc'?'desc':'asc'; else { projectSortKey.value=key; projectSortDir.value='asc'; } }
+
+      function openProjectDialog(mode, proj) {
+        projectDialogMode.value = mode;
+        Object.keys(projectErrors).forEach(k => projectErrors[k] = '');
+        if (mode === 'edit' && proj) {
+          Object.assign(projectForm, { maDuAn: proj['Mã DA'], tenDuAn: proj['Tên Dự Án'], moTa: proj['Mô Tả']||'', trangThai: proj['Trạng Thái'], mucDoUuTien: proj['Mức Độ Ưu Tiên'], nganSach: Number(proj['Ngân Sách'])||0, chiPhiThucTe: Number(proj['Chi Phí Thực Tế'])||0, ngayBatDau: toInputDate(proj['Ngày Bắt Đầu']), ngayKetThuc: toInputDate(proj['Ngày Kết Thúc']), maLeader: proj['Mã Leader']||'', tenLeader: proj['Leader']||'', tienDo: Number(proj['Tiến Độ'])||0, ghiChu: proj['Ghi Chú']||'', thanhVienList: proj['Thành Viên Tham Gia'] ? proj['Thành Viên Tham Gia'].split(',').map(s=>s.trim()) : [] });
+        } else { Object.assign(projectForm, { maDuAn:'', tenDuAn:'', moTa:'', trangThai:'Lên Kế Hoạch', mucDoUuTien:'Trung Bình', nganSach:0, chiPhiThucTe:0, ngayBatDau: new Date().toISOString().substring(0,10), ngayKetThuc:'', maLeader:'', tenLeader:'', thanhVienList:[], tienDo:0, ghiChu:'' }); }
+        showProjectDialog.value = true;
+      }
+
+      function toInputDate(d) { if(!d) return ''; if(String(d).includes('/')) { const p = String(d).split(/[/\s]/); return p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'); } return String(d).substring(0,10); }
+
+      function validateProjectField(f) { if(f==='tenDuAn') projectErrors.tenDuAn = projectForm.tenDuAn.trim() ? '' : 'Vui lòng nhập tên dự án'; if(f==='ngayBatDau') projectErrors.ngayBatDau = projectForm.ngayBatDau ? '' : 'Vui lòng chọn ngày'; }
+
+      function onLeaderChange() { const m = masterData.members.find(m => m['Mã TV'] === projectForm.maLeader); projectForm.tenLeader = m ? m['Họ và Tên'] : ''; }
+
+      async function saveProject() {
+        validateProjectField('tenDuAn'); validateProjectField('ngayBatDau');
+        if(projectErrors.tenDuAn || projectErrors.ngayBatDau) return;
+        projectSaving.value = true;
+        const payload = { ...projectForm, thanhVien: projectForm.thanhVienList.join(','), nguoiTao: currentUser.value?.id, tenNguoiTao: currentUser.value?.name };
+        try {
+          const r = projectDialogMode.value === 'add' ? await callServer('addProject', payload) : await callServer('updateProject', payload);
+          if(r.success) { showToast(r.message, 'success'); showProjectDialog.value = false; await loadProjects(); } else showToast(r.message, 'error');
+        } catch(e) { showToast('Lỗi: '+e.message, 'error'); }
+        projectSaving.value = false;
+      }
+
+      function viewProjectTasks(p) { currentView.value = 'tasks'; taskProjectFilter.value = p['Mã DA']; loadTasks(); }
+      function confirmDeleteProject(p) { deleteTarget.value = { type:'project', id: p['Mã DA'], name: p['Tên Dự Án'] }; showDeleteConfirm.value = true; }
+
+      return { projectSearch, projectStatusFilter, projectsLoading, projectSortKey, projectSortDir, showProjectDialog, projectDialogMode, projectForm, projectErrors, projectSaving, filteredProjectList, loadProjects, sortProjects, openProjectDialog, validateProjectField, onLeaderChange, saveProject, viewProjectTasks, confirmDeleteProject, filterProjects: ()=>{} };
+    }
+
+    // ── TASK METHODS ──
+    function taskMethods() {
+      const taskSearch = ref('');
+      const taskProjectFilter = ref('');
+      const taskStatusFilter = ref('');
+      const tasksLoading = ref(false);
+      const taskSortKey = ref('');
+      const taskSortDir = ref('desc');
+      const showTaskDialog = ref(false);
+      const taskDialogMode = ref('add');
+      const taskForm = reactive({ tieuDe:'', moTa:'', maDuAn:'', tenDuAn:'', nguoiThucHien:'', maNguoiThucHien:'', nguoiGiao:'', maNguoiGiao:'', trangThai:'Cần Làm', mucDoUuTien:'Trung Bình', ngayBatDau:'', ngayHetHan:'', chiPhiUocTinh:0, chiPhiThucTe:0, nhan:'', tienDo:0, ghiChu:'', maCongViec:'' });
+      const taskErrors = reactive({ tieuDe:'', maDuAn:'', ngayHetHan:'' });
+      const taskSaving = ref(false);
+      const showTaskDetail = ref(false);
+      const selectedTask = ref(null);
+      const taskComments = ref([]);
+      const newComment = ref('');
+      const commentSaving = ref(false);
+
+      const filteredTaskList = computed(() => {
+        let list = [...tasks.value];
+        if(taskSearch.value) { const q = taskSearch.value.toLowerCase(); list = list.filter(t => String(t['Tiêu Đề']||'').toLowerCase().includes(q) || String(t['Mã CV']||'').toLowerCase().includes(q) || String(t['Người Thực Hiện']||'').toLowerCase().includes(q)); }
+        if(taskSortKey.value) { list.sort((a,b) => { let va=a[taskSortKey.value]||'',vb=b[taskSortKey.value]||''; if(!isNaN(va)){va=Number(va)||0;vb=Number(vb)||0;}else{va=String(va).toLowerCase();vb=String(vb).toLowerCase();} return taskSortDir.value==='asc'?(va>vb?1:-1):(va<vb?1:-1); }); }
+        return list;
+      });
+
+      async function loadTasks() {
+        tasksLoading.value = true;
+        try { const r = await callServer('getTasks', { role: currentUser.value?.role, userId: currentUser.value?.id, projectId: taskProjectFilter.value, status: taskStatusFilter.value }); if(r.success) tasks.value = r.data; } catch(e){}
+        tasksLoading.value = false;
+      }
+
+      function sortTasks(key) { if(taskSortKey.value===key) taskSortDir.value = taskSortDir.value==='asc'?'desc':'asc'; else { taskSortKey.value=key; taskSortDir.value='asc'; } }
+
+      function openTaskDialog(mode, t) {
+        taskDialogMode.value = mode;
+        Object.keys(taskErrors).forEach(k => taskErrors[k] = '');
+        if(mode==='edit' && t) {
+          Object.assign(taskForm, { maCongViec: t['Mã CV'], tieuDe: t['Tiêu Đề'], moTa: t['Mô Tả']||'', maDuAn: t['Mã Dự Án']||'', tenDuAn: t['Tên Dự Án']||'', nguoiThucHien: t['Người Thực Hiện']||'', maNguoiThucHien: t['Mã Người Thực Hiện']||'', trangThai: t['Trạng Thái'], mucDoUuTien: t['Mức Độ Ưu Tiên'], ngayBatDau: toInputDate2(t['Ngày Bắt Đầu']), ngayHetHan: toInputDate2(t['Ngày Hết Hạn']), chiPhiUocTinh: Number(t['Chi Phí Ước Tính'])||0, chiPhiThucTe: Number(t['Chi Phí Thực Tế'])||0, nhan: t['Nhãn']||'', tienDo: Number(t['Tiến Độ'])||0, ghiChu: t['Ghi Chú']||'', nguoiGiao: t['Người Giao']||'', maNguoiGiao: t['Mã Người Giao']||'' });
+        } else { Object.assign(taskForm, { maCongViec:'', tieuDe:'', moTa:'', maDuAn: taskProjectFilter.value||'', tenDuAn:'', nguoiThucHien:'', maNguoiThucHien:'', trangThai:'Cần Làm', mucDoUuTien:'Trung Bình', ngayBatDau: new Date().toISOString().substring(0,10), ngayHetHan:'', chiPhiUocTinh:0, chiPhiThucTe:0, nhan:'', tienDo:0, ghiChu:'', nguoiGiao: currentUser.value?.name||'', maNguoiGiao: currentUser.value?.id||'' }); onTaskProjectChange(); }
+        showTaskDialog.value = true;
+      }
+
+      function toInputDate2(d) { if(!d) return ''; if(String(d).includes('/')) { const p = String(d).split(/[/\s]/); return p[2]+'-'+(p[1]||'01').padStart(2,'0')+'-'+(p[0]||'01').padStart(2,'0'); } return String(d).substring(0,10); }
+
+      function validateTaskField(f) { if(f==='tieuDe') taskErrors.tieuDe = taskForm.tieuDe.trim()?'':'Vui lòng nhập tiêu đề'; if(f==='maDuAn') taskErrors.maDuAn = taskForm.maDuAn?'':'Vui lòng chọn dự án'; if(f==='ngayHetHan') taskErrors.ngayHetHan = taskForm.ngayHetHan?'':'Vui lòng chọn ngày hết hạn'; }
+
+      function onTaskProjectChange() { const p = projects.value.find(p => p['Mã DA'] === taskForm.maDuAn); taskForm.tenDuAn = p ? p['Tên Dự Án'] : ''; }
+      function onAssigneeChange() { const m = masterData.members.find(m => m['Mã TV'] === taskForm.maNguoiThucHien); taskForm.nguoiThucHien = m ? m['Họ và Tên'] : ''; }
+      function canEditTask(t) { return canManage.value || t['Mã Người Thực Hiện'] === currentUser.value?.id; }
+
+      async function saveTask() {
+        validateTaskField('tieuDe'); validateTaskField('maDuAn'); validateTaskField('ngayHetHan');
+        if(taskErrors.tieuDe || taskErrors.maDuAn || taskErrors.ngayHetHan) return;
+        taskSaving.value = true;
+        try { const r = taskDialogMode.value==='add' ? await callServer('addTask', taskForm) : await callServer('updateTask', taskForm); if(r.success) { showToast(r.message,'success'); showTaskDialog.value = false; await loadTasks(); } else showToast(r.message,'error'); } catch(e) { showToast('Lỗi: '+e.message,'error'); }
+        taskSaving.value = false;
+      }
+
+      function confirmDeleteTask(t) { deleteTarget.value = { type:'task', id: t['Mã CV'], name: t['Tiêu Đề'] }; showDeleteConfirm.value = true; }
+
+      async function openTaskDetail(t) { selectedTask.value = t; showTaskDetail.value = true; try { const r = await callServer('getComments', t['Mã CV']); if(r.success) taskComments.value = r.data; } catch(e) { taskComments.value = []; } }
+
+      async function submitComment() {
+        if(!newComment.value.trim()) return;
+        commentSaving.value = true;
+        try { const r = await callServer('addComment', { maCongViec: selectedTask.value['Mã CV'], noiDung: newComment.value, nguoiBinhLuan: currentUser.value?.name, maNguoiBinhLuan: currentUser.value?.id, maChuTask: selectedTask.value['Mã Người Thực Hiện'], tenChuTask: selectedTask.value['Người Thực Hiện'] }); if(r.success) { newComment.value = ''; const cr = await callServer('getComments', selectedTask.value['Mã CV']); if(cr.success) taskComments.value = cr.data; } } catch(e){}
+        commentSaving.value = false;
+      }
+
+      async function removeComment(c) { try { await callServer('deleteComment', c['Mã BL']); taskComments.value = taskComments.value.filter(x => x['Mã BL'] !== c['Mã BL']); } catch(e){} }
+      function editComment(c) { newComment.value = c['Nội Dung']; /* simplified inline edit */ }
+
+      return { taskSearch, taskProjectFilter, taskStatusFilter, tasksLoading, taskSortKey, taskSortDir, showTaskDialog, taskDialogMode, taskForm, taskErrors, taskSaving, filteredTaskList, showTaskDetail, selectedTask, taskComments, newComment, commentSaving, loadTasks, sortTasks, openTaskDialog, validateTaskField, onTaskProjectChange, onAssigneeChange, canEditTask, saveTask, confirmDeleteTask, openTaskDetail, submitComment, removeComment, editComment };
+    }
+
+    // ── MEMBER METHODS ──
+    function memberMethods() {
+      const memberSearch = ref(''); const memberDeptFilter = ref(''); const membersLoading = ref(false);
+      const showMemberDialog = ref(false); const memberDialogMode = ref('add');
+      const memberForm = reactive({ hoTen:'', email:'', soDienThoai:'', chucVu:'', phongBan:'', vaiTro:'Thành Viên', tenDangNhap:'', matKhau:'', trangThai:'Hoạt Động', ghiChu:'', maTV:'' });
+      const memberErrors = reactive({ hoTen:'', email:'', tenDangNhap:'' });
+      const memberSaving = ref(false);
+
+      const filteredMemberList = computed(() => {
+        let list = [...masterData.members];
+        if(memberDeptFilter.value) list = list.filter(m => m['Phòng Ban'] === memberDeptFilter.value);
+        if(memberSearch.value) { const q = memberSearch.value.toLowerCase(); list = list.filter(m => String(m['Họ và Tên']||'').toLowerCase().includes(q) || String(m['Email']||'').toLowerCase().includes(q) || String(m['Mã TV']||'').toLowerCase().includes(q)); }
+        return list;
+      });
+
+      async function loadMembers() { membersLoading.value = true; try { const r = await callServer('getMembers', { department: memberDeptFilter.value }); if(r.success) masterData.members = r.data; } catch(e){} membersLoading.value = false; }
+      function sortMembers(key) { masterData.members.sort((a,b) => String(a[key]||'').localeCompare(String(b[key]||''))); }
+
+      function openMemberDialog(mode, m) {
+        memberDialogMode.value = mode; Object.keys(memberErrors).forEach(k => memberErrors[k]='');
+        if(mode==='edit' && m) { Object.assign(memberForm, { maTV: m['Mã TV'], hoTen: m['Họ và Tên'], email: m['Email']||'', soDienThoai: m['Số Điện Thoại']||'', chucVu: m['Chức Vụ']||'', phongBan: m['Phòng Ban']||'', vaiTro: m['Vai Trò']||'Thành Viên', tenDangNhap: m['Tên Đăng Nhập']||'', matKhau:'', trangThai: m['Trạng Thái']||'Hoạt Động', ghiChu: m['Ghi Chú']||'' }); }
+        else { Object.assign(memberForm, { maTV:'', hoTen:'', email:'', soDienThoai:'', chucVu:'', phongBan:'', vaiTro:'Thành Viên', tenDangNhap:'', matKhau:'', trangThai:'Hoạt Động', ghiChu:'' }); }
+        showMemberDialog.value = true;
+      }
+
+      function validateMemberField(f) { if(f==='hoTen') memberErrors.hoTen = memberForm.hoTen.trim()?'':'Vui lòng nhập họ tên'; if(f==='email') memberErrors.email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(memberForm.email)?'':'Email không hợp lệ'; if(f==='tenDangNhap') memberErrors.tenDangNhap = memberForm.tenDangNhap.trim()?'':'Vui lòng nhập tên đăng nhập'; }
+
+      async function saveMember() {
+        validateMemberField('hoTen'); validateMemberField('email'); if(memberDialogMode.value==='add') validateMemberField('tenDangNhap');
+        if(memberErrors.hoTen || memberErrors.email || (memberDialogMode.value==='add' && memberErrors.tenDangNhap)) return;
+        memberSaving.value = true;
+        try { const r = memberDialogMode.value==='add' ? await callServer('addMember', { ...memberForm, nguoiTao: currentUser.value?.id, tenNguoiTao: currentUser.value?.name }) : await callServer('updateMember', memberForm); if(r.success) { showToast(r.message,'success'); showMemberDialog.value = false; await loadMembers(); } else showToast(r.message,'error'); } catch(e) { showToast('Lỗi: '+e.message,'error'); }
+        memberSaving.value = false;
+      }
+
+      function confirmDeleteMember(m) { deleteTarget.value = { type:'member', id: m['Mã TV'], name: m['Họ và Tên'] }; showDeleteConfirm.value = true; }
+
+      return { memberSearch, memberDeptFilter, membersLoading, showMemberDialog, memberDialogMode, memberForm, memberErrors, memberSaving, filteredMemberList, loadMembers, sortMembers, openMemberDialog, validateMemberField, saveMember, confirmDeleteMember };
+    }
+
+    // (executeDelete moved above return)
+
+    // ── KANBAN METHODS ──
+    function kanbanMethods() {
+      const kanbanProjectFilter = ref(''); const kanbanMemberFilter = ref('');
+      const kanbanDateFrom = ref(''); const kanbanDateTo = ref('');
+      const kanbanLoading = ref(false);
+      const kanbanColumns = [
+        { id:'todo', status:'Cần Làm', label:'CẦN LÀM', icon:'radio_button_unchecked', color:'var(--info)' },
+        { id:'inProgress', status:'Đang Thực Hiện', label:'ĐANG LÀM', icon:'sync', color:'var(--accent)' },
+        { id:'review', status:'Đang Xem Xét', label:'XEM XÉT', icon:'rate_review', color:'#7c3aed' },
+        { id:'done', status:'Hoàn Thành', label:'HOÀN THÀNH', icon:'check_circle', color:'var(--success)' }
+      ];
+      let dragTask = null;
+
+      function getKanbanColumnTasks(status) { return tasks.value.filter(t => t['Trạng Thái'] === status); }
+
+      async function loadKanbanTasks() {
+        kanbanLoading.value = true;
+        try { const r = await callServer('getTasks', { role: currentUser.value?.role, userId: currentUser.value?.id, projectId: kanbanProjectFilter.value, assigneeId: kanbanMemberFilter.value, dateFrom: kanbanDateFrom.value, dateTo: kanbanDateTo.value }); if(r.success) tasks.value = r.data; } catch(e){}
+        kanbanLoading.value = false;
+      }
+
+      function onKanbanDragStart(e, task) { dragTask = task; e.dataTransfer.effectAllowed = 'move'; }
+      async function onKanbanDrop(e, newStatus) {
+        e.preventDefault(); if(!dragTask || dragTask['Trạng Thái'] === newStatus) return;
+        const old = dragTask['Trạng Thái']; dragTask['Trạng Thái'] = newStatus;
+        try { await callServer('updateTaskStatus', dragTask['Mã CV'], newStatus, currentUser.value?.id, currentUser.value?.name); showToast('Đã chuyển → ' + newStatus, 'success'); } catch(e) { dragTask['Trạng Thái'] = old; showToast('Lỗi cập nhật','error'); }
+        dragTask = null;
+      }
+
+      function setKanbanWeek() { const n = new Date(); const s = new Date(n); s.setDate(n.getDate()-n.getDay()); const e = new Date(s); e.setDate(s.getDate()+6); kanbanDateFrom.value = s.toISOString().substring(0,10); kanbanDateTo.value = e.toISOString().substring(0,10); loadKanbanTasks(); }
+      function setKanbanMonth() { const n = new Date(); kanbanDateFrom.value = new Date(n.getFullYear(), n.getMonth(), 1).toISOString().substring(0,10); kanbanDateTo.value = new Date(n.getFullYear(), n.getMonth()+1, 0).toISOString().substring(0,10); loadKanbanTasks(); }
+
+      return { kanbanProjectFilter, kanbanMemberFilter, kanbanDateFrom, kanbanDateTo, kanbanLoading, kanbanColumns, getKanbanColumnTasks, loadKanbanTasks, onKanbanDragStart, onKanbanDrop, setKanbanWeek, setKanbanMonth };
+    }
+
+    // ── TIMELINE METHODS ──
+    function timelineMethods() {
+      const timelineProjectFilter = ref(''); const timelineView = ref('month'); const timelineOffset = ref(0);
+      const timelineDays = ref([]); const timelineItems = ref([]);
+      const timelineCellWidth = ref(40); const todayLineLeft = ref(-1);
+
+      function buildTimeline() {
+        const now = new Date(); let startDate, numDays;
+        if(timelineView.value === 'week') { startDate = new Date(now); startDate.setDate(now.getDate() - now.getDay() + timelineOffset.value * 7); numDays = 7; timelineCellWidth.value = 100; }
+        else { startDate = new Date(now.getFullYear(), now.getMonth() + timelineOffset.value, 1); numDays = new Date(startDate.getFullYear(), startDate.getMonth()+1, 0).getDate(); timelineCellWidth.value = 40; }
+
+        const days = []; for(let i=0;i<numDays;i++) { const d = new Date(startDate); d.setDate(startDate.getDate()+i); days.push(d); }
+        timelineDays.value = days;
+
+        const endDate = new Date(days[days.length-1]); endDate.setHours(23,59,59);
+        let filteredTasks = tasks.value.length ? tasks.value : [];
+        if(timelineProjectFilter.value) filteredTasks = filteredTasks.filter(t => t['Mã Dự Án'] === timelineProjectFilter.value);
+
+        const colors = ['#1a3a5c','#c9963b','#2e7d32','#7c3aed','#e65100','#0277bd','#b71c1c'];
+        timelineItems.value = filteredTasks.map((t,i) => {
+          const s = parseDateLocal(t['Ngày Bắt Đầu']); const e = parseDateLocal(t['Ngày Hết Hạn']);
+          if(s.getTime()<=0 || e.getTime()<=0) return null;
+          const diffStart = (s - startDate) / 86400000; const diffEnd = (e - startDate) / 86400000;
+          return { id: t['Mã CV'], label: t['Tiêu Đề'], priority: t['Mức Độ Ưu Tiên'], barLeft: Math.max(0, diffStart) * timelineCellWidth.value, barWidth: (Math.min(diffEnd, numDays) - Math.max(diffStart, 0)) * timelineCellWidth.value, color: colors[i % colors.length], startStr: formatDateShort(t['Ngày Bắt Đầu']), endStr: formatDateShort(t['Ngày Hết Hạn']) };
+        }).filter(Boolean);
+
+        const todayDiff = (new Date(now.getFullYear(), now.getMonth(), now.getDate()) - startDate) / 86400000;
+        todayLineLeft.value = (todayDiff >= 0 && todayDiff <= numDays) ? todayDiff * timelineCellWidth.value : -1;
+      }
+
+      function formatTimelineDate(d) { return d.getDate() + '/' + (d.getMonth()+1); }
+
+      return { timelineProjectFilter, timelineView, timelineOffset, timelineDays, timelineItems, timelineCellWidth, todayLineLeft, buildTimeline, formatTimelineDate };
+    }
+
+    // ── CALENDAR METHODS ──
+    function calendarMethods() {
+      const calendarProjectFilter = ref(''); const calendarMonth = ref(new Date().getMonth()); const calendarYear = ref(new Date().getFullYear());
+      const calendarCells = ref([]);
+
+      function buildCalendar() {
+        const first = new Date(calendarYear.value, calendarMonth.value, 1);
+        const startDay = first.getDay(); const daysInMonth = new Date(calendarYear.value, calendarMonth.value+1, 0).getDate();
+        const prevDays = new Date(calendarYear.value, calendarMonth.value, 0).getDate();
+        const today = new Date(); const cells = [];
+
+        const taskList = tasks.value.filter(t => !calendarProjectFilter.value || t['Mã Dự Án'] === calendarProjectFilter.value);
+
+        for(let i=startDay-1;i>=0;i--) { cells.push({ day: prevDays-i, isOtherMonth: true, isToday: false, events: [], date: new Date(calendarYear.value, calendarMonth.value-1, prevDays-i) }); }
+        for(let d=1;d<=daysInMonth;d++) {
+          const dt = new Date(calendarYear.value, calendarMonth.value, d);
+          const isTdy = dt.getDate()===today.getDate() && dt.getMonth()===today.getMonth() && dt.getFullYear()===today.getFullYear();
+          const events = [];
+          taskList.forEach(t => {
+            const start = parseDateLocal(t['Ngày Bắt Đầu']); const end = parseDateLocal(t['Ngày Hết Hạn']);
+            if(start.getDate()===d && start.getMonth()===calendarMonth.value && start.getFullYear()===calendarYear.value) events.push({ title: t['Tiêu Đề'], type: 'task', task: t });
+            if(end.getDate()===d && end.getMonth()===calendarMonth.value && end.getFullYear()===calendarYear.value && t['Trạng Thái']!=='Hoàn Thành') events.push({ title: '⏰ ' + t['Tiêu Đề'], type: 'deadline', task: t });
+          });
+          cells.push({ day: d, isOtherMonth: false, isToday: isTdy, events, date: dt });
+        }
+        const remaining = 42 - cells.length;
+        for(let i=1;i<=remaining;i++) { cells.push({ day: i, isOtherMonth: true, isToday: false, events: [], date: new Date(calendarYear.value, calendarMonth.value+1, i) }); }
+        calendarCells.value = cells;
+      }
+
+      function goToToday() { calendarMonth.value = new Date().getMonth(); calendarYear.value = new Date().getFullYear(); buildCalendar(); }
+      function onCalendarCellClick(cell) { /* could open task creation for that date */ }
+      function onCalendarEventClick(evt) { if(evt.task) { selectedTask.value = evt.task; showTaskDetail.value = true; } }
+
+      return { calendarProjectFilter, calendarMonth, calendarYear, calendarCells, buildCalendar, goToToday, onCalendarCellClick, onCalendarEventClick };
+    }
+
+    // ── ACTIVITY METHODS ──
+    function activityMethods() {
+      const activitySearch = ref(''); const activitiesLoading = ref(false);
+      const filteredActivities = computed(() => { if(!activitySearch.value) return activities.value; const q = activitySearch.value.toLowerCase(); return activities.value.filter(a => String(a['Mô Tả']||'').toLowerCase().includes(q) || String(a['Loại']||'').toLowerCase().includes(q)); });
+
+      async function loadActivities() { activitiesLoading.value = true; try { const r = await callServer('getActivities', 100); if(r.success) activities.value = r.data; } catch(e){} activitiesLoading.value = false; }
+
+      return { activitySearch, activitiesLoading, filteredActivities, loadActivities };
+    }
+  }
+}).mount('#app');
+</script>

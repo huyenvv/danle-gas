@@ -1,0 +1,81 @@
+<!-- Kanban Board View -->
+<div class="kanban-view">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <select class="filter-select" v-model="kanbanProjectFilter" @change="loadKanbanTasks">
+        <option value="">Tất cả dự án</option>
+        <option v-for="p in projects" :key="p['Mã DA']" :value="p['Mã DA']">{{ p['Tên Dự Án'] }}</option>
+      </select>
+      <select class="filter-select" v-model="kanbanMemberFilter" @change="loadKanbanTasks">
+        <option value="">Tất cả thành viên</option>
+        <option v-for="m in masterData.members" :key="m['Mã TV']" :value="m['Mã TV']">{{ m['Họ và Tên'] }}</option>
+      </select>
+      <div class="flex-center gap-8">
+        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);white-space:nowrap">Từ:</label>
+        <input type="date" v-model="kanbanDateFrom" @change="loadKanbanTasks" class="filter-select" style="min-width:auto">
+        <label style="font-size:12px;font-weight:600;color:var(--text-secondary);white-space:nowrap">Đến:</label>
+        <input type="date" v-model="kanbanDateTo" @change="loadKanbanTasks" class="filter-select" style="min-width:auto">
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-sm btn-ghost" @click="setKanbanWeek" title="Tuần này">
+        <span class="material-icons-outlined">date_range</span> Tuần này
+      </button>
+      <button class="btn btn-sm btn-ghost" @click="setKanbanMonth" title="Tháng này">
+        <span class="material-icons-outlined">calendar_month</span> Tháng này
+      </button>
+      <button class="btn btn-sm btn-ghost" @click="kanbanDateFrom='';kanbanDateTo='';loadKanbanTasks()" title="Tất cả">
+        <span class="material-icons-outlined">clear_all</span> Tất cả
+      </button>
+    </div>
+  </div>
+
+  <div style="position:relative">
+    <div class="loading-overlay" v-if="kanbanLoading">
+      <div class="loading-spinner"></div>
+      <span style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+
+    <div class="kanban-board">
+      <div v-for="col in kanbanColumns" :key="col.id" class="kanban-column" :data-status="col.id"
+           @dragover.prevent @drop="onKanbanDrop($event, col.status)">
+        <div class="kanban-column-header">
+          <div class="flex-center gap-8">
+            <span class="material-icons-outlined" :style="{color: col.color, fontSize:'18px'}">{{ col.icon }}</span>
+            {{ col.label }}
+          </div>
+          <span class="column-count">{{ getKanbanColumnTasks(col.status).length }}</span>
+        </div>
+        <div class="kanban-cards">
+          <div v-for="task in getKanbanColumnTasks(col.status)" :key="task['Mã CV']" class="kanban-card"
+               draggable="true" @dragstart="onKanbanDragStart($event, task)">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <span class="priority-badge" :class="getPriorityClass(task['Mức Độ Ưu Tiên'])" style="margin-bottom:6px">{{ task['Mức Độ Ưu Tiên'] }}</span>
+              <button class="icon-btn" style="width:24px;height:24px" @click="openTaskDetail(task)">
+                <span class="material-icons-outlined" style="font-size:16px">open_in_new</span>
+              </button>
+            </div>
+            <div class="kanban-card-title">{{ task['Tiêu Đề'] }}</div>
+            <div class="kanban-card-meta">
+              <span v-if="task['Tên Dự Án']"><span class="material-icons-outlined" style="font-size:12px">folder</span>{{ truncateText(task['Tên Dự Án'], 20) }}</span>
+              <span v-if="task['Ngày Hết Hạn']" :style="{color: isOverdue(task) ? 'var(--danger)' : ''}">
+                <span class="material-icons-outlined" style="font-size:12px">schedule</span>{{ formatDateShort(task['Ngày Hết Hạn']) }}
+              </span>
+            </div>
+            <div class="kanban-card-meta mt-8" v-if="task['Nhãn']">
+              <span v-for="label in task['Nhãn'].split(',')" :key="label" class="badge badge-ghost" style="font-size:9px;padding:1px 6px">{{ label.trim() }}</span>
+            </div>
+            <div class="kanban-card-assignee" v-if="task['Người Thực Hiện']">
+              <div class="mini-avatar">{{ task['Người Thực Hiện']?.charAt(0) || '?' }}</div>
+              {{ task['Người Thực Hiện'] }}
+            </div>
+          </div>
+          <div v-if="getKanbanColumnTasks(col.status).length === 0" class="empty-state sm" style="padding:20px 10px">
+            <span class="material-icons-outlined" style="font-size:32px">inbox</span>
+            <p style="font-size:11px">Trống</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

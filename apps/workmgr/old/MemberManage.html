@@ -1,0 +1,162 @@
+<!-- Member Management View -->
+<div class="member-manage-view">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-bar" style="min-width:240px">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" v-model="memberSearch" placeholder="Tìm kiếm thành viên...">
+      </div>
+      <select class="filter-select" v-model="memberDeptFilter" @change="loadMembers">
+        <option value="">Tất cả phòng ban</option>
+        <option v-for="d in masterData.departments" :key="d['Mã PB']" :value="d['Tên Phòng Ban']">{{ d['Tên Phòng Ban'] }}</option>
+      </select>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" @click="openMemberDialog('add')" v-if="canManage">
+        <span class="material-icons-outlined">person_add</span>
+        Thêm Thành Viên
+      </button>
+    </div>
+  </div>
+
+  <div class="card" style="position:relative">
+    <div class="loading-overlay" v-if="membersLoading">
+      <div class="loading-spinner"></div>
+      <span style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th @click="sortMembers('Mã TV')">Mã <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th @click="sortMembers('Họ và Tên')">Họ và Tên <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th @click="sortMembers('Email')">Email <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th @click="sortMembers('Phòng Ban')">Phòng Ban <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th @click="sortMembers('Vai Trò')">Vai Trò <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th @click="sortMembers('Trạng Thái')">Trạng Thái <span class="material-icons sort-icon">arrow_downward</span></th>
+            <th>Thao Tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="filteredMemberList.length === 0">
+            <td colspan="7" class="text-center" style="padding:40px">
+              <span class="material-icons-outlined text-muted" style="font-size:40px">people_outline</span>
+              <p class="text-muted mt-8">Không có thành viên nào</p>
+            </td>
+          </tr>
+          <tr v-for="m in filteredMemberList" :key="m['Mã TV']">
+            <td data-label="Mã"><strong>{{ m['Mã TV'] }}</strong></td>
+            <td data-label="Họ và Tên">
+              <div class="flex-center gap-8">
+                <div class="user-avatar sm" style="background:var(--primary-lighter);color:var(--primary)">{{ m['Họ và Tên']?.charAt(0) || '?' }}</div>
+                <div>
+                  <strong>{{ m['Họ và Tên'] }}</strong>
+                  <div style="font-size:11px;color:var(--text-muted)">{{ m['Chức Vụ'] || '' }}</div>
+                </div>
+              </div>
+            </td>
+            <td data-label="Email">{{ m['Email'] || '—' }}</td>
+            <td data-label="Phòng Ban">{{ m['Phòng Ban'] || '—' }}</td>
+            <td data-label="Vai Trò">
+              <span class="badge" :class="getRoleBadgeClass(m['Vai Trò'])">{{ m['Vai Trò'] }}</span>
+            </td>
+            <td data-label="Trạng Thái">
+              <span class="badge" :class="m['Trạng Thái'] === 'Hoạt Động' ? 'badge-success' : 'badge-ghost'">{{ m['Trạng Thái'] }}</span>
+            </td>
+            <td data-label="Thao Tác">
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-sm btn-ghost" @click="openMemberDialog('edit', m)" title="Sửa" v-if="canManage">
+                  <span class="material-icons-outlined" style="font-size:16px">edit</span>
+                </button>
+                <button class="btn btn-sm btn-ghost" style="color:var(--danger)" @click="confirmDeleteMember(m)" title="Xóa" v-if="isOwner">
+                  <span class="material-icons-outlined" style="font-size:16px">delete</span>
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Member Dialog -->
+  <div class="modal-overlay" v-if="showMemberDialog" @click.self="showMemberDialog = false">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><span class="material-icons-outlined">{{ memberDialogMode === 'add' ? 'person_add' : 'edit' }}</span>{{ memberDialogMode === 'add' ? 'Thêm Thành Viên' : 'Cập Nhật Thành Viên' }}</h3>
+        <button class="icon-btn" @click="showMemberDialog = false" style="color:#fff"><span class="material-icons">close</span></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" :class="{'has-error': memberErrors.hoTen}">
+          <label><span class="material-icons-outlined label-icon">person</span>Họ và tên *</label>
+          <input type="text" v-model="memberForm.hoTen" @keyup="validateMemberField('hoTen')" placeholder="Nhập họ và tên">
+          <span class="error-text" v-if="memberErrors.hoTen">{{ memberErrors.hoTen }}</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group" :class="{'has-error': memberErrors.email}">
+            <label><span class="material-icons-outlined label-icon">email</span>Email *</label>
+            <input type="email" v-model="memberForm.email" @keyup="validateMemberField('email')" placeholder="email@example.com">
+            <span class="error-text" v-if="memberErrors.email">{{ memberErrors.email }}</span>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">phone</span>Số điện thoại</label>
+            <input type="text" v-model="memberForm.soDienThoai" placeholder="0123456789">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">work</span>Chức vụ</label>
+            <input type="text" v-model="memberForm.chucVu" placeholder="Nhập chức vụ">
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">business</span>Phòng ban</label>
+            <select v-model="memberForm.phongBan">
+              <option value="">-- Chọn phòng ban --</option>
+              <option v-for="d in masterData.departments" :key="d['Mã PB']" :value="d['Tên Phòng Ban']">{{ d['Tên Phòng Ban'] }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">admin_panel_settings</span>Vai trò</label>
+            <select v-model="memberForm.vaiTro">
+              <option>Thành Viên</option>
+              <option>Leader</option>
+              <option v-if="isOwner">Chủ Doanh Nghiệp</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">toggle_on</span>Trạng thái</label>
+            <select v-model="memberForm.trangThai">
+              <option>Hoạt Động</option>
+              <option>Vô Hiệu</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" :class="{'has-error': memberErrors.tenDangNhap}">
+            <label><span class="material-icons-outlined label-icon">badge</span>Tên đăng nhập *</label>
+            <input type="text" v-model="memberForm.tenDangNhap" @keyup="validateMemberField('tenDangNhap')" placeholder="Tên đăng nhập" :disabled="memberDialogMode === 'edit'">
+            <span class="error-text" v-if="memberErrors.tenDangNhap">{{ memberErrors.tenDangNhap }}</span>
+          </div>
+          <div class="form-group">
+            <label><span class="material-icons-outlined label-icon">lock</span>{{ memberDialogMode === 'add' ? 'Mật khẩu' : 'Đổi mật khẩu' }}</label>
+            <input type="text" v-model="memberForm.matKhau" :placeholder="memberDialogMode === 'add' ? 'Mặc định: 123456' : 'Để trống nếu không đổi'">
+          </div>
+        </div>
+        <div class="form-group">
+          <label><span class="material-icons-outlined label-icon">notes</span>Ghi chú</label>
+          <textarea v-model="memberForm.ghiChu" placeholder="Ghi chú" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" @click="showMemberDialog = false" :disabled="memberSaving">Hủy</button>
+        <button class="btn btn-primary" @click="saveMember" :disabled="memberSaving">
+          <span class="spinner-sm" v-if="memberSaving"></span>
+          <span class="material-icons-outlined" v-else>save</span>
+          {{ memberSaving ? 'Đang lưu...' : 'Lưu' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

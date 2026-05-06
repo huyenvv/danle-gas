@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quản Lý Dự Án - Sheetkhoinghiep</title>
+  
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+  <div id="app">
+    <!-- Loading Screen -->
+    <div v-if="appLoading" class="app-loading-screen">
+      <div class="loading-content">
+        <div class="loading-logo">
+          <span class="material-icons" style="font-size:56px;color:var(--primary)">rocket_launch</span>
+        </div>
+        <h2 style="margin:16px 0 8px;color:var(--text-primary)">Quản Lý Dự Án</h2>
+        <p style="color:var(--text-secondary);margin-bottom:24px">Đang tải dữ liệu...</p>
+        <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+      </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div v-if="!appLoading && !currentUser" class="login-screen">
+      <div class="login-bg-pattern"></div>
+      <div class="login-container">
+        <div class="login-header">
+          <div class="login-logo" style="background:var(--primary-light);color:var(--primary)">
+            <span class="material-icons" style="font-size:42px;color:var(--primary)">folder</span>
+          </div>
+          <h1 style="color:var(--primary);font-weight:600;font-size:1.5rem;letter-spacing:0.5px">QUẢN LÝ DỰ ÁN</h1>
+          <p>Đăng nhập để tiếp tục</p>
+        </div>
+        <div class="login-form">
+          <div class="form-group" :class="{'has-error': loginErrors.username}">
+            <label>
+              <span class="material-icons-outlined label-icon">person</span>
+              Tên đăng nhập
+            </label>
+            <input type="text" v-model="loginForm.username" @keyup="validateLoginField('username')" @keyup.enter="handleLogin" placeholder="Nhập tên đăng nhập" autocomplete="username">
+            <span class="error-text" v-if="loginErrors.username">{{ loginErrors.username }}</span>
+          </div>
+          <div class="form-group" :class="{'has-error': loginErrors.password}">
+            <label>
+              <span class="material-icons-outlined label-icon">lock</span>
+              Mật khẩu
+            </label>
+            <div class="password-input-wrap">
+              <input :type="showPassword ? 'text' : 'password'" v-model="loginForm.password" @keyup="validateLoginField('password')" @keyup.enter="handleLogin" placeholder="Nhập mật khẩu" autocomplete="current-password">
+              <button type="button" class="password-toggle" @click="showPassword = !showPassword">
+                <span class="material-icons-outlined">{{ showPassword ? 'visibility_off' : 'visibility' }}</span>
+              </button>
+            </div>
+            <span class="error-text" v-if="loginErrors.password">{{ loginErrors.password }}</span>
+          </div>
+          <div class="login-error" v-if="loginError">
+            <span class="material-icons-outlined">error</span>
+            {{ loginError }}
+          </div>
+          <button class="btn btn-primary btn-login" @click="handleLogin" :disabled="loginLoading">
+            <span class="spinner-sm" v-if="loginLoading"></span>
+            <span class="material-icons-outlined" v-else>login</span>
+            {{ loginLoading ? 'Đang đăng nhập...' : 'Đăng Nhập' }}
+          </button>
+          <div class="login-footer">
+             <p style="font-size:12px;color:var(--text-muted)">Phiên bản 5.1 &bull; Sheetkhoinghiep.com</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App -->
+    <div v-if="!appLoading && currentUser" class="app-shell">
+      <!-- Sidebar Desktop -->
+      <aside class="sidebar desktop-only" :class="{collapsed: sidebarCollapsed}">
+        <div class="sidebar-header">
+          <div class="sidebar-logo" style="background:transparent;width:auto;height:auto;margin-left:0">
+            <span class="material-icons" style="font-size:28px;color:var(--primary)">folder</span>
+          </div>
+          <div class="sidebar-brand" v-if="!sidebarCollapsed">
+            <h3 style="color:var(--primary);font-weight:600;font-size:1.125rem;letter-spacing:0.5px">TÊN CÔNG TY</h3>
+          </div>
+          <button class="sidebar-collapse-btn" @click="sidebarCollapsed = !sidebarCollapsed">
+            <span class="material-icons-outlined">{{ sidebarCollapsed ? 'chevron_right' : 'chevron_left' }}</span>
+          </button>
+        </div>
+        
+        <nav class="sidebar-nav">
+          <div class="nav-section-label" v-if="!sidebarCollapsed">MENU CHÍNH</div>
+          <button v-for="item in filteredMenuItems" :key="item.id" class="nav-btn" :class="{active: currentView === item.id}" @click="navigateTo(item.id)" :title="item.label">
+            <span class="material-icons-outlined nav-icon">{{ item.icon }}</span>
+            <span class="nav-label" v-if="!sidebarCollapsed">{{ item.label }}</span>
+            <span class="nav-badge" v-if="item.badge && !sidebarCollapsed">{{ item.badge }}</span>
+          </button>
+        </nav>
+        
+        <div class="sidebar-footer" v-if="!sidebarCollapsed">
+          <div class="user-card">
+            <div class="user-avatar">{{ currentUser.name?.charAt(0) || 'U' }}</div>
+            <div class="user-info">
+              <span class="user-name">{{ currentUser.name }}</span>
+              <span class="user-role-badge">{{ currentUser.role }}</span>
+            </div>
+          </div>
+          <button class="btn btn-logout" @click="handleLogout">
+            <span class="material-icons-outlined">logout</span>
+            Đăng xuất
+          </button>
+        </div>
+      </aside>
+
+      <!-- Mobile Header -->
+      <header class="mobile-header mobile-only">
+        <button class="mobile-menu-btn" @click="showMobileMenu = true">
+          <span class="material-icons">menu</span>
+        </button>
+        <div class="mobile-header-title">
+          <span class="material-icons-outlined" style="font-size:20px;color:var(--primary)">{{ currentMenuItem?.icon || 'dashboard' }}</span>
+          <span>{{ currentMenuItem?.label || 'Tổng Quan' }}</span>
+        </div>
+        <div class="mobile-header-actions">
+          <button class="icon-btn" @click="showNotifPanel = !showNotifPanel" style="position:relative">
+            <span class="material-icons-outlined">notifications</span>
+            <span class="notif-dot" v-if="unreadNotifCount > 0"></span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Mobile Menu Drawer -->
+      <div class="mobile-drawer-overlay" v-if="showMobileMenu" @click="showMobileMenu = false"></div>
+      <div class="mobile-drawer" :class="{open: showMobileMenu}">
+        <div class="drawer-header">
+          <div class="drawer-user">
+            <div class="user-avatar lg">{{ currentUser.name?.charAt(0) || 'U' }}</div>
+            <div>
+              <h4>{{ currentUser.name }}</h4>
+              <span class="user-role-badge sm">{{ currentUser.role }}</span>
+            </div>
+          </div>
+          <button class="icon-btn" @click="showMobileMenu = false">
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+        <nav class="drawer-nav">
+          <button v-for="item in filteredMenuItems" :key="item.id" class="drawer-nav-btn" :class="{active: currentView === item.id}" @click="navigateTo(item.id); showMobileMenu = false">
+            <span class="material-icons-outlined">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+            <span class="nav-badge" v-if="item.badge">{{ item.badge }}</span>
+          </button>
+        </nav>
+        <div class="drawer-footer">
+          <button class="btn btn-logout" @click="handleLogout">
+            <span class="material-icons-outlined">logout</span>
+            Đăng xuất
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <main class="main-content" :class="{'sidebar-collapsed': sidebarCollapsed}">
+        <!-- Desktop Header Bar -->
+        <div class="content-header desktop-only" style="justify-content:space-between">
+          <div class="content-header-left" style="flex:1"></div>
+          <div class="search-bar" style="display:flex;align-items:center;background:var(--bg-hover);border-radius:var(--shape-full);padding:0 16px;height:48px;width:400px;margin:0 auto">
+            <span class="material-icons-outlined" style="color:var(--text-muted);font-size:20px;margin-right:8px">search</span>
+            <input type="text" placeholder="Tìm kiếm tài liệu, hồ sơ..." style="border:none;background:transparent;outline:none;width:100%;font-family:var(--font);font-size:0.875rem;color:var(--text-primary)">
+          </div>
+          <div class="content-header-right" style="flex:1;justify-content:flex-end">
+            <button class="icon-btn" @click="showNotifPanel = !showNotifPanel" style="position:relative">
+              <span class="material-icons-outlined">notifications</span>
+              <span class="notif-dot" v-if="unreadNotifCount > 0">{{ unreadNotifCount }}</span>
+            </button>
+            <div class="header-user">
+              <span class="material-icons" style="font-size:20px;margin-left:8px">person</span>
+              <span class="header-username">{{ currentUser.name }}</span>
+              <span class="material-icons" style="font-size:16px">arrow_drop_down</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Panel -->
+        <div class="notif-panel" v-if="showNotifPanel" @click.stop>
+          <div class="notif-panel-header">
+            <h4><span class="material-icons-outlined">notifications</span> Thông Báo</h4>
+            <button class="btn btn-sm btn-ghost" @click="markAllRead" v-if="unreadNotifCount > 0">Đọc tất cả</button>
+          </div>
+          <div class="notif-list">
+            <div v-if="notifications.length === 0" class="empty-state sm">
+              <span class="material-icons-outlined">notifications_off</span>
+              <p>Không có thông báo</p>
+            </div>
+            <div v-for="n in notifications.slice(0,20)" :key="n['Mã TB']" class="notif-item" :class="{unread: n['Đã Đọc'] === 'Chưa'}" @click="markNotifRead(n)">
+              <span class="material-icons-outlined notif-icon" :class="getNotifIconClass(n['Loại'])">{{ getNotifIcon(n['Loại']) }}</span>
+              <div class="notif-content">
+                <strong>{{ n['Tiêu Đề'] }}</strong>
+                <p>{{ n['Nội Dung'] }}</p>
+                <small>{{ n['Ngày Tạo'] }}</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="notif-overlay" v-if="showNotifPanel" @click="showNotifPanel = false"></div>
+
+        <!-- Page Content -->
+        <div class="page-content">
+          <div class="breadcrumb-container" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+            <div style="font-size:0.875rem;color:var(--text-secondary);display:flex;align-items:center;gap:8px">
+              <span>{{ currentMenuItem?.section || 'Danh mục' }}</span>
+              <span class="material-icons-outlined" style="font-size:16px">chevron_right</span>
+              <span style="color:var(--text-primary);font-weight:500">{{ currentMenuItem?.label || 'Tổng Quan' }}</span>
+            </div>
+          </div>
+          <!-- Dashboard -->
+          <div v-if="currentView === 'dashboard'">
+            <?!= include('DashboardView'); ?>
+          </div>
+          
+          <!-- Dự Án -->
+          <div v-if="currentView === 'projects'">
+            <?!= include('ProjectList'); ?>
+          </div>
+          
+          <!-- Kanban -->
+          <div v-if="currentView === 'kanban'">
+            <?!= include('KanbanBoard'); ?>
+          </div>
+          
+          <!-- Công Việc -->
+          <div v-if="currentView === 'tasks'">
+            <?!= include('TaskList'); ?>
+          </div>
+          
+          <!-- Timeline -->
+          <div v-if="currentView === 'timeline'">
+            <?!= include('TimelineView'); ?>
+          </div>
+          
+          <!-- Lịch -->
+          <div v-if="currentView === 'calendar'">
+            <?!= include('CalendarView'); ?>
+          </div>
+          
+          <!-- Thành Viên -->
+          <div v-if="currentView === 'members'">
+            <?!= include('MemberManage'); ?>
+          </div>
+          
+          <!-- Hoạt Động -->
+          <div v-if="currentView === 'activities'">
+            <?!= include('ActivityLog'); ?>
+          </div>
+        </div>
+      </main>
+
+      <!-- Global Task Detail Dialog (accessible from Tasks, Kanban, Calendar) -->
+      <div class="modal-overlay" v-if="showTaskDetail" @click.self="showTaskDetail = false">
+        <div class="modal modal-lg">
+          <div class="modal-header">
+            <h3><span class="material-icons-outlined">assignment</span>{{ selectedTask?.['Tiêu Đề'] }}</h3>
+            <button class="icon-btn" @click="showTaskDetail = false"><span class="material-icons">close</span></button>
+          </div>
+          <div class="modal-body" v-if="selectedTask">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px">
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Mã:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ selectedTask['Mã CV'] }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Dự án:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ selectedTask['Tên Dự Án'] }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Trạng thái:</strong><div style="margin-top:4px"><span class="badge" :class="getStatusBadgeClass(selectedTask['Trạng Thái'])">{{ selectedTask['Trạng Thái'] }}</span></div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Ưu tiên:</strong><div style="margin-top:4px"><span class="priority-badge" :class="getPriorityClass(selectedTask['Mức Độ Ưu Tiên'])">{{ selectedTask['Mức Độ Ưu Tiên'] }}</span></div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Người thực hiện:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ selectedTask['Người Thực Hiện'] || 'Chưa giao' }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Người giao:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ selectedTask['Người Giao'] || '—' }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Ngày bắt đầu:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ selectedTask['Ngày Bắt Đầu'] || '—' }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Ngày hết hạn:</strong><div style="font-size:0.875rem;font-weight:500;margin-top:4px" :style="{color: isOverdue(selectedTask) ? 'var(--error)' : 'var(--text-primary)'}">{{ selectedTask['Ngày Hết Hạn'] || '—' }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Chi phí ước tính:</strong><div class="money" style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ formatMoney(selectedTask['Chi Phí Ước Tính']) }}</div></div>
+              <div><strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Chi phí thực tế:</strong><div class="money" style="font-size:0.875rem;font-weight:500;margin-top:4px;color:var(--text-primary)">{{ formatMoney(selectedTask['Chi Phí Thực Tế']) }}</div></div>
+            </div>
+            
+            <div v-if="selectedTask['Mô Tả']" style="margin-bottom:24px">
+              <strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Mô tả:</strong>
+              <div style="padding:16px;background:var(--bg-hover);border-radius:var(--shape-medium);margin-top:8px;font-size:0.875rem;line-height:1.5rem;white-space:pre-wrap;color:var(--text-secondary)">{{ selectedTask['Mô Tả'] }}</div>
+            </div>
+
+            <!-- Tiến độ -->
+            <div style="margin-bottom:24px">
+              <strong class="text-muted" style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px">Tiến độ:</strong>
+              <div class="flex-center gap-12 mt-8">
+                <div class="progress-bar" style="flex:1"><div class="progress-fill" :style="{width: (selectedTask['Tiến Độ']||0) + '%', background: getProgressColor(selectedTask['Tiến Độ']||0)}"></div></div>
+                <span class="progress-text">{{ selectedTask['Tiến Độ'] || 0 }}%</span>
+              </div>
+            </div>
+
+            <!-- Comments Section -->
+            <div style="border-top:1px solid var(--border);padding-top:24px">
+              <h4 style="margin-bottom:16px;display:flex;align-items:center;gap:8px;font-size:1rem;font-weight:500">
+                <span class="material-icons-outlined" style="font-size:20px;color:var(--primary)">chat</span>
+                Bình Luận ({{ taskComments.length }})
+              </h4>
+              <div class="comment-list">
+                <div v-for="c in taskComments" :key="c['Mã BL']" class="comment-item">
+                  <div class="comment-avatar">{{ c['Người Bình Luận']?.charAt(0) || '?' }}</div>
+                  <div class="comment-body">
+                    <span class="comment-author">{{ c['Người Bình Luận'] }}</span>
+                    <span class="comment-time">{{ c['Ngày Tạo'] }}</span>
+                    <span v-if="c['Đã Chỉnh Sửa'] === 'Có'" class="text-muted" style="font-size:0.625rem;margin-left:4px">(đã sửa)</span>
+                    <div class="comment-text">{{ c['Nội Dung'] }}</div>
+                    <div class="comment-actions" v-if="c['Mã Người Bình Luận'] === currentUser.id">
+                      <button @click="editComment(c)"><span class="material-icons-outlined" style="font-size:14px;vertical-align:middle;margin-right:2px">edit</span> Sửa</button>
+                      <button @click="removeComment(c)" style="color:var(--error)"><span class="material-icons-outlined" style="font-size:14px;vertical-align:middle;margin-right:2px">delete</span> Xóa</button>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="taskComments.length === 0" class="text-center text-muted" style="padding:24px;font-size:0.875rem">
+                  Chưa có bình luận nào
+                </div>
+              </div>
+              <div class="comment-input-area">
+                <input type="text" v-model="newComment" placeholder="Viết bình luận..." @keyup.enter="submitComment">
+                <button class="btn btn-primary" @click="submitComment" :disabled="!newComment.trim() || commentSaving">
+                  <span class="spinner-sm" v-if="commentSaving"></span>
+                  <span class="material-icons-outlined" v-else>send</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete Confirmation Dialog -->
+      <div class="modal-overlay" v-if="showDeleteConfirm" @click.self="showDeleteConfirm = false">
+        <div class="modal" style="max-width:440px">
+          <div class="modal-header">
+            <h3><span class="material-icons-outlined">warning</span>Xác Nhận Xóa</h3>
+            <button class="icon-btn" @click="showDeleteConfirm = false"><span class="material-icons">close</span></button>
+          </div>
+          <div class="modal-body text-center" style="padding:30px">
+            <span class="material-icons-outlined" style="font-size:48px;color:var(--danger);margin-bottom:12px">delete_forever</span>
+            <p>Bạn có chắc muốn xóa <strong>{{ deleteTarget?.name }}</strong>?</p>
+            <p class="text-muted" style="font-size:12px;margin-top:4px">Hành động này không thể hoàn tác.</p>
+          </div>
+          <div class="modal-footer" style="justify-content:center">
+            <button class="btn btn-ghost" @click="showDeleteConfirm = false" :disabled="deleting">Hủy</button>
+            <button class="btn btn-danger" @click="executeDelete" :disabled="deleting">
+              <span class="spinner-sm" v-if="deleting"></span>
+              <span class="material-icons-outlined" v-else>delete</span>
+              {{ deleting ? 'Đang xóa...' : 'Xóa' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile Bottom Nav -->
+      <nav class="mobile-bottom-nav mobile-only">
+        <button v-for="item in mobileNavItems" :key="item.id" class="bottom-nav-btn" :class="{active: currentView === item.id}" @click="navigateTo(item.id)">
+          <span class="material-icons-outlined">{{ item.icon }}</span>
+          <span class="bottom-nav-label">{{ item.shortLabel || item.label }}</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast-container">
+      <div v-for="(toast, idx) in toasts" :key="idx" class="toast" :class="toast.type">
+        <span class="material-icons-outlined toast-icon">{{ toast.type === 'success' ? 'check_circle' : toast.type === 'error' ? 'error' : 'info' }}</span>
+        <span class="toast-msg">{{ toast.message }}</span>
+        <button class="toast-close" @click="toasts.splice(idx, 1)"><span class="material-icons">close</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <?!= include('AppScript'); ?>
+</body>
+</html>

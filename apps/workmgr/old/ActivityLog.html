@@ -1,0 +1,43 @@
+<!-- Activity Log View -->
+<div class="activity-log-view">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-bar" style="min-width:240px">
+        <span class="material-icons-outlined search-icon">search</span>
+        <input type="text" v-model="activitySearch" placeholder="Tìm kiếm hoạt động...">
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-sm btn-ghost" @click="loadActivities">
+        <span class="material-icons-outlined">refresh</span> Làm mới
+      </button>
+    </div>
+  </div>
+
+  <div class="card" style="position:relative">
+    <div class="loading-overlay" v-if="activitiesLoading">
+      <div class="loading-spinner"></div>
+      <span style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="card-body" style="padding:0">
+      <div v-for="a in filteredActivities" :key="a['Mã HĐ']" class="activity-item" style="padding:14px 20px">
+        <div class="activity-icon-wrap" :class="getActivityIconClass(a['Loại'])">
+          <span class="material-icons-outlined">{{ getActivityIcon(a['Loại']) }}</span>
+        </div>
+        <div class="activity-body">
+          <strong>{{ a['Loại'] }}</strong>
+          <p>{{ a['Mô Tả'] }}</p>
+          <small>
+            <span class="material-icons-outlined" style="font-size:12px;vertical-align:middle">person</span> {{ a['Người Thực Hiện'] || '—' }}
+            &bull; <span class="material-icons-outlined" style="font-size:12px;vertical-align:middle">schedule</span> {{ a['Ngày Tạo'] }}
+            <span v-if="a['Đối Tượng']"> &bull; {{ a['Đối Tượng'] }}: {{ a['Mã Đối Tượng'] }}</span>
+          </small>
+        </div>
+      </div>
+      <div v-if="filteredActivities.length === 0" class="empty-state">
+        <span class="material-icons-outlined">history</span>
+        <p>Không có hoạt động nào</p>
+      </div>
+    </div>
+  </div>
+</div>
