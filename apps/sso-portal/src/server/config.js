@@ -16,7 +16,10 @@ function ensureInitialized() {
   var usersSheet = ss.getSheetByName(SHEETS.USERS)
   if (!usersSheet || usersSheet.getLastRow() <= 1) {
     _seedAdminUser(ss)
+    return
   }
+
+  _ensureOwnerUser(ss)
 }
 
 function _ensureAllTabsExist(ss) {
@@ -44,12 +47,52 @@ function _ensureAllTabsExist(ss) {
 
 function _seedAdminUser(ss) {
   var usersSheet = ss.getSheetByName(SHEETS.USERS)
+  var owner = _getOwnerBootstrapInfo(ss)
+  if (!owner.email) return
+
+  var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
+  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+}
+
+function _getOwnerBootstrapInfo(ss) {
   var ownerEmail = ''
   try { ownerEmail = ss.getOwner().getEmail() } catch(e) {}
   if (!ownerEmail) {
     try { ownerEmail = Session.getActiveUser().getEmail() } catch(e) {}
   }
 
-  var passwordHash = _hashPassword(ownerEmail, DEFAULT_PASSWORD)
-  usersSheet.appendRow([1, ownerEmail, passwordHash, ownerEmail, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+  return { email: ownerEmail }
+}
+
+function _ensureOwnerUser(ss) {
+  var owner = _getOwnerBootstrapInfo(ss)
+  if (!owner.email) return
+
+  var users = getSheetData(SHEETS.USERS)
+  var exists = users.some(function(user) {
+    return user['Email'] && user['Email'].toLowerCase() === owner.email.toLowerCase()
+  })
+
+  if (exists) return
+
+  var nextId = users.reduce(function(maxId, user) {
+    var userId = Number(user['ID']) || 0
+    return userId > maxId ? userId : maxId
+  }, 0) + 1
+  var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
+
+  ss.getSheetByName(SHEETS.USERS).appendRow([
+    nextId,
+    owner.email,
+    passwordHash,
+    owner.email,
+    '',
+    'Active',
+    'TRUE',
+    '',
+    '',
+    'Quản trị',
+    '',
+    ''
+  ])
 }
