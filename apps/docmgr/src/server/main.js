@@ -455,8 +455,16 @@ function api_getAuditLogs(token, filters) {
   return _wrap(function() {
     requireAdmin(token)
     filters = filters || {}
+    var limit = Math.max(1, Number(filters.limit || 20))
+    var offset = Math.max(0, Number(filters.offset || 0))
+    var keyword = String(filters.keyword || '').toLowerCase()
     var logs = getSheetData(SHEETS.NHAT_KY)
     logs = logs.slice().reverse() // newest first
+    var types = []
+    logs.forEach(function(l) {
+      var type = l['Loại'] || ''
+      if (type && types.indexOf(type) === -1) types.push(type)
+    })
     if (filters.type) {
       logs = logs.filter(function(l) { return l['Loại'] === filters.type })
     }
@@ -464,7 +472,22 @@ function api_getAuditLogs(token, filters) {
       var q = filters.user.toLowerCase()
       logs = logs.filter(function(l) { return (l['Người dùng'] || '').toLowerCase().indexOf(q) !== -1 })
     }
-    return { data: logs.slice(0, 200) }
+    if (keyword) {
+      logs = logs.filter(function(l) {
+        return (
+          String(l['Người dùng'] || '').toLowerCase().indexOf(keyword) !== -1 ||
+          String(l['Loại'] || '').toLowerCase().indexOf(keyword) !== -1 ||
+          String(l['Đối tượng'] || '').toLowerCase().indexOf(keyword) !== -1 ||
+          String(l['Chi tiết'] || '').toLowerCase().indexOf(keyword) !== -1
+        )
+      })
+    }
+    return {
+      data: logs.slice(offset, offset + limit),
+      hasMore: offset + limit < logs.length,
+      total: logs.length,
+      types: types,
+    }
   })
 }
 

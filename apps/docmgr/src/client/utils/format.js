@@ -15,7 +15,7 @@ export function formatDate(dateStr) {
 export function statusColor(status) {
   const map = {
     'Chờ duyệt':     'bg-amber-100 text-amber-800',
-    'Chờ xử lý':     'bg-primary/10 text-primary',
+    'Chờ xử lý':     'bg-violet-100 text-violet-800',
     'Đang xử lý':    'bg-blue-100 text-blue-800',
     'Hoàn thành':     'bg-emerald-100 text-emerald-800',
   }

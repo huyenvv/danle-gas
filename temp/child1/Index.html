@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; padding: 20px; color: #333; }
+    .status-box { padding: 15px; border-radius: 8px; border: 1px solid #ccc; background: #f9f9f9; }
+    button { padding: 10px 20px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+  <div class="status-box">
+    <h3>📱 Giao diện App Con</h3>
+    <p id="auth-info">Đang kiểm tra quyền truy cập...</p>
+    <button onclick="testAction()">Thực hiện hành động bảo mật</button>
+    <p id="result" style="font-weight: bold; color: #27ae60;"></p>
+  </div>
+
+  <script>
+    // Nhận dữ liệu từ URL thông qua Template lúc load trang
+    let currentEmail = "<?= urlEmail ?>";
+    let currentToken = "<?= urlToken ?>";
+
+    window.onload = function() {
+      // 1. Nếu có dữ liệu từ URL thì lưu vào LocalStorage
+      if (currentEmail) localStorage.setItem("app_user_email", currentEmail);
+      if (currentToken) localStorage.setItem("app_user_token", currentToken);
+      
+      // 2. Xóa URL cho sạch (Bảo mật thanh địa chỉ)
+      if (window.location.search) {
+        window.history.replaceState(null, null, window.location.pathname);
+      }
+      
+      // 3. Hiển thị trạng thái
+      const email = localStorage.getItem("app_user_email");
+      if (email) {
+        document.getElementById('auth-info').innerText = "Chào mừng quay lại: " + email;
+      } else {
+        document.getElementById('auth-info').innerText = "Vui lòng đăng nhập từ Portal!";
+      }
+    };
+
+    function testAction() {
+      const email = localStorage.getItem("app_user_email");
+      const token = localStorage.getItem("app_user_token");
+      
+      document.getElementById('result').innerText = "Đang xác thực...";
+      
+      google.script.run
+        .withSuccessHandler(res => {
+          document.getElementById('result').innerText = res;
+        })
+        .withFailureHandler(err => {
+          document.getElementById('result').style.color = "red";
+          document.getElementById('result').innerText = "Lỗi: " + err;
+        })
+        .apiGateway(email, token, "GET_DATA");
+    }
+  </script>
+</body>
+</html>

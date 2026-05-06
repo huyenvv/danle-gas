@@ -1,11 +1,5 @@
 # Appscripts Monorepo
 
-## Wiki
-
-Read `../wiki/index.md` before taking any action. It contains project knowledge, architectural decisions, and workflows that inform all work here.
-
-
-
 npm workspaces monorepo chứa các ứng dụng Google Apps Script.
 
 ## Structure

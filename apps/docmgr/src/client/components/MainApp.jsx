@@ -21,7 +21,7 @@ import AuditLogPage from './AuditLogPage.jsx'
 import TopHeader from './layout/TopHeader.jsx'
 import Icon from './common/Icon.jsx'
 
-const PAGE_SIZE = 20
+const ROOT_FOLDER_BATCH_SIZE = 25
 
 function parseAssignees(value) {
   if (!value) return []
@@ -57,8 +57,8 @@ export default function MainApp() {
   const [docModal, setDocModal]       = useState(null)   // null | { mode: 'create'|'edit', doc? }
   const [previewDoc, setPreviewDoc]   = useState(null)
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
+  // Per-root load-more state
+  const [rootDisplayCounts, setRootDisplayCounts] = useState({})
 
   // Collapsed category groups
   const [collapsed, setCollapsed]     = useState({})
@@ -87,7 +87,9 @@ export default function MainApp() {
         gasCall('api_getDocuments', session.token, {}),
         gasCall('api_getDocumentStats', session.token),
       ])
-      setAllDocs((docsRes && docsRes.data) ? docsRes.data : [])
+      const nextDocs = (docsRes && docsRes.data) ? docsRes.data : []
+      setAllDocs(nextDocs)
+      dataCache.set('docs', nextDocs)
       setStats(statsRes || {})
     } catch (err) {
       if (!silent) setError(err.message)
@@ -95,6 +97,28 @@ export default function MainApp() {
       if (!silent) setLoading(false)
     }
   }, [session])
+
+  const upsertDocInCache = useCallback((nextDoc) => {
+    if (!nextDoc) return
+    setAllDocs(prev => {
+      const existingIdx = prev.findIndex(d => String(d.ID) === String(nextDoc.ID))
+      const next = existingIdx === -1
+        ? [nextDoc, ...prev]
+        : prev.map(d => String(d.ID) === String(nextDoc.ID) ? nextDoc : d)
+      dataCache.set('docs', next)
+      return next
+    })
+    setPreviewDoc(prev => (prev && String(prev.ID) === String(nextDoc.ID) ? nextDoc : prev))
+  }, [])
+
+  const removeDocFromCache = useCallback((docId) => {
+    if (!docId) return
+    setAllDocs(prev => {
+      const next = prev.filter(d => String(d.ID) !== String(docId))
+      dataCache.set('docs', next)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     prefetchLookups(session.token).then(setLookups).catch(() => {})
@@ -122,18 +146,19 @@ export default function MainApp() {
 
   function handleFilterChange(key, val) {
     setFilters(f => ({ ...f, [key]: val || undefined }))
-    setCurrentPage(1)
   }
 
   async function handleDeleteDoc(id) {
-    if (!await confirm('Xóa hồ sơ này?')) return
+    if (!await confirm('Xóa hồ sơ này?')) return false
     setGlobalLoading(true)
     try {
       await gasCall('api_deleteDocument', session.token, id)
+      removeDocFromCache(id)
       showToast('Đã xóa hồ sơ', 'success')
-      loadDocs()
+      return true
     } catch (err) {
       showToast('Lỗi: ' + err.message, 'error')
+      return false
     } finally {
       setGlobalLoading(false)
     }
@@ -145,7 +170,6 @@ export default function MainApp() {
       result = result.filter(d =>
         viMatch(d['Tên hồ sơ'], searchInput) ||
         viMatch(d['Số hồ sơ'], searchInput) ||
-        viMatch(d['Mô tả'], searchInput) ||
         viMatch(d['Dự án (Phòng ban)'], searchInput) ||
         viMatch(d['Nhà cung cấp (Nơi ban hành)'], searchInput) ||
         viMatch(d['Ghi chú'], searchInput) ||
@@ -339,13 +363,17 @@ export default function MainApp() {
                 isAdmin={isAdmin}
                 canDelete={isSuperAdmin}
                 usersMap={usersMap}
-                currentPage={currentPage}
                 collapsed={collapsed}
                 danhMuc={lookups.danhMuc}
                 readDocIds={readDocIds}
                 selectedIds={selectedIds}
+                rootDisplayCounts={rootDisplayCounts}
                 role={session.role}
                 onToggleCat={catId => setCollapsed(c => ({ ...c, [catId]: !c[catId] }))}
+                onLoadMoreRoot={rootKey => setRootDisplayCounts(prev => ({
+                  ...prev,
+                  [rootKey]: (prev[rootKey] || ROOT_FOLDER_BATCH_SIZE) + ROOT_FOLDER_BATCH_SIZE,
+                }))}
                 onToggleSelect={id => setSelectedIds(prev => {
                   const next = new Set(prev)
                   if (next.has(String(id))) next.delete(String(id)); else next.add(String(id))
@@ -360,8 +388,6 @@ export default function MainApp() {
                 onPreview={setPreviewDoc}
                 onEdit={doc => setDocModal({ mode: 'edit', doc })}
                 onDelete={handleDeleteDoc}
-                pageSize={PAGE_SIZE}
-                onPageChange={setCurrentPage}
               />
 
               {/* Floating batch mark-read bar */}
@@ -432,14 +458,12 @@ export default function MainApp() {
             if (nextPreviewDoc) setPreviewDoc(nextPreviewDoc)
           }}
           onSaved={newDoc => {
+            const shouldReturnToPreview = !!docModal.returnToPreview
             setDocModal(null)
-            const doc = newDoc && newDoc.data ? newDoc.data : null
+            const doc = newDoc ? (newDoc.data || newDoc) : null
             if (doc) {
-              // Show new doc immediately, then silently refresh for authoritative data
-              setAllDocs(prev => [doc, ...prev.filter(d => String(d.ID) !== String(doc.ID))])
-              loadDocs({ silent: true })
-            } else {
-              loadDocs()
+              upsertDocInCache(doc)
+              if (shouldReturnToPreview) setPreviewDoc(doc)
             }
           }}
         />
@@ -462,8 +486,11 @@ export default function MainApp() {
             setPreviewDoc(null)
             setDocModal({ mode: 'edit', doc: currentDoc, returnToPreview: true })
           }}
-          onDelete={() => { setPreviewDoc(null); handleDeleteDoc(previewDoc.ID) }}
-          onDocUpdated={loadDocs}
+          onDelete={async () => {
+            const deleted = await handleDeleteDoc(previewDoc.ID)
+            if (deleted) setPreviewDoc(null)
+          }}
+          onDocUpdated={upsertDocInCache}
         />
       )}
 
@@ -472,26 +499,14 @@ export default function MainApp() {
   )
 }
 
-// ── Grouped document table (by category tree) with pagination ──────────────
-function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPage, collapsed, danhMuc, readDocIds, selectedIds, role, onToggleCat, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete, pageSize, onPageChange }) {
-  const totalPages = Math.max(1, Math.ceil(docs.length / pageSize))
-  const page = Math.min(currentPage, totalPages)
-  const paged = docs.slice((page - 1) * pageSize, page * pageSize)
-
-  // Build docs-by-category map for PAGED docs (used for rendering rows)
+// ── Grouped document table (by category tree) with per-root load more ──────
+function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed, danhMuc, readDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
+  // Build docs-by-category map for ALL filtered docs (filters stay offline)
   const docsMap = {}
-  paged.forEach(doc => {
+  docs.forEach(doc => {
     const key = String(doc['Danh mục'] || '')
     if (!docsMap[key]) docsMap[key] = []
     docsMap[key].push(doc)
-  })
-
-  // Build docs-by-category map for ALL docs (used for category header counts)
-  const allDocsMap = {}
-  docs.forEach(doc => {
-    const key = String(doc['Danh mục'] || '')
-    if (!allDocsMap[key]) allDocsMap[key] = []
-    allDocsMap[key].push(doc)
   })
 
   // Root categories (no parent)
@@ -499,17 +514,55 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPag
 
   // Count across ALL docs so category headers are always visible (even if their docs are on other pages)
   function subtreeDocCount(catId) {
-    const direct = (allDocsMap[String(catId)] || []).length
+    const direct = (docsMap[String(catId)] || []).length
     const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
     return direct + children.reduce((s, c) => s + subtreeDocCount(c.ID), 0)
   }
 
+  function gatherSubtreeDocs(catId) {
+    const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
+    var result = []
+    children.forEach(child => {
+      result = result.concat(gatherSubtreeDocs(child.ID))
+    })
+    return result.concat(docsMap[String(catId)] || [])
+  }
+
   // Uncategorized docs (category ID not in danhMuc)
   const validIds = new Set((danhMuc || []).map(c => String(c.ID)))
-  const uncategorized = paged.filter(d => !validIds.has(String(d['Danh mục'] || '')))
+  const uncategorized = docs.filter(d => !validIds.has(String(d['Danh mục'] || '')))
   const uncategorizedTotal = docs.filter(d => !validIds.has(String(d['Danh mục'] || ''))).length
 
-  const COL = 11
+  const rootVisibleIdsMap = {}
+  const rootVisibleIndexMap = {}
+  roots.forEach(root => {
+    const rootKey = String(root.ID)
+    const limit = rootDisplayCounts[rootKey] || ROOT_FOLDER_BATCH_SIZE
+    const visibleDocs = gatherSubtreeDocs(root.ID).slice(0, limit)
+    rootVisibleIdsMap[rootKey] = new Set(visibleDocs.map(doc => String(doc.ID)))
+    rootVisibleIndexMap[rootKey] = visibleDocs.reduce((acc, doc, index) => {
+      acc[String(doc.ID)] = index + 1
+      return acc
+    }, {})
+  })
+  const uncategorizedLimit = rootDisplayCounts['__uncat__'] || ROOT_FOLDER_BATCH_SIZE
+  const uncategorizedVisible = uncategorized.slice(0, uncategorizedLimit)
+  const uncategorizedIndexMap = uncategorizedVisible.reduce((acc, doc, index) => {
+    acc[String(doc.ID)] = index + 1
+    return acc
+  }, {})
+  const visibleDocIds = roots.flatMap(root => Array.from(rootVisibleIdsMap[String(root.ID)] || []))
+    .concat(uncategorizedVisible.map(doc => String(doc.ID)))
+  const visibleDocIdSet = new Set(visibleDocIds)
+
+  function visibleSubtreeDocCount(catId, rootId) {
+    const rootVisibleIds = rootVisibleIdsMap[String(rootId)] || new Set()
+    const direct = (docsMap[String(catId)] || []).filter(doc => rootVisibleIds.has(String(doc.ID))).length
+    const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
+    return direct + children.reduce((s, c) => s + visibleSubtreeDocCount(c.ID, rootId), 0)
+  }
+
+  const COL = 12
 
   return (
     <div className="bg-white rounded-2xl shadow-card overflow-hidden">
@@ -520,10 +573,11 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPag
               <th className="px-3 py-3 w-10">
                 <input type="checkbox"
                   className="w-4 h-4 rounded accent-primary cursor-pointer"
-                  checked={paged.length > 0 && paged.every(d => selectedIds.has(String(d.ID)))}
-                  onChange={() => onToggleAll(paged.map(d => d.ID))}
+                  checked={visibleDocIds.length > 0 && visibleDocIds.every(id => selectedIds.has(String(id)))}
+                  onChange={() => onToggleAll(visibleDocIds)}
                 />
               </th>
+              <th className="px-3 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-16">STT</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-64 min-w-[16rem]">Tên hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Số hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Dự án (PB)</th>
@@ -543,14 +597,36 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPag
             {!loading && docs.length === 0 && (
               <tr><td colSpan={COL} className="px-4 py-10 text-center text-on-surface-variant">Không có hồ sơ nào</td></tr>
             )}
-            {!loading && roots.map(cat => (
-              <CatGroup key={cat.ID} cat={cat} depth={0}
-                danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} readDocIds={readDocIds}
-                selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
-                isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-                role={role} subtreeDocCount={subtreeDocCount}
-              />
-            ))}
+            {!loading && roots.map(cat => {
+              const rootKey = String(cat.ID)
+              const total = subtreeDocCount(cat.ID)
+              const visibleCount = visibleSubtreeDocCount(cat.ID, cat.ID)
+              return (
+                <Fragment key={cat.ID}>
+                  <CatGroup cat={cat} depth={0} rootId={cat.ID}
+                    danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} readDocIds={readDocIds}
+                    visibleDocIds={rootVisibleIdsMap[rootKey] || new Set()}
+                    indexMap={rootVisibleIndexMap[rootKey] || {}}
+                    selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
+                    isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
+                    role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
+                  />
+                  {visibleCount < total && (
+                    <tr>
+                      <td colSpan={COL} className="px-4 py-3 text-center bg-surface-container-lowest">
+                        <button
+                          type="button"
+                          onClick={() => onLoadMoreRoot(rootKey)}
+                          className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors"
+                        >
+                          Xem thêm ({Math.min(ROOT_FOLDER_BATCH_SIZE, total - visibleCount)} / {total - visibleCount})
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
             {!loading && uncategorizedTotal > 0 && (
               <Fragment key="__uncat__">
                 <tr className="bg-surface-container/50 cursor-pointer hover:bg-surface-container transition-colors"
@@ -560,10 +636,24 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPag
                     (Chưa phân danh mục) <span className="font-normal ml-1">({uncategorizedTotal} hồ sơ)</span>
                   </td>
                 </tr>
-                {!collapsed['__uncat__'] && uncategorized.map(doc => (
+                {!collapsed['__uncat__'] && uncategorizedVisible.map(doc => (
                   <DocRow key={doc.ID} doc={doc} depth={0} readDocIds={readDocIds} selectedIds={selectedIds}
+                    rowIndex={uncategorizedIndexMap[String(doc.ID)]}
                     onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
                 ))}
+                {!collapsed['__uncat__'] && uncategorizedVisible.length < uncategorizedTotal && (
+                  <tr>
+                    <td colSpan={COL} className="px-4 py-3 text-center bg-surface-container-lowest">
+                      <button
+                        type="button"
+                        onClick={() => onLoadMoreRoot('__uncat__')}
+                        className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors"
+                      >
+                        Xem thêm ({Math.min(ROOT_FOLDER_BATCH_SIZE, uncategorizedTotal - uncategorizedVisible.length)} / {uncategorizedTotal - uncategorizedVisible.length})
+                      </button>
+                    </td>
+                  </tr>
+                )}
               </Fragment>
             )}
           </tbody>
@@ -572,29 +662,23 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, currentPag
       {docs.length > 0 && (
         <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between text-sm bg-surface-container-lowest">
           <span className="text-on-surface-variant">
-            Hiển thị {Math.min((page - 1) * pageSize + 1, docs.length)}-{Math.min(page * pageSize, docs.length)} / {docs.length} hồ sơ
+            Hiển thị {visibleDocIdSet.size} / {docs.length} hồ sơ
           </span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <button disabled={page <= 1} onClick={() => onPageChange(page - 1)}
-                className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm disabled:opacity-40 hover:bg-surface-container transition-colors">← Trước</button>
-              <span className="px-2 py-1 text-on-surface-variant">Trang {page}/{totalPages}</span>
-              <button disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}
-                className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm disabled:opacity-40 hover:bg-surface-container transition-colors">Sau →</button>
-            </div>
-          )}
+          <span className="text-on-surface-variant text-xs">Mỗi thư mục gốc hiển thị {ROOT_FOLDER_BATCH_SIZE} hồ sơ mỗi lần tải thêm</span>
         </div>
       )}
     </div>
   )
 }
 
-function CatGroup({ cat, depth, danhMuc, docsMap, collapsed, readDocIds, selectedIds, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role, subtreeDocCount }) {
+function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, readDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
   const total = subtreeDocCount(cat.ID)
+  const visibleTotal = visibleSubtreeDocCount(cat.ID, rootId)
+  if (depth > 0 && visibleTotal === 0) return null
   if (total === 0) return null
   const isCollapsed = collapsed[cat.ID]
   const children = danhMuc.filter(c => String(c['Danh mục cha']) === String(cat.ID))
-  const directDocs = docsMap[String(cat.ID)] || []
+  const directDocs = (docsMap[String(cat.ID)] || []).filter(doc => visibleDocIds.has(String(doc.ID)))
   const indent = depth * 16
 
   return (
@@ -602,6 +686,7 @@ function CatGroup({ cat, depth, danhMuc, docsMap, collapsed, readDocIds, selecte
       <tr className="bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
           onClick={() => onToggleCat(cat.ID)}>
         <td className="px-3 py-2 w-10" onClick={e => e.stopPropagation()}></td>
+        <td className="px-3 py-2 w-16" onClick={e => e.stopPropagation()}></td>
         <td colSpan={8} className="px-4 py-2 font-semibold text-primary text-xs" style={{ paddingLeft: indent + 16 }}>
           <span className="mr-2">{isCollapsed ? '▶' : '▼'}</span>
           {cat['Tên danh mục']} <span className="font-normal text-primary/70 ml-1">({total} hồ sơ)</span>
@@ -609,22 +694,25 @@ function CatGroup({ cat, depth, danhMuc, docsMap, collapsed, readDocIds, selecte
         <td colSpan={2}></td>
       </tr>
       {!isCollapsed && children.map(child => (
-        <CatGroup key={child.ID} cat={child} depth={depth + 1}
+        <CatGroup key={child.ID} cat={child} depth={depth + 1} rootId={rootId}
           danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} readDocIds={readDocIds}
+          visibleDocIds={visibleDocIds}
+          indexMap={indexMap}
           selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
           isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-          role={role} subtreeDocCount={subtreeDocCount}
+          role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
         />
       ))}
       {!isCollapsed && directDocs.map(doc => (
         <DocRow key={doc.ID} doc={doc} depth={depth + 1} readDocIds={readDocIds} selectedIds={selectedIds}
+          rowIndex={indexMap[String(doc.ID)]}
           onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
         ))}
     </Fragment>
   )
 }
 
-function DocRow({ doc, depth, readDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role }) {
+function DocRow({ doc, depth, rowIndex, readDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role }) {
   const isRead = readDocIds.has(String(doc.ID))
   const isSelected = selectedIds.has(String(doc.ID))
   const indent = depth * 16 + 16
@@ -664,6 +752,7 @@ function DocRow({ doc, depth, readDocIds, selectedIds, onToggleSelect, isAdmin, 
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(doc.ID)}
           className="w-4 h-4 rounded accent-primary cursor-pointer" />
       </td>
+      <td className="px-3 py-3 text-on-surface-variant text-xs">{rowIndex || '—'}</td>
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
         <span className={`${isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
           {!isRead && <span className="inline-block w-2 h-2 rounded-full bg-primary mr-2 align-middle" />}
@@ -714,8 +803,8 @@ function DocRow({ doc, depth, readDocIds, selectedIds, onToggleSelect, isAdmin, 
       </td>
       <td className="hidden">{formatCurrency(doc['Giá trị HĐ'])}</td>
       <td className="px-4 py-3 text-on-surface-variant max-w-xs truncate text-xs"
-        title={[doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join(' · ') || ''}>
-        {[doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join(' · ') || '—'}
+        title={doc['Ghi chú'] || ''}>
+        {doc['Ghi chú'] || '—'}
       </td>
       <td className="px-4 py-3 text-on-surface-variant">{formatDate(doc['Ngày ban hành'])}</td>
       <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>

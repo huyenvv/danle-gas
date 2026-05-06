@@ -6,7 +6,7 @@ var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'P
 var DOC_HEADERS = [
   'ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc',
   'File ID', 'Tên file', 'Loại file', 'Kích thước',
-  'Mô tả', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
+  'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
   'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng',
   'Ngày cập nhật', 'Người tạo', 'Người cập nhật'
 ]

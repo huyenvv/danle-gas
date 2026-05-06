@@ -3,7 +3,7 @@ export default function StatsCards({ stats }) {
 
   const statusCards = [
     { label: 'Chờ duyệt',  icon: 'pending',     bg: 'bg-amber-50',    val_color: 'text-amber-700' },
-    { label: 'Chờ xử lý',  icon: 'schedule',    bg: 'bg-primary/10',  val_color: 'text-primary' },
+    { label: 'Chờ xử lý',  icon: 'schedule',    bg: 'bg-violet-50',   val_color: 'text-violet-700' },
     { label: 'Đang xử lý', icon: 'sync',        bg: 'bg-blue-50',     val_color: 'text-blue-700' },
     { label: 'Hoàn thành',  icon: 'task_alt',    bg: 'bg-emerald-50',  val_color: 'text-emerald-700' },
   ]

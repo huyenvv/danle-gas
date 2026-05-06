@@ -85,7 +85,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     'Nhà cung cấp (Nơi ban hành)': (doc['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
     'Ngày ban hành': toDateInput(doc['Ngày ban hành']),
     'Ngày kết thúc': toDateInput(doc['Ngày kết thúc']),
-    'Ghi chú': [doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join('\n'),
+    'Ghi chú': doc['Ghi chú'] || '',
   } : {
     'Tên hồ sơ': '',
     'Danh mục': '',
@@ -219,9 +219,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       }
       statusOverrideRef.current = null
       if (isEdit) {
-        await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds)
+        const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds)
         showToast('Đã cập nhật hồ sơ', 'success')
-        onSaved(null)
+        onSaved(updated)
       } else {
         const created = await gasCall('api_createDocument', token, submitForm, fileInfos)
         showToast('Đã thêm hồ sơ', 'success')

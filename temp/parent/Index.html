@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; margin: 0; background: #f4f7f6; }
+    #login-screen { margin: auto; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 320px; text-align: center; }
+    #portal { display: none; width: 100%; height: 100%; }
+    .sidebar { width: 260px; background: #2c3e50; color: white; padding: 25px; display: flex; flex-direction: column; }
+    .main { flex-grow: 1; display: flex; flex-direction: column; }
+    iframe { flex-grow: 1; border: none; background: #fff; }
+    input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+    button { padding: 12px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; width: 100%; }
+    .app-item { background: #34495e; color: white; margin-bottom: 8px; text-align: left; transition: 0.3s; }
+    .app-item:hover { background: #1abc9c; }
+  </style>
+</head>
+<body>
+
+  <div id="login-screen">
+    <h2 style="color: #2c3e50;">SSO Portal</h2>
+    <input type="text" id="email" placeholder="Email">
+    <input type="password" id="pass" placeholder="Mật khẩu">
+    <button onclick="doLogin()" style="background: #2ecc71; color: white;">ĐĂNG NHẬP</button>
+  </div>
+
+  <div id="portal">
+    <div class="sidebar">
+      <h3>DASHBOARD</h3>
+      <div id="app-list"></div>
+      <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid #455a64;">
+        <p style="font-size: 12px; color: #bdc3c7;">QUẢN LÝ APP</p>
+        <input type="text" id="appName" placeholder="Tên App">
+        <input type="text" id="appUrl" placeholder="URL Web App">
+        <button onclick="addNewApp()" style="background: #3498db; color: white;">+ THÊM APP</button>
+      </div>
+    </div>
+    <div class="main">
+      <iframe id="app-frame" name="app-frame"></iframe>
+    </div>
+  </div>
+
+  <script>
+    let session = { email: "", token: "" };
+
+    function doLogin() {
+      const e = document.getElementById('email').value;
+      const p = document.getElementById('pass').value;
+      google.script.run.withSuccessHandler(res => {
+        if (res.success) {
+          session.email = res.email;
+          session.token = res.token;
+          document.getElementById('login-screen').style.display = 'none';
+          document.getElementById('portal').style.display = 'flex';
+          loadApps();
+        } else alert(res.message);
+      }).login(e, p);
+    }
+
+    function loadApps() {
+      google.script.run.withSuccessHandler(apps => {
+        const div = document.getElementById('app-list');
+        div.innerHTML = apps.map(app => `
+          <button class="app-item" onclick="openApp('${app[1]}')">🚀 ${app[0]}</button>
+        `).join('');
+      }).getApps();
+    }
+
+    function openApp(url) {
+      // Truyền Email và Token qua URL Parameter
+      const finalUrl = `${url}?email=${encodeURIComponent(session.email)}&token=${session.token}`;
+      document.getElementById('app-frame').src = finalUrl;
+    }
+
+    function addNewApp() {
+      const n = document.getElementById('appName').value;
+      const u = document.getElementById('appUrl').value;
+      if(!n || !u) return alert("Nhập đủ tên và URL!");
+      google.script.run.withSuccessHandler(() => {
+        document.getElementById('appName').value = ""; document.getElementById('appUrl').value = "";
+        loadApps();
+      }).addApp(n, u);
+    }
+  </script>
+</body>
+</html>

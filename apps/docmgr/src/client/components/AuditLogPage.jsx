@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import gasCall from '../gasClient.js'
-import { viMatch } from '../utils/viSearch.js'
 import Icon from './common/Icon.jsx'
 import { formatDate } from '../utils/format.js'
 
@@ -29,40 +28,46 @@ const PAGE_SIZE = 20
 export default function AuditLogPage({ token }) {
   const [logs, setLogs]       = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError]     = useState('')
   const [filterType, setFilterType] = useState('')
   const [search, setSearch] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const [total, setTotal] = useState(0)
+  const [types, setTypes] = useState([])
 
-  useEffect(() => { loadLogs() }, [])
+  useEffect(() => { loadLogs({ reset: true }) }, [token, filterType, search])
 
-  async function loadLogs() {
-    setLoading(true)
-    setError('')
+  async function loadLogs({ reset = false } = {}) {
+    const nextOffset = reset ? 0 : logs.length
+    if (reset) {
+      setLoading(true)
+      setError('')
+    } else {
+      setLoadingMore(true)
+    }
     try {
-      const res = await gasCall('api_getAuditLogs', token, {})
-      setLogs(res.data || [])
+      const res = await gasCall('api_getAuditLogs', token, {
+        offset: nextOffset,
+        limit: PAGE_SIZE,
+        type: filterType,
+        keyword: search,
+      })
+      const incoming = res.data || []
+      setLogs(prev => reset ? incoming : [...prev, ...incoming])
+      setHasMore(!!res.hasMore)
+      setTotal(Number(res.total || 0))
+      setTypes(res.types || [])
     } catch (err) {
       setError(err.message)
     } finally {
-      setLoading(false)
+      if (reset) {
+        setLoading(false)
+      } else {
+        setLoadingMore(false)
+      }
     }
   }
-
-  const filtered = logs.filter(l => {
-    if (filterType && l['Loại'] !== filterType) return false
-    if (search) {
-      return viMatch(l['Người dùng'], search) ||
-             viMatch(l['Loại'], search) ||
-             viMatch(l['Đối tượng'], search) ||
-             viMatch(l['Chi tiết'], search)
-    }
-    return true
-  })
-  const types = [...new Set(logs.map(l => l['Loại']).filter(Boolean))]
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const page = Math.min(currentPage, totalPages)
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="space-y-5">
@@ -74,19 +79,19 @@ export default function AuditLogPage({ token }) {
             className="w-full bg-surface-container-low border-none rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
             placeholder="Tìm kiếm..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(1) }}
+            onChange={e => { setSearch(e.target.value) }}
           />
         </div>
         <select
           className="min-w-0 bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-on-surface"
           value={filterType}
-          onChange={e => { setFilterType(e.target.value); setCurrentPage(1) }}
+          onChange={e => { setFilterType(e.target.value) }}
         >
           <option value="">Tất cả loại</option>
           {types.map(t => <option key={t}>{t}</option>)}
         </select>
-        <span className="text-sm text-on-surface-variant whitespace-nowrap">{filtered.length} bản ghi</span>
-        <button onClick={loadLogs}
+        <span className="text-sm text-on-surface-variant whitespace-nowrap">{total} bản ghi</span>
+        <button onClick={() => loadLogs({ reset: true })}
           className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors"
           title="Làm mới">
           <Icon name="refresh" size={20} />
@@ -120,10 +125,10 @@ export default function AuditLogPage({ token }) {
                   </div>
                 </td></tr>
               )}
-              {!loading && paged.length === 0 && (
+              {!loading && logs.length === 0 && (
                 <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không có bản ghi nào</td></tr>
               )}
-              {!loading && paged.map((log, i) => (
+              {!loading && logs.map((log, i) => (
                 <tr key={i} className="hover:bg-surface-container-low transition-colors">
                   <td className="px-4 py-3 text-on-surface-variant text-xs whitespace-nowrap">
                     {log['Thời gian'] ? formatDate(log['Thời gian']) : '—'}
@@ -162,22 +167,31 @@ export default function AuditLogPage({ token }) {
                   <td className="px-4 py-3 text-on-surface-variant text-xs max-w-[200px] truncate">{log['Chi tiết'] || '—'}</td>
                 </tr>
               ))}
+              {!loading && loadingMore && (
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-on-surface-variant">
+                  <div className="flex items-center justify-center gap-2">
+                    <Icon name="sync" size={18} className="animate-spin" />
+                    Đang tải thêm...
+                  </div>
+                </td></tr>
+              )}
             </tbody>
           </table>
         </div>
-        {filtered.length > 0 && (
-          <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between bg-surface-container-lowest">
+        {!loading && logs.length > 0 && (
+          <div className="px-4 py-3 border-t border-outline-variant/40 bg-surface-container-lowest flex flex-col items-center gap-2">
             <span className="text-on-surface-variant text-xs">
-              Hiển thị {Math.min((page - 1) * PAGE_SIZE + 1, filtered.length)}–{Math.min(page * PAGE_SIZE, filtered.length)} / {filtered.length}
+              Hiển thị {logs.length} / {total}
             </span>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
-                <button disabled={page <= 1} onClick={() => setCurrentPage(page - 1)}
-                  className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs disabled:opacity-40 hover:bg-surface-container transition-colors">← Trước</button>
-                <span className="px-2 py-1 text-on-surface-variant text-xs">Trang {page}/{totalPages}</span>
-                <button disabled={page >= totalPages} onClick={() => setCurrentPage(page + 1)}
-                  className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs disabled:opacity-40 hover:bg-surface-container transition-colors">Sau →</button>
-              </div>
+            {hasMore && (
+              <button
+                type="button"
+                disabled={loadingMore}
+                onClick={() => loadLogs()}
+                className="px-3 py-1.5 border border-outline-variant rounded-lg text-xs disabled:opacity-40 hover:bg-surface-container transition-colors"
+              >
+                {loadingMore ? 'Đang tải...' : 'Xem thêm'}
+              </button>
             )}
           </div>
         )}

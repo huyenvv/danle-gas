@@ -8,6 +8,35 @@ function _isSessionExpired(msg) {
   return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
 }
 
+function _isRetryableError(msg) {
+  if (!msg) return false
+  const text = String(msg).toLowerCase()
+  return (
+    text.includes('timed out') ||
+    text.includes('timeout') ||
+    text.includes('rate limit') ||
+    text.includes('quota') ||
+    text.includes('too many') ||
+    text.includes('service invoked too many times') ||
+    text.includes('try again later') ||
+    text.includes('resource has been exhausted')
+  )
+}
+
+function _getRetryPolicy(fnName) {
+  if (fnName === 'api_getDocuments' || fnName === 'api_getDocumentStats') {
+    return { retries: 5, baseDelayMs: 1500 }
+  }
+  return { retries: 2, baseDelayMs: 1000 }
+}
+
+function _getRetryDelay(baseDelayMs, retriesLeft, totalRetries) {
+  const attempt = Math.max(0, totalRetries - retriesLeft)
+  const backoff = baseDelayMs * Math.pow(2, attempt)
+  const jitter = Math.floor(Math.random() * 250)
+  return backoff + jitter
+}
+
 // GAS Call Queue to prevent concurrent request limits and auto-retry
 const _queue = []
 let _activeCount = 0
@@ -16,12 +45,18 @@ const MAX_CONCURRENT = 3
 function _processQueue() {
   if (_queue.length === 0 || _activeCount >= MAX_CONCURRENT) return
   _activeCount++
-  const { fnName, args, resolve, reject, retries } = _queue.shift()
+  const { fnName, args, resolve, reject, retries, totalRetries, baseDelayMs } = _queue.shift()
+
+  function requeue() {
+    setTimeout(() => {
+      _queue.push({ fnName, args, resolve, reject, retries: retries - 1, totalRetries, baseDelayMs })
+      _processQueue()
+    }, _getRetryDelay(baseDelayMs, retries, totalRetries))
+  }
 
   google.script.run
     .withSuccessHandler(res => {
       _activeCount--
-      _processQueue()
       if (res && res.success) {
         resolve(res.payload)
       } else {
@@ -29,29 +64,32 @@ function _processQueue() {
         if (_isSessionExpired(errMsg)) {
           window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
         }
-        reject(new Error(errMsg))
+        if (retries > 0 && !_isSessionExpired(errMsg) && _isRetryableError(errMsg)) {
+          requeue()
+        } else {
+          reject(new Error(errMsg))
+        }
       }
+      _processQueue()
     })
     .withFailureHandler(err => {
       _activeCount--
       const msg = err.message || String(err)
-      if (retries > 0 && !_isSessionExpired(msg)) {
-        setTimeout(() => {
-          _queue.push({ fnName, args, resolve, reject, retries: retries - 1 })
-          _processQueue()
-        }, 1000)
+      if (retries > 0 && !_isSessionExpired(msg) && _isRetryableError(msg)) {
+        requeue()
       } else {
         reject(new Error(msg))
-        _processQueue()
       }
+      _processQueue()
     })
     [fnName](...args)
 }
 
 function gasCall(fnName, ...args) {
   if (IS_GAS) {
+    const policy = _getRetryPolicy(fnName)
     return new Promise((resolve, reject) => {
-      _queue.push({ fnName, args, resolve, reject, retries: 2 })
+      _queue.push({ fnName, args, resolve, reject, retries: policy.retries, totalRetries: policy.retries, baseDelayMs: policy.baseDelayMs })
       _processQueue()
     })
   }

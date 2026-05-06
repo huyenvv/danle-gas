@@ -14,7 +14,7 @@ const appDir = path.join(rootDir, 'apps', appName);
 const gasCoreDir = path.join(rootDir, 'packages', 'gas-core');
 const serverDir = path.join(appDir, 'src', 'server');
 const outDir = path.join(appDir, 'dist', 'gas');
-const outFile = path.join(outDir, 'main.js');
+const outFile = path.join(outDir, 'Code.js');
 
 // ── gas-core files (load order matters — dependencies first) ─────────────────
 const GAS_CORE_FILES = [
@@ -92,7 +92,7 @@ Object.entries(replacements).forEach(([placeholder, value]) => {
 
 fs.writeFileSync(outFile, bundle, 'utf8');
 const totalFiles = GAS_CORE_FILES.length + appFiles.length;
-console.log(`  ✓ Bundled ${totalFiles} files (${GAS_CORE_FILES.length} gas-core + ${appFiles.length} app) → apps/${appName}/dist/gas/main.js`);
+console.log(`  ✓ Bundled ${totalFiles} files (${GAS_CORE_FILES.length} gas-core + ${appFiles.length} app) → apps/${appName}/dist/gas/Code.js`);
 
 // ── Copy appsscript.json to dist/gas if it exists ────────────────────────────
 const manifestSrc = path.join(appDir, 'appsscript.json');

@@ -8,6 +8,30 @@
  * @param {SpreadsheetApp.Spreadsheet} [ss] - Optional spreadsheet (defaults to app sheet)
  * @return {Object} { sheetName: [{col: val, ...}, ...], ... }
  */
+/**
+ * Add any missing column headers to existing sheets.
+ * Only appends — never reorders or removes existing columns.
+ * Call after _ensureAllTabsExist() to handle schema upgrades on existing sheets.
+ * @param {SpreadsheetApp.Spreadsheet} ss
+ * @param {Array<{name: string, headers: string[]}>} tabDefs
+ */
+function ensureMissingColumns(ss, tabDefs) {
+  tabDefs.forEach(function(def) {
+    var sheet = ss.getSheetByName(def.name)
+    if (!sheet) return
+    var lastCol = sheet.getLastColumn()
+    var existingHeaders = lastCol > 0
+      ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].filter(function(h) { return h !== '' })
+      : []
+    def.headers.forEach(function(h) {
+      if (existingHeaders.indexOf(h) === -1) {
+        sheet.getRange(1, existingHeaders.length + 1).setValue(h)
+        existingHeaders.push(h)
+      }
+    })
+  })
+}
+
 function batchGetSheetData(sheetNames, ss) {
   ss = ss || getAppSheet()
   var result = {}

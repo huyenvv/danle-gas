@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Obfuscate dist/gas/main.js using javascript-obfuscator.
+ * Obfuscate dist/gas/Code.js using javascript-obfuscator.
  * Usage: node scripts/obfuscate.js --app <name>
  */
 const JavaScriptObfuscator = require('javascript-obfuscator')
@@ -19,11 +19,11 @@ const appDir  = path.join(rootDir, 'apps', appName)
 const cfgPath = path.join(appDir, 'obfuscator.config.js')
 const cfg     = fs.existsSync(cfgPath) ? require(cfgPath) : {}
 
-const SRC  = path.join(appDir, 'dist', 'gas', 'main.js')
+const SRC  = path.join(appDir, 'dist', 'gas', 'Code.js')
 const DEST = SRC
 
 if (!fs.existsSync(SRC)) {
-  console.error(`apps/${appName}/dist/gas/main.js not found. Run build:server first.`)
+  console.error(`apps/${appName}/dist/gas/Code.js not found. Run build:server first.`)
   process.exit(1)
 }
 

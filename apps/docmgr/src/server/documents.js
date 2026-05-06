@@ -104,7 +104,6 @@ function getDocuments(token, filters) {
         (d['Số hồ sơ'] || '').toLowerCase().indexOf(kw) !== -1 ||
         (d['Dự án (Phòng ban)'] || '').toLowerCase().indexOf(kw) !== -1 ||
         (d['Nhà cung cấp (Nơi ban hành)'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Mô tả'] || '').toLowerCase().indexOf(kw) !== -1 ||
         (d['Ghi chú'] || '').toLowerCase().indexOf(kw) !== -1 ||
         String(d['Phụ trách'] || '').toLowerCase().indexOf(kw) !== -1
       )
@@ -155,7 +154,6 @@ function createDocument(token, data, fileInfos) {
     'Ngày kết thúc': data['Ngày kết thúc'] || '',
     'Giá trị HĐ': data['Giá trị HĐ'] || 0,
     'Tình trạng': data['Tình trạng'] || 'Chờ duyệt',
-    'Mô tả': '',
     'File ID': fileIdCol,
     'Tên file': fileNameCol,
     'Loại file': uploadedFiles.length > 0 ? uploadedFiles[0].mimeType : '',
@@ -203,7 +201,6 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
     'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ngày ban hành', 'Ngày kết thúc',
     'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng'
   ]
-  updates['Mô tả'] = '' // deprecated — migrated into Ghi chú
   textFields.forEach(function(f) {
     if (data[f] !== undefined) updates[f] = typeof data[f] === 'string' ? data[f].trim() : data[f]
   })
@@ -267,7 +264,8 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   updates['Người cập nhật'] = session.username
   updates['Ngày cập nhật'] = new Date().toISOString()
 
-  var updated = updateRow(SHEETS.HO_SO, id, updates)
+  var updated = Object.assign({}, doc, updates)
+  updateRow(SHEETS.HO_SO, id, updates)
 
   // Clear DA_DOC for all assignees except the saver (doc becomes unread for others)
   var finalAssignees = _parseAssignees(updated['Phụ trách'] || doc['Phụ trách'])

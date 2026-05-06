@@ -1,6 +1,6 @@
 // ===== Auth core — session & password management =====
 
-var SESSION_TTL = 28800 // 8 hours
+var SESSION_TTL = 28800 // 8 hours in seconds
 
 function hashPassword(username, password) {
   return _hashPassword(username, password)

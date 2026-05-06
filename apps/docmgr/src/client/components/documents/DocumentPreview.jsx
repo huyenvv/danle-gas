@@ -47,10 +47,13 @@ function formatDateTime(dateStr) {
 export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, canDelete, token, session, onClose, onEdit, onDelete, onDocUpdated }) {
   const confirm = useConfirm()
   const { showToast } = useToast()
+  const NOTE_PREVIEW_LIMIT = 200
   const [doc, setDoc] = useState(initialDoc)
   const fileInfos = parseFileInfos(doc['File ID'])
   const [slideIdx, setSlideIdx] = useState(0)
   const [comments, setComments] = useState([])
+  const [commentLoading, setCommentLoading] = useState(false)
+  const [noteExpanded, setNoteExpanded] = useState(false)
   const [commentInput, setCommentInput] = useState('')
   const [commentSaving, setCommentSaving] = useState(false)
   const commentsEndRef = useRef(null)
@@ -67,10 +70,31 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     : null
 
   useEffect(() => {
-    if (token && doc['ID']) {
-      gasCall('api_markAsRead', token, doc['ID']).catch(() => {})
-      gasCall('api_getComments', token, doc['ID']).then(r => setComments(r.data || [])).catch(() => {})
+    if (!token || !doc['ID']) return
+
+    let cancelled = false
+    setComments([])
+    setCommentLoading(true)
+
+    gasCall('api_markAsRead', token, doc['ID']).catch(() => {})
+    gasCall('api_getComments', token, doc['ID'])
+      .then(r => {
+        if (!cancelled) setComments(r.data || [])
+      })
+      .catch(() => {
+        if (!cancelled) setComments([])
+      })
+      .finally(() => {
+        if (!cancelled) setCommentLoading(false)
+      })
+
+    return () => {
+      cancelled = true
     }
+  }, [token, doc['ID']])
+
+  useEffect(() => {
+    setNoteExpanded(false)
   }, [doc['ID']])
 
   async function handleAddComment(e) {
@@ -185,7 +209,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       setDoc(prev => ({ ...prev, ...res.data }))
       showToast('Đã chuyển trạng thái', 'success')
       setGiaoViecForm(null)
-      if (onDocUpdated) onDocUpdated()
+      if (onDocUpdated) onDocUpdated(res.data)
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -214,6 +238,11 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     ? availableActions.filter(a => a.key !== primaryGiaoViecAction.key)
     : availableActions
   const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm
+  const noteText = String(doc['Ghi chú'] || '')
+  const noteOverflow = noteText.length > NOTE_PREVIEW_LIMIT
+  const notePreview = noteOverflow && !noteExpanded
+    ? noteText.slice(0, NOTE_PREVIEW_LIMIT).trimEnd() + '...'
+    : noteText
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -439,7 +468,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   </span>
                 </div>
                 <InfoRow icon="schedule" label="Ngày cập nhật" value={formatDate(doc['Ngày cập nhật'])} />
-                <InfoRow icon="attach_file" label="Số file đính kèm" value={String(fileInfos.length || 0)} />
+                <InfoRow icon="attach_file" label="Nơi lưu hồ sơ cứng" value={doc['Nơi lưu hồ sơ cứng']} />
               </div>
             </div>
 
@@ -523,21 +552,24 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
             </div>
 
             {/* Ghi chú */}
-            {(doc['Mô tả'] || doc['Ghi chú']) && (
+            {doc['Ghi chú'] && (
               <div className="p-4 border-b border-outline-variant">
                 <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Ghi chú</p>
-                <p className="text-sm text-on-surface leading-relaxed whitespace-pre-wrap">{[doc['Mô tả'], doc['Ghi chú']].filter(Boolean).join('\n')}</p>
-              </div>
-            )}
-
-            {/* Nơi lưu hồ sơ cứng */}
-            {doc['Nơi lưu hồ sơ cứng'] && (
-              <div className="p-4 border-b border-outline-variant">
-                <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Nơi lưu hồ sơ cứng</p>
-                <div className="flex items-center gap-2">
-                  <Icon name="inventory_2" size={15} className="text-on-surface-variant shrink-0" />
-                  <p className="text-sm text-on-surface leading-relaxed">{doc['Nơi lưu hồ sơ cứng']}</p>
-                </div>
+                <p className="text-sm text-on-surface leading-relaxed">
+                  <span className="whitespace-pre-wrap">{notePreview}</span>
+                  {noteOverflow && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={() => setNoteExpanded(prev => !prev)}
+                        className="inline text-sm text-primary hover:underline"
+                      >
+                        {noteExpanded ? 'ẩn' : 'xem thêm'}
+                      </button>
+                    </>
+                  )}
+                </p>
               </div>
             )}
 
@@ -603,7 +635,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
             <div className="p-4 flex flex-col border-b border-outline-variant">
               <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Bình luận ({comments.length})</p>
               <div className="flex-1 overflow-y-auto max-h-60 space-y-2 mb-3">
-                {comments.length === 0 && <p className="text-xs text-on-surface-variant text-center py-4">Chưa có bình luận</p>}
+                {commentLoading && (
+                  <div className="flex items-center justify-center gap-2 py-4 text-xs text-on-surface-variant">
+                    <Icon name="progress_activity" size={16} className="animate-spin" />
+                    <span>Đang tải bình luận…</span>
+                  </div>
+                )}
+                {!commentLoading && comments.length === 0 && <p className="text-xs text-on-surface-variant text-center py-4">Chưa có bình luận</p>}
                 {comments.map((c, i) => {
                   const isMine = session && (c.UserID === session.userId || c['Tên người dùng'] === session.username)
                   const commentMeta = isMine ? 'Bạn' : (c['Tên người dùng'] || '—')
@@ -657,11 +695,6 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">
                   File đính kèm ({fileInfos.length})
                 </p>
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <InfoRow icon="description" label="Tên file hiện tại" value={currentFile?.fileName || doc['Tên file'] || '—'} />
-                  <InfoRow icon="draft" label="Loại file" value={currentFile?.mimeType || doc['Loại file'] || '—'} />
-                  <InfoRow icon="deployed_code" label="Kích thước" value={formatFileSize(currentFile?.size || doc['Kích thước'])} />
-                </div>
                 <div className="space-y-1.5">
                   {fileInfos.map((fi, i) => (
                     <button
@@ -672,7 +705,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       }`}
                     >
                       <Icon name="attach_file" size={14} className="shrink-0" />
-                      <span className="flex-1 text-left truncate">{fi.fileName || `File ${i + 1}`}</span>
+                      <span className="flex-1 text-left truncate">{fi.fileName || `File ${i + 1}`} - {formatFileSize(fi.size) || doc['Kích thước']}</span>
                       {i === slideIdx && <Icon name="visibility" size={14} className="shrink-0 text-primary" />}
                     </button>
                   ))}
