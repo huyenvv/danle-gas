@@ -118,6 +118,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const [lookups, setLookups]     = useState(initialLookups)
   const fileRef = useRef()
   const statusOverrideRef = useRef(null)
+  const notifyTargetRef = useRef(null)
   const { showToast } = useToast()
   const confirm = useConfirm()
 
@@ -125,10 +126,12 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const role = session?.role || ''
   const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
   const isVanThu = role === 'Văn thư'
+  const isNvTpCreate = !isEdit && !isAdminRole && !isVanThu && session?.canCreate
   const canEditStatus = isAdminRole || isVanThu
   const statusOptions = isVanThu ? ['Chờ duyệt', 'Hoàn thành'] : STATUS_OPTIONS
   const canEditPhuTrach = isAdminRole
-  const canEditPhoiHop = isAdminRole
+  const isPhuTrachOfDoc = isEdit && (() => { const list = parseAssignees(doc?.['Phụ trách']); return list.includes(String(session?.userId)) || list.includes(session?.username) })()
+  const canEditPhoiHop = isAdminRole || isPhuTrachOfDoc
   const canEditFields = isAdminRole || isVanThu
   const canQuickAddLookup = isAdminRole || isVanThu
 
@@ -217,13 +220,15 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         'Phụ trách': phuTrach || '',
         'Người phối hợp': collaborators.length ? collaborators : [],
       }
+      const notifyTarget = notifyTargetRef.current
       statusOverrideRef.current = null
+      notifyTargetRef.current = null
       if (isEdit) {
-        const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds)
+        const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, notifyTarget)
         showToast('Đã cập nhật hồ sơ', 'success')
         onSaved(updated)
       } else {
-        const created = await gasCall('api_createDocument', token, submitForm, fileInfos)
+        const created = await gasCall('api_createDocument', token, submitForm, fileInfos, notifyTarget)
         showToast('Đã thêm hồ sơ', 'success')
         onSaved(created)
       }
@@ -317,8 +322,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </Field>
               ) : null}
 
-              {/* Người phối hợp (multi-select) — admin/GĐ can edit, phụ trách can add */}
-              {(canEditPhoiHop || ((() => { const list = parseAssignees(doc?.['Phụ trách']); return list.includes(String(session?.userId)) || list.includes(session?.username) })() && isEdit)) ? (
+              {/* Người phối hợp (multi-select) — admin/GĐ/phụ trách can edit */}
+              {canEditPhoiHop ? (
                 <Field label="Người phối hợp">
                   <div className="space-y-1.5">
                     {collaborators.length > 0 && (
@@ -565,9 +570,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               </Field>
 
               {/* Tình trạng + Số hồ sơ */}
-              <div className={`grid ${isEdit || !isVanThu ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
-                {/* Tình trạng — hidden for Văn thư in create mode (buttons handle status) */}
-                {(isEdit || !isVanThu) && (
+              <div className={`grid ${isEdit || (!isVanThu && !isNvTpCreate) ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
+                {/* Tình trạng — hidden for Văn thư/NV/TP in create mode (buttons handle status) */}
+                {(isEdit || (!isVanThu && !isNvTpCreate)) && (
                   <Field label="Tình trạng">
                     <select className={iCls} value={form['Tình trạng']} onChange={e => setField('Tình trạng', e.target.value)}
                       disabled={!canEditStatus}>
@@ -609,19 +614,28 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
               Hủy
             </button>
-            {!isEdit && isVanThu ? (
+            {!isEdit && (isVanThu || isNvTpCreate) ? (
               <>
                 <button type="button" disabled={uploading}
-                  onClick={() => { statusOverrideRef.current = 'Hoàn thành'; flushSync(() => {}); document.getElementById('_docModalForm')?.requestSubmit() }}
+                  onClick={async () => {
+                    if (!await confirm('Có chắc chỉ lưu trữ, không gửi thông báo tới Giám đốc?')) return
+                    statusOverrideRef.current = 'Hoàn thành'; notifyTargetRef.current = 'none'; flushSync(() => {}); document.getElementById('_docModalForm')?.requestSubmit()
+                  }}
                   className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-full text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 transition-colors shadow-md3-2">
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>inventory</span>
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
-                <button type="submit" disabled={uploading}
+                {isVanThu && (
+                <button type="button" disabled={uploading}
+                  onClick={async () => {
+                    if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
+                    notifyTargetRef.current = 'directors'; document.getElementById('_docModalForm')?.requestSubmit()
+                  }}
                   className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
                   {uploading ? 'Đang lưu…' : 'Trình duyệt'}
                 </button>
+                )}
               </>
             ) : (
               <button type="submit" disabled={uploading}

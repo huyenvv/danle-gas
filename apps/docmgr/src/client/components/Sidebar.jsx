@@ -11,10 +11,14 @@ const NAV_ITEMS = [
   { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
 ]
 
-export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, collapsed, role }) {
+export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, collapsed, role, canCreateSubCat }) {
   const limitedDocOnlyRoles = ['Nhân viên', 'Trưởng phòng']
   const visibleItems = NAV_ITEMS.filter(item => {
-    if (limitedDocOnlyRoles.includes(role)) return item.key === 'documents'
+    if (limitedDocOnlyRoles.includes(role)) {
+      if (item.key === 'documents') return true
+      if (item.key === 'categories' && canCreateSubCat) return true
+      return false
+    }
     return (!item.admin || isAdmin) && (!item.superAdmin || isSuperAdmin) && (!item.hiddenRoles || !item.hiddenRoles.includes(role))
   })
 

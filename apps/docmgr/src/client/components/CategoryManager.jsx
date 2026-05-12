@@ -45,7 +45,7 @@ function parseJsonArray(val) {
   try { return typeof val === 'string' && val.charAt(0) === '[' ? JSON.parse(val).map(String) : [] } catch(_) { return [] }
 }
 
-export default function CategoryManager({ token, lookups, onUpdate }) {
+export default function CategoryManager({ token, lookups, onUpdate, session }) {
   const [cats, setCats]   = useState(lookups.danhMuc || [])
   const [modal, setModal] = useState(null) // null | { mode: 'create' | 'edit', cat? }
   const [form, setForm]   = useState({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': '', 'Người được xem': '', 'Nhóm được xem': '', 'Nơi lưu hồ sơ cứng': '' })
@@ -54,6 +54,10 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
   const [search, setSearch] = useState('')
   const { showToast } = useToast()
   const confirm = useConfirm()
+
+  const role = session?.role || ''
+  const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
+  const canAddSubCat = isAdminRole || session?.canCreateSubCat
 
   useEffect(() => { setCats(lookups.danhMuc || []) }, [lookups.danhMuc])
 
@@ -73,6 +77,7 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
 
   async function handleSave() {
     if (!form['Tên danh mục']) { setError('Tên danh mục là bắt buộc'); return }
+    if (!isAdminRole && modal.mode === 'create' && !form['Danh mục cha']) { setError('Bạn chỉ được tạo danh mục con'); return }
     if (modal.cat && String(form['Danh mục cha']) === String(modal.cat.ID)) {
       setError('Danh mục không thể là cha của chính nó'); return
     }
@@ -112,11 +117,17 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
   const roots = cats.filter(c => !c['Danh mục cha'])
   const childrenList = cats.filter(c => !!c['Danh mục cha'])
 
+  function openAddSub(parentCat) {
+    setForm({ 'Tên danh mục': '', 'Icon': 'description', 'Mô tả': '', 'Danh mục cha': String(parentCat.ID), 'Người được xem': '', 'Nhóm được xem': '', 'Nơi lưu hồ sơ cứng': '' })
+    setError('')
+    setModal({ mode: 'create' })
+  }
+
   function renderTree(parentId, depth) {
     return cats
       .filter(c => String(c['Danh mục cha'] || '') === String(parentId || ''))
       .flatMap(cat => [
-        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} />,
+        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} />,
         ...renderTree(cat.ID, depth + 1)
       ])
   }
@@ -140,11 +151,13 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
         </div>
         <span className="text-sm text-on-surface-variant">{cats.length} danh mục</span>
         <div className="ml-auto">
-          <button onClick={openAdd}
-            className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
-            <Icon name="add" size={18} />
-            Thêm danh mục
-          </button>
+          {isAdminRole && (
+            <button onClick={openAdd}
+              className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
+              <Icon name="add" size={18} />
+              Thêm danh mục
+            </button>
+          )}
         </div>
       </div>
 
@@ -163,7 +176,7 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
               <tr><td colSpan={3} className="px-4 py-10 text-center text-on-surface-variant">Chưa có danh mục</td></tr>
             )}
             {filtered
-              ? filtered.map(cat => <CatRow key={cat.ID} cat={cat} cats={cats} indent={0} onEdit={openEdit} onDelete={handleDelete} />)
+              ? filtered.map(cat => <CatRow key={cat.ID} cat={cat} cats={cats} indent={0} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} />)
               : renderTree('', 0)
             }
           </tbody>
@@ -189,10 +202,13 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
           </div>
 
           <div className={fieldCls}>
-            <label className={labelCls}>Danh mục cha</label>
+            <label className={labelCls}>Danh mục cha {!isAdminRole && '*'}</label>
             <select className={selectCls} value={form['Danh mục cha'] || ''}
               onChange={e => setForm(f => ({ ...f, 'Danh mục cha': e.target.value }))}>
-              <option value="">— Không có (danh mục gốc) —</option>
+              {isAdminRole
+                ? <option value="">— Không có (danh mục gốc) —</option>
+                : <option value="">-- Chọn danh mục cha --</option>
+              }
               {parentSelectOpts.map(o => (
                 <option key={o.id} value={o.id}>{o.label}</option>
               ))}
@@ -231,8 +247,8 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
               onChange={e => setForm(f => ({ ...f, 'Nơi lưu hồ sơ cứng': e.target.value }))} placeholder="VD: Tủ A, Kệ 3..." />
           </div>
 
-          {/* Người được xem */}
-          <div className={fieldCls}>
+          {/* Người được xem — admin only */}
+          {isAdminRole && <div className={fieldCls}>
             <label className={labelCls}>Người được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
               {(lookups.users || []).map(u => {
@@ -253,10 +269,10 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
               })}
               {(lookups.users || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có người dùng</span>}
             </div>
-          </div>
+          </div>}
 
-          {/* Nhóm được xem */}
-          <div className={fieldCls}>
+          {/* Nhóm được xem — admin only */}
+          {isAdminRole && <div className={fieldCls}>
             <label className={labelCls}>Nhóm được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
               {(lookups.nhom || []).map(g => {
@@ -275,14 +291,14 @@ export default function CategoryManager({ token, lookups, onUpdate }) {
               })}
               {(lookups.nhom || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có nhóm</span>}
             </div>
-          </div>
+          </div>}
         </div>
       </FormModal>
     </div>
   )
 }
 
-function CatRow({ cat, cats, indent, orphan, onEdit, onDelete }) {
+function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isAdminRole, onAddSub }) {
   const childCount = cats.filter(c => String(c['Danh mục cha']) === String(cat.ID)).length
   const isChild = indent > 0
   return (
@@ -302,8 +318,15 @@ function CatRow({ cat, cats, indent, orphan, onEdit, onDelete }) {
       <td className="px-4 py-3 text-on-surface-variant text-xs">{cat['Mô tả'] || '—'}</td>
       <td className="px-4 py-3">
         <div className="flex gap-1 justify-end">
-          <button onClick={() => onEdit(cat)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
-          <button onClick={() => onDelete(cat)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>
+          {canAddSubCat && (
+            <button onClick={() => onAddSub(cat)} className="text-xs px-2.5 py-1 rounded-lg text-secondary hover:bg-secondary/10 transition-colors font-medium">+ Con</button>
+          )}
+          {isAdminRole && (
+            <>
+              <button onClick={() => onEdit(cat)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+              <button onClick={() => onDelete(cat)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>
+            </>
+          )}
         </div>
       </td>
     </tr>

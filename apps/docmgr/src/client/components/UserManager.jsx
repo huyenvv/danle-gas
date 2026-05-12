@@ -56,6 +56,7 @@ export default function UserManager({ token, session }) {
   const [role, setRole]       = useState('Nhân viên')
   const [perms, setPerms]     = useState(defaultPerms())
   const [canCreateDoc, setCanCreateDoc] = useState(false)
+  const [canCreateSubCat, setCanCreateSubCat] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
@@ -81,7 +82,8 @@ export default function UserManager({ token, session }) {
     const currentRole = user['Quyền'] || 'Nhân viên'
     setRole(currentRole)
     setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
-    setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE')
+    setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
+    setCanCreateSubCat(user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true)
     setFormError('')
     setModal({ user })
   }
@@ -110,6 +112,7 @@ export default function UserManager({ token, session }) {
         'Tên đăng nhập': modal.user['Tên đăng nhập'],
         'Quyền': role,
         'Được tạo hồ sơ': canCreateDoc,
+        'Được tạo danh mục con': canCreateSubCat,
       })
       closeModal()
       showToast('Đã lưu phân quyền', 'success')
@@ -238,7 +241,7 @@ export default function UserManager({ token, session }) {
                   {(() => {
                     const r = user['Quyền']
                     const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
-                    const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE'
+                    const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true
                     return canCreate ? (
                       <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
                     ) : (
@@ -318,17 +321,28 @@ export default function UserManager({ token, session }) {
               </select>
             </div>
 
-            {/* Được tạo hồ sơ — mainly for Nhân viên / Xem roles */}
-            {!isAdmin && role !== 'Văn thư' && (
-              <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
-                <input type="checkbox" id="canCreateDoc" checked={canCreateDoc}
-                  onChange={e => setCanCreateDoc(e.target.checked)}
-                  className="w-4 h-4 rounded accent-primary cursor-pointer" />
-                <label htmlFor="canCreateDoc" className="text-sm text-on-surface cursor-pointer select-none">
-                  Được tạo hồ sơ
-                </label>
-                <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo hồ sơ mới</span>
-              </div>
+            {/* Được tạo hồ sơ / danh mục con — only for Nhân viên & Trưởng phòng */}
+            {(role === 'Nhân viên' || role === 'Trưởng phòng') && (
+              <>
+                <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                  <input type="checkbox" id="canCreateDoc" checked={canCreateDoc}
+                    onChange={e => setCanCreateDoc(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                  <label htmlFor="canCreateDoc" className="text-sm text-on-surface cursor-pointer select-none">
+                    Được tạo hồ sơ
+                  </label>
+                  <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo hồ sơ mới</span>
+                </div>
+                <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                  <input type="checkbox" id="canCreateSubCat" checked={canCreateSubCat}
+                    onChange={e => setCanCreateSubCat(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                  <label htmlFor="canCreateSubCat" className="text-sm text-on-surface cursor-pointer select-none">
+                    Được tạo danh mục con
+                  </label>
+                  <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo danh mục con</span>
+                </div>
+              </>
             )}
 
             {/* Permission matrix — hidden, hardcoded per role for now */}

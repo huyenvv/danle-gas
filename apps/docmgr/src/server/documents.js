@@ -1,5 +1,194 @@
 // ===== Documents module =====
 
+// ── Vietnamese search helper ────────────────────────────────────────────────
+function _viNormalize(str) {
+  return String(str == null ? '' : str)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase()
+}
+
+// ── Email notification helper ───────────────────────────────────────────────
+
+function _getMailConfigFromSSO() {
+  var parentId = ssoGetParentSheetId()
+  if (!parentId) return null
+  try {
+    var ss = SpreadsheetApp.openById(parentId)
+    var sheet = ss.getSheetByName('_Hệ Thống')
+    if (!sheet) return null
+    var data = sheet.getDataRange().getValues()
+    var config = {}
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0]) config[data[i][0]] = data[i][1]
+    }
+    return config
+  } catch(e) {
+    Logger.log('_getMailConfigFromSSO error: ' + e.message)
+    return null
+  }
+}
+
+var _DEFAULT_MAIL_TEMPLATES = {
+  trinhDuyet: {
+    subject: '[Cần duyệt] {tênHồSơ}',
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã trình duyệt hồ sơ "{tênHồSơ}".\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
+  },
+  giaoViec: {
+    subject: '[Giao việc] {tênHồSơ}',
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
+  }
+}
+
+function _getMailTemplates() {
+  var raw = getConfig('MAIL_TEMPLATES')
+  if (raw) {
+    try { var parsed = JSON.parse(raw); return parsed } catch(e) {}
+  }
+  return _DEFAULT_MAIL_TEMPLATES
+}
+
+function _applyTemplate(tpl, vars) {
+  var s = tpl || ''
+  for (var key in vars) {
+    s = s.split(key).join(vars[key] || '')
+  }
+  return s
+}
+
+// Add unread record for each user (DA_DOC stores unread, no record = read)
+/**
+ * Resolve usernames/mixed IDs to numeric UserIDs.
+ * _parseAssignees may return usernames ("truongphong") or IDs ("5").
+ * DA_DOC and api_getUnreadDocIds use session.userId (numeric), so we must store numeric IDs.
+ */
+function _resolveUserIds(usernamesOrIds) {
+  if (!usernamesOrIds || usernamesOrIds.length === 0) return []
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var resolved = []
+  usernamesOrIds.forEach(function(val) {
+    // Try to find by username first
+    var role = roles.find(function(r) {
+      return r['AppID'] === APP_ID && (r['Tên đăng nhập'] === val || String(r['UserID']) === String(val))
+    })
+    if (role) {
+      resolved.push(String(role['UserID']))
+    } else {
+      // Fallback: use as-is (might already be a userId)
+      resolved.push(String(val))
+    }
+  })
+  return resolved
+}
+
+function _markUnreadForUsers(usernamesOrIds, docId) {
+  Logger.log('[_markUnreadForUsers] input=' + JSON.stringify(usernamesOrIds) + ' docId=' + docId)
+  if (!usernamesOrIds || usernamesOrIds.length === 0) { Logger.log('[_markUnreadForUsers] EMPTY input, skipping'); return }
+  var userIds = _resolveUserIds(usernamesOrIds)
+  Logger.log('[_markUnreadForUsers] resolved userIds=' + JSON.stringify(userIds))
+  var daDocRows = getSheetData(SHEETS.DA_DOC)
+  userIds.forEach(function(uid) {
+    var exists = daDocRows.find(function(r) {
+      return String(r['UserID']) === String(uid) && String(r['DocID']) === String(docId)
+    })
+    Logger.log('[_markUnreadForUsers] uid=' + uid + ' exists=' + !!exists)
+    if (!exists) {
+      addRow(SHEETS.DA_DOC, { 'UserID': uid, 'DocID': docId, 'Thời gian': new Date().toISOString() })
+    }
+  })
+  invalidateSheetCache(SHEETS.DA_DOC)
+}
+
+function _getAppLink() {
+  var url = getConfig('APP_URL')
+  if (url) return url
+  try { return ScriptApp.getService().getUrl() } catch(e) {}
+  return ''
+}
+
+function _sendNotificationEmails(recipients, docName, mailType, session) {
+  if (!recipients || recipients.length === 0) return
+  // Dev override: redirect all emails to test address for huyenvv90 owner
+  try {
+    var ownerEmail = getCentralSheet().getOwner().getEmail()
+    if (ownerEmail === 'huyenvv90@gmail.com') {
+      recipients = recipients.map(function(r) { return { email: 'huyenvv.it@gmail.com', name: r.name, role: r.role } })
+    }
+  } catch(e) {}
+  try {
+    var templates = _getMailTemplates()
+    var tpl = templates[mailType] || _DEFAULT_MAIL_TEMPLATES[mailType] || { subject: 'Thông báo: ' + docName, body: 'Hồ sơ "' + docName + '" có cập nhật mới.' }
+    var appLink = _getAppLink()
+
+    var mailOptions = {}
+    var config = _getMailConfigFromSSO()
+    if (config) {
+      if (config['MAIL_SENDER_NAME']) mailOptions.name = config['MAIL_SENDER_NAME']
+      if (config['MAIL_SENDER_EMAIL']) mailOptions.from = config['MAIL_SENDER_EMAIL']
+    }
+
+    recipients.forEach(function(r) {
+      if (!r.email) return
+      var vars = {
+        '{tênHồSơ}': docName,
+        '{ngườiGửi}': session ? session.username : 'Hệ thống',
+        '{emailNgườiGửi}': session ? (session.email || '') : '',
+        '{tênNgườiNhận}': r.name || '',
+        '{vaiTròNgườiNhận}': r.role || '',
+        '{linkHệThống}': appLink
+      }
+      var subject = _applyTemplate(tpl.subject, vars)
+      var body = _applyTemplate(tpl.body, vars)
+      Logger.log('_sendNotificationEmails: sending to ' + r.email)
+      MailApp.sendEmail(r.email, subject, body, mailOptions)
+      Logger.log('_sendNotificationEmails: sent OK to ' + r.email)
+    })
+  } catch(e) {
+    Logger.log('_sendNotificationEmails ERROR: ' + e.message + '\n' + e.stack)
+  }
+}
+
+function _getRecipientsByUsernames(usernames) {
+  if (!usernames || usernames.length === 0) return []
+  var parentId = ssoGetParentSheetId()
+  if (!parentId) return []
+  try {
+    var ss = SpreadsheetApp.openById(parentId)
+    var sheet = ss.getSheetByName('_Người Dùng')
+    if (!sheet) return []
+    var users = rowsToObjects(sheet.getDataRange().getValues())
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var result = []
+    usernames.forEach(function(uname) {
+      var user = users.find(function(u) {
+        return u['Tên đăng nhập'] === uname || String(u['ID']) === String(uname)
+      })
+      if (user && user['Email']) {
+        var appRole = roles.find(function(r) {
+          return (r['Tên đăng nhập'] === uname || String(r['UserID']) === String(uname)) && r['AppID'] === APP_ID
+        })
+        result.push({ email: user['Email'], name: user['Tên nhân viên'] || user['Tên đăng nhập'] || uname, role: appRole ? appRole['Quyền'] : '' })
+      }
+    })
+    return result
+  } catch(e) {
+    Logger.log('_getRecipientsByUsernames error: ' + e.message)
+    return []
+  }
+}
+
+function _getRecipientsByRole(targetRole) {
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var userIds = []
+  roles.forEach(function(r) {
+    if (r['Quyền'] === targetRole && r['AppID'] === APP_ID) {
+      userIds.push(r['Tên đăng nhập'] || String(r['UserID']))
+    }
+  })
+  return _getRecipientsByUsernames(userIds)
+}
+
 /**
  * Parse the File ID column: may be JSON array or plain string (legacy).
  * Returns array of { fileId, fileName, mimeType, size }.
@@ -95,17 +284,17 @@ function getDocuments(token, filters) {
     })
   }
 
-  // Search keyword
+  // Search keyword (Vietnamese diacritics-insensitive)
   if (filters.keyword) {
-    var kw = filters.keyword.toLowerCase()
+    var kw = _viNormalize(filters.keyword)
     docs = docs.filter(function(d) {
       return (
-        (d['Tên hồ sơ'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Số hồ sơ'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Dự án (Phòng ban)'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Nhà cung cấp (Nơi ban hành)'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        (d['Ghi chú'] || '').toLowerCase().indexOf(kw) !== -1 ||
-        String(d['Phụ trách'] || '').toLowerCase().indexOf(kw) !== -1
+        _viNormalize(d['Tên hồ sơ']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Số hồ sơ']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Dự án (Phòng ban)']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Nhà cung cấp (Nơi ban hành)']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Ghi chú']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Phụ trách']).indexOf(kw) !== -1
       )
     })
   }
@@ -120,8 +309,17 @@ function getDocuments(token, filters) {
   return { data: docs }
 }
 
-function createDocument(token, data, fileInfos) {
+function createDocument(token, data, fileInfos, notifyTarget) {
   var session = requireAuth(token)
+
+  // Re-check create permission from sheet (not cached session)
+  var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (adminRoles.indexOf(session.role) === -1) {
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var appRole = roles.find(function(r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
+    var allowed = appRole && (appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true)
+    if (!allowed) throw new Error('Bạn không có quyền tạo hồ sơ')
+  }
 
   // Require at minimum: Tên hồ sơ and Danh mục
   if (!data['Tên hồ sơ']) throw new Error('Tên hồ sơ là bắt buộc')
@@ -169,10 +367,21 @@ function createDocument(token, data, fileInfos) {
 
   var added = addRow(SHEETS.HO_SO, record)
   logAudit(session, 'Tạo', 'Hồ sơ', record['Tên hồ sơ'], JSON.stringify({ soHoSo: record['Số hồ sơ'], danhMuc: record['Danh mục'] }))
+
+  // Send email notification if Trình duyệt (notify directors)
+  if (notifyTarget === 'directors') {
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var dirUserIds = []
+    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    _markUnreadForUsers(dirUserIds, added['ID'])
+    var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+    _sendNotificationEmails(dirRecipients, record['Tên hồ sơ'], 'trinhDuyet', session)
+  }
+
   return { data: added }
 }
 
-function updateDocument(token, id, data, fileInfos, keepFileIds) {
+function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   var session = requireAuth(token)
 
   var docs = getSheetData(SHEETS.HO_SO)
@@ -253,9 +462,12 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   updates['Tên file'] = allFiles.map(function(f) { return f.fileName }).join(', ')
   if (allFiles.length > 0) updates['Loại file'] = allFiles[0].mimeType
 
-  // Update Phụ trách if provided (single person)
+  // Update Phụ trách if provided (single person) — only admin/GĐ can change
   if (data['Phụ trách'] !== undefined) {
-    updates['Phụ trách'] = data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : ''
+    var canChangePhuTrach = session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Giám đốc'
+    if (canChangePhuTrach) {
+      updates['Phụ trách'] = data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : ''
+    }
   }
   // Update Người phối hợp if provided (multiple people)
   if (data['Người phối hợp'] !== undefined) {
@@ -267,17 +479,24 @@ function updateDocument(token, id, data, fileInfos, keepFileIds) {
   var updated = Object.assign({}, doc, updates)
   updateRow(SHEETS.HO_SO, id, updates)
 
-  // Clear DA_DOC for all assignees except the saver (doc becomes unread for others)
-  var finalAssignees = _parseAssignees(updated['Phụ trách'] || doc['Phụ trách'])
-  var daDocRows = getSheetData(SHEETS.DA_DOC)
-  finalAssignees.forEach(function(uid) {
-    if (String(uid) !== String(session.userId) && uid !== session.username) {
-      var entries = daDocRows.filter(function(r) {
-        return (String(r['UserID']) === String(uid) || r['UserID'] === uid) && String(r['DocID']) === String(id)
-      })
-      entries.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
-    }
-  })
+  // Notification based on notifyTarget:
+  //   'none'      — Văn thư "Lưu tài liệu" → no notification
+  //   'directors' — Văn thư "Trình duyệt" → notify directors only
+  //   default     — normal update → notify assignees
+  notifyTarget = notifyTarget || 'all'
+
+  if (notifyTarget === 'directors') {
+    // Clear read status for directors so doc shows as unread
+    // Add unread records for directors + send email
+    var allRoles = getSheetData(SHEETS.APP_ROLES)
+    var directorUserIds = []
+    allRoles.forEach(function(r) {
+      if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) directorUserIds.push(r['Tên đăng nhập'] || String(r['UserID']))
+    })
+    _markUnreadForUsers(directorUserIds, id)
+    var directorRecipients = _getRecipientsByUsernames(directorUserIds)
+    _sendNotificationEmails(directorRecipients, updated['Tên hồ sơ'], 'trinhDuyet', session)
+  }
 
   logAudit(session, 'Sửa', 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id }))
   return { data: updated }
@@ -471,19 +690,28 @@ function transitionDocument(token, id, action, data) {
   updateRow(SHEETS.HO_SO, id, updates)
   var updated = Object.assign({}, doc, updates)
 
-  // When Phụ trách changes (giaoViec), mark doc as unread for the new assignee
-  if (updates['Phụ trách']) {
-    var newAssignees = _parseAssignees(updates['Phụ trách'])
-    var daDocRows = getSheetData(SHEETS.DA_DOC)
-    newAssignees.forEach(function(uid) {
-      if (String(uid) !== String(session.userId) && uid !== session.username) {
-        var entries = daDocRows.filter(function(r) {
-          return (String(r['UserID']) === String(uid) || r['UserID'] === uid) && String(r['DocID']) === String(id)
-        })
-        entries.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
-      }
-    })
-    invalidateSheetCache(SHEETS.DA_DOC)
+  // giaoViec: mark unread + send email to Phụ trách + Phối hợp
+  if (action === 'giaoViec') {
+    var notifyUsers = _parseAssignees(updates['Phụ trách'])
+    var phoiHopUsers = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
+    notifyUsers = notifyUsers.concat(phoiHopUsers)
+    Logger.log('[giaoViec] raw notifyUsers=' + JSON.stringify(notifyUsers) + ' session.userId=' + session.userId + ' session.username=' + session.username)
+    // Exclude self
+    notifyUsers = notifyUsers.filter(function(uid) { return String(uid) !== String(session.userId) && uid !== session.username })
+    Logger.log('[giaoViec] after exclude self=' + JSON.stringify(notifyUsers))
+    _markUnreadForUsers(notifyUsers, id)
+    var recipientList = _getRecipientsByUsernames(notifyUsers)
+    _sendNotificationEmails(recipientList, updated['Tên hồ sơ'], 'giaoViec', session)
+  } else if (action === 'nhanViec' && updates['Người phối hợp']) {
+    // nhanViec: notify only NEW collaborators
+    var oldPhoiHop = _parseAssignees(doc['Người phối hợp'])
+    var newPhoiHop = _parseAssignees(updates['Người phối hợp'])
+    var addedUsers = newPhoiHop.filter(function(u) { return oldPhoiHop.indexOf(u) === -1 })
+    if (addedUsers.length > 0) {
+      _markUnreadForUsers(addedUsers, id)
+      var newRecipients = _getRecipientsByUsernames(addedUsers)
+      _sendNotificationEmails(newRecipients, updated['Tên hồ sơ'], 'giaoViec', session)
+    }
   }
 
   logAudit(session, action, 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id, from: doc['Tình trạng'], to: rule.to }))

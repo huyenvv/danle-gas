@@ -99,7 +99,8 @@ function ssoCreateSession(user, appRole) {
   } catch(e) {}
 
   var perms = getPermissions(appRole)
-  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE'
+  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
+  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
 
   var token = generateUuid()
   var sessionData = {
@@ -111,6 +112,7 @@ function ssoCreateSession(user, appRole) {
     departments: depts,
     permissions: perms,
     canCreate: !!canCreate,
+    canCreateSubCat: !!canCreateSubCat,
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
   return token

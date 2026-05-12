@@ -100,14 +100,19 @@ function api_validateSession(token) {
       return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID
     })
 
-    if (appRole && appRole['Quyền'] !== session.role) {
-      // Role changed — rebuild session with new role
+    if (appRole) {
+      // Re-sync role, permissions, and flags from sheet on every validate
       var perms = getPermissions(appRole)
-      var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE'
-      session.role = appRole['Quyền']
-      session.permissions = perms
-      session.canCreate = !!canCreate
-      cachePut('sess_' + token, session, SESSION_TTL)
+      var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
+      var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
+      var changed = appRole['Quyền'] !== session.role || !!canCreate !== !!session.canCreate || !!canCreateSubCat !== !!session.canCreateSubCat
+      if (changed) {
+        session.role = appRole['Quyền']
+        session.permissions = perms
+        session.canCreate = !!canCreate
+        session.canCreateSubCat = !!canCreateSubCat
+        cachePut('sess_' + token, session, SESSION_TTL)
+      }
     }
 
     return session
@@ -120,6 +125,81 @@ function api_getAllData(token) {
   return _wrap(function() {
     requireAuth(token)
     return getAllData()
+  })
+}
+
+/**
+ * Single call for initial page load — replaces 5 parallel calls:
+ * getAllData + getDocuments + getDocumentStats + getUnreadDocIds + getConfig(COMPANY_NAME)
+ */
+function api_getInitialData(token) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+
+    // 1. Lookups (getAllData)
+    var lookups = getAllData()
+
+    // 2. Documents (getDocuments reuses cached sheet data from getAllData)
+    var docsResult = getDocuments(token, {})
+
+    // 3. Stats — compute inline from docs to avoid re-reading sheet
+    var docs = docsResult.data || []
+    var byStatus = {}
+    var totalValue = 0
+    docs.forEach(function(d) {
+      var s = d['Tình trạng'] || 'Không rõ'
+      byStatus[s] = (byStatus[s] || 0) + 1
+      totalValue += Number(d['Giá trị HĐ']) || 0
+    })
+    var stats = { total: docs.length, byStatus: byStatus, totalValue: totalValue }
+
+    // 4. Unread IDs
+    var daDocRows = getSheetData(SHEETS.DA_DOC)
+    var unreadIds = daDocRows
+      .filter(function(r) { return String(r['UserID']) === String(session.userId) })
+      .map(function(r) { return String(r['DocID']) })
+
+    // 5. Company name
+    var companyName = getConfig('COMPANY_NAME') || ''
+
+    return {
+      lookups: lookups,
+      docs: docs,
+      stats: stats,
+      unreadIds: unreadIds,
+      companyName: companyName,
+    }
+  })
+}
+
+/**
+ * Single call for background polling — replaces 3 parallel calls:
+ * getDocuments + getUnreadCount + getAllData(if stale)
+ */
+function api_pollUpdates(token, opts) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    opts = opts || {}
+
+    // Always refresh docs
+    var docsResult = getDocuments(token, {})
+
+    // Unread IDs
+    var daDocRows = getSheetData(SHEETS.DA_DOC)
+    var userUnreads = daDocRows.filter(function(r) { return String(r['UserID']) === String(session.userId) })
+    var unreadIds = userUnreads.map(function(r) { return String(r['DocID']) })
+
+    var result = {
+      docs: docsResult.data || [],
+      unreadIds: unreadIds,
+    }
+
+    // Optionally refresh lookups
+    if (opts.includeLookups) {
+      result.lookups = getAllData()
+    }
+
+    return result
   })
 }
 
@@ -143,13 +223,12 @@ function api_getDocuments(token, filters) {
   return _wrap(function() { return getDocuments(token, filters) })
 }
 
-
-function api_createDocument(token, data, fileInfos) {
-  return _wrap(function() { return createDocument(token, data, fileInfos) })
+function api_createDocument(token, data, fileInfos, notifyTarget) {
+  return _wrap(function() { return createDocument(token, data, fileInfos, notifyTarget) })
 }
 
-function api_updateDocument(token, id, data, fileInfos, keepFileIds) {
-  return _wrap(function() { return updateDocument(token, id, data, fileInfos, keepFileIds) })
+function api_updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
+  return _wrap(function() { return updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) })
 }
 
 function api_deleteDocument(token, id) {
@@ -168,7 +247,18 @@ function api_transitionDocument(token, id, action, data) {
 
 function api_addCategory(token, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    var session = requireAuth(token)
+    var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc']
+    var isAdmin = adminRoles.indexOf(session.role) !== -1
+    if (!isAdmin) {
+      // Re-check permission from sheet (not cached session)
+      var roles = getSheetData(SHEETS.APP_ROLES)
+      var appRole = roles.find(function(r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
+      var allowed = appRole && (appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true)
+      if (!allowed || !data['Danh mục cha']) {
+        throw new Error('Bạn không có quyền tạo danh mục')
+      }
+    }
     return addRow(SHEETS.DANH_MUC, data)
   })
 }
@@ -305,7 +395,8 @@ function api_getUsers(token) {
           'Trạng thái': u['Trạng thái'],
           'Quyền': appRole ? appRole['Quyền'] : '',
           'Phân quyền chi tiết': appRole ? (appRole['Phân quyền chi tiết'] || '') : '',
-          'Được tạo hồ sơ': appRole ? (appRole['Được tạo hồ sơ'] || '') : '',
+          'Được tạo hồ sơ': appRole && (appRole['Được tạo hồ sơ'] === true || appRole['Được tạo hồ sơ'] === 'TRUE') ? 'TRUE' : '',
+          'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
           'Phòng ban': u['Phòng ban'] || '',
         }
       })
@@ -354,6 +445,7 @@ function api_updateUser(token, id, data) {
     if (data['Quyền'] !== undefined) roleUpdates['Quyền'] = data['Quyền']
     if (data['permissions'] !== undefined) roleUpdates['Phân quyền chi tiết'] = JSON.stringify(data['permissions'])
     if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
+    if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
     if (existing) {
       updateRow(SHEETS.APP_ROLES, existing['ID'], roleUpdates)
     } else {
@@ -363,6 +455,8 @@ function api_updateUser(token, id, data) {
         'AppID': APP_ID,
         'Quyền': data['Quyền'] || 'Xem',
         'Phân quyền chi tiết': data['permissions'] ? JSON.stringify(data['permissions']) : '',
+        'Được tạo hồ sơ': data['Được tạo hồ sơ'] ? 'TRUE' : '',
+        'Được tạo danh mục con': data['Được tạo danh mục con'] ? 'TRUE' : '',
       })
     }
     logAudit(null, 'Phân quyền', 'Người dùng', String(id), JSON.stringify(data))
@@ -491,19 +585,17 @@ function api_getAuditLogs(token, filters) {
   })
 }
 
+// DA_DOC stores UNREAD records: has record = unread, no record = read
 function api_markAsRead(token, docId) {
   return _wrap(function() {
     var session = requireAuth(token)
     var reads = getSheetData(SHEETS.DA_DOC)
-    var exists = reads.find(function(r) {
+    var entry = reads.find(function(r) {
       return String(r['UserID']) === String(session.userId) && String(r['DocID']) === String(docId)
     })
-    if (!exists) {
-      addRow(SHEETS.DA_DOC, {
-        'UserID': session.userId,
-        'DocID': docId,
-        'Thời gian': new Date().toISOString(),
-      })
+    if (entry) {
+      _coreDeleteRow(SHEETS.DA_DOC, entry['ID'])
+      invalidateSheetCache(SHEETS.DA_DOC)
     }
     return { success: true }
   })
@@ -512,22 +604,19 @@ function api_markAsRead(token, docId) {
 function api_getUnreadCount(token) {
   return _wrap(function() {
     var session = requireAuth(token)
-    var docs = getSheetData(SHEETS.HO_SO)
     var reads = getSheetData(SHEETS.DA_DOC)
-    var userReads = reads.filter(function(r) { return String(r['UserID']) === String(session.userId) })
-    var readDocIds = userReads.map(function(r) { return String(r['DocID']) })
-    var unread = docs.filter(function(d) { return readDocIds.indexOf(String(d['ID'])) === -1 })
-    return { count: unread.length }
+    var count = reads.filter(function(r) { return String(r['UserID']) === String(session.userId) }).length
+    return { count: count }
   })
 }
 
-function api_getReadDocIds(token) {
+function api_getUnreadDocIds(token) {
   return _wrap(function() {
     var session = requireAuth(token)
     var reads = getSheetData(SHEETS.DA_DOC)
     var userReads = reads.filter(function(r) { return String(r['UserID']) === String(session.userId) })
-    var readIds = userReads.map(function(r) { return String(r['DocID']) })
-    return { readIds: readIds }
+    var unreadIds = userReads.map(function(r) { return String(r['DocID']) })
+    return { unreadIds: unreadIds }
   })
 }
 
@@ -536,18 +625,12 @@ function api_markMultipleAsRead(token, docIds) {
     var session = requireAuth(token)
     if (!Array.isArray(docIds) || docIds.length === 0) return { success: true, marked: 0 }
     var reads = getSheetData(SHEETS.DA_DOC)
-    var existingIds = reads
-      .filter(function(r) { return String(r['UserID']) === String(session.userId) })
-      .map(function(r) { return String(r['DocID']) })
-    var toMark = docIds.filter(function(id) { return existingIds.indexOf(String(id)) === -1 })
-    toMark.forEach(function(id) {
-      addRow(SHEETS.DA_DOC, {
-        'UserID': session.userId,
-        'DocID': id,
-        'Thời gian': new Date().toISOString(),
-      })
+    var toDelete = reads.filter(function(r) {
+      return String(r['UserID']) === String(session.userId) && docIds.indexOf(String(r['DocID'])) !== -1
     })
-    return { success: true, marked: toMark.length }
+    toDelete.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
+    if (toDelete.length > 0) invalidateSheetCache(SHEETS.DA_DOC)
+    return { success: true, marked: toDelete.length }
   })
 }
 

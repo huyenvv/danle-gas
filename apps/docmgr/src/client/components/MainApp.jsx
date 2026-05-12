@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'rea
 import { useAuth } from '../context/AuthContext.jsx'
 import gasCall from '../gasClient.js'
 import { dataCache, prefetchLookups, refreshLookups, startPolling, stopPolling } from '../utils/dataCache.js'
-import { viMatch } from '../utils/viSearch.js'
 import { formatCurrency, formatDate, statusColor } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
@@ -51,7 +50,9 @@ export default function MainApp() {
 
   // Filters
   const [filters, setFilters]         = useState({})
-  const [searchInput, setSearchInput] = useState('')
+  const [searchInput, setSearchInput] = useState('')   // controlled input value
+  const [searchKeyword, setSearchKeyword] = useState('') // committed server keyword
+  const searchKeywordRef = useRef('')
 
   // Modals
   const [docModal, setDocModal]       = useState(null)   // null | { mode: 'create'|'edit', doc? }
@@ -63,8 +64,8 @@ export default function MainApp() {
   // Collapsed category groups
   const [collapsed, setCollapsed]     = useState({})
 
-  // Read/unread tracking
-  const [readDocIds, setReadDocIds]   = useState(new Set())
+  // Unread tracking (DA_DOC stores unread records)
+  const [unreadDocIds, setUnreadDocIds] = useState(new Set())
   const [selectedIds, setSelectedIds] = useState(new Set())
 
   // Sidebar collapse — persisted to localStorage
@@ -80,19 +81,29 @@ export default function MainApp() {
     })
   }
 
-  const loadDocs = useCallback(async ({ silent = false } = {}) => {
+  const failCountRef = useRef(0)
+
+  const loadDocs = useCallback(async ({ silent = false, keyword = '' } = {}) => {
     if (!silent) { setLoading(true); setError('') }
     try {
+      const filters = keyword ? { keyword } : {}
       const [docsRes, statsRes] = await Promise.all([
-        gasCall('api_getDocuments', session.token, {}),
+        gasCall('api_getDocuments', session.token, filters),
         gasCall('api_getDocumentStats', session.token),
       ])
       const nextDocs = (docsRes && docsRes.data) ? docsRes.data : []
       setAllDocs(nextDocs)
-      dataCache.set('docs', nextDocs)
+      if (!keyword) dataCache.set('docs', nextDocs) // only cache unfiltered results
       setStats(statsRes || {})
+      failCountRef.current = 0
     } catch (err) {
-      if (!silent) setError(err.message)
+      failCountRef.current++
+      if (!silent) {
+        setError(err.message)
+      } else if (failCountRef.current >= 3) {
+        showToast('Lỗi tải dữ liệu liên tục. Thử tải lại trang.', 'error')
+        failCountRef.current = 0
+      }
     } finally {
       if (!silent) setLoading(false)
     }
@@ -121,26 +132,43 @@ export default function MainApp() {
   }, [])
 
   useEffect(() => {
-    prefetchLookups(session.token).then(setLookups).catch(() => {})
-    loadDocs()
-    gasCall('api_getReadDocIds', session.token).then(r => setReadDocIds(new Set((r.readIds || []).map(String)))).catch(() => {})
-    gasCall('api_getConfig', session.token, 'COMPANY_NAME').then(r => { if (r && r.value) setCompanyName(r.value) }).catch(() => {})
+    // Single GAS call for all initial data (replaces 4+ parallel calls)
+    gasCall('api_getInitialData', session.token).then(r => {
+      if (r.lookups) { setLookups(r.lookups); dataCache.set('lookups', r.lookups) }
+      const nextDocs = r.docs || []
+      setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
+      if (r.stats) setStats(r.stats)
+      if (r.unreadIds) setUnreadDocIds(new Set(r.unreadIds.map(String)))
+      if (r.companyName) setCompanyName(r.companyName)
+      failCountRef.current = 0
+      setLoading(false)
+    }).catch(() => {
+      // Fallback: try individual calls if combined API fails
+      prefetchLookups(session.token).then(setLookups).catch(() => {})
+      loadDocs()
+      gasCall('api_getUnreadDocIds', session.token).then(r2 => setUnreadDocIds(new Set((r2.unreadIds || []).map(String)))).catch(() => {})
+    })
 
     // Background polling via dataCache (60s interval)
     startPolling(session.token)
 
     // Subscribe to polling updates
     const unsubDocs = dataCache.subscribe('docs', data => {
-      if (data) setAllDocs(data)
+      // Don't overwrite server-search results with polling data
+      if (data && !searchKeywordRef.current) setAllDocs(data)
     })
     const unsubLookups = dataCache.subscribe('lookups', data => {
       if (data) setLookups(data)
+    })
+    const unsubUnread = dataCache.subscribe('unreadIds', data => {
+      if (data) setUnreadDocIds(new Set(data.map(String)))
     })
 
     return () => {
       stopPolling()
       unsubDocs()
       unsubLookups()
+      unsubUnread()
     }
   }, [session])
 
@@ -166,30 +194,38 @@ export default function MainApp() {
 
   const docs = useMemo(() => {
     let result = [...allDocs]
-    if (searchInput) {
-      result = result.filter(d =>
-        viMatch(d['Tên hồ sơ'], searchInput) ||
-        viMatch(d['Số hồ sơ'], searchInput) ||
-        viMatch(d['Dự án (Phòng ban)'], searchInput) ||
-        viMatch(d['Nhà cung cấp (Nơi ban hành)'], searchInput) ||
-        viMatch(d['Ghi chú'], searchInput) ||
-        viMatch(d['Phụ trách'], searchInput)
-      )
-    }
+    // Search is server-side (triggered on Enter) — no client-side text filter here
     if (filters.danhMucId) result = result.filter(d => String(d['Danh mục']) === String(filters.danhMucId))
     if (filters.tinhTrang) result = result.filter(d => d['Tình trạng'] === filters.tinhTrang)
     if (filters.duAn) result = result.filter(d => d['Dự án (Phòng ban)'] === filters.duAn)
     if (filters.nhaCungCap) result = result.filter(d => d['Nhà cung cấp (Nơi ban hành)'] === filters.nhaCungCap)
     if (filters.phuTrach) result = result.filter(d => parseAssignees(d['Phụ trách']).includes(String(filters.phuTrach)))
-    if (filters.readStatus === 'unread') result = result.filter(d => !readDocIds.has(String(d.ID)))
-    if (filters.readStatus === 'read')   result = result.filter(d => readDocIds.has(String(d.ID)))
+    if (filters.readStatus === 'unread') result = result.filter(d => unreadDocIds.has(String(d.ID)))
+    if (filters.readStatus === 'read')   result = result.filter(d => !unreadDocIds.has(String(d.ID)))
+    if (filters.myWork) {
+      const me = session.username
+      const meId = String(session.userId)
+      const role = session.role
+      if (role === 'Giám đốc') {
+        result = result.filter(d => d['Tình trạng'] === 'Chờ duyệt')
+      } else if (role === 'Văn thư') {
+        result = result.filter(d => d['Người tạo'] === me)
+      } else {
+        // Nhân viên / Trưởng phòng: Phụ trách hoặc Phối hợp
+        result = result.filter(d => {
+          const pt = parseAssignees(d['Phụ trách'])
+          const ph = parseAssignees(d['Người phối hợp'])
+          return pt.includes(meId) || pt.includes(me) || ph.includes(meId) || ph.includes(me)
+        })
+      }
+    }
     return result
-  }, [allDocs, searchInput, filters, readDocIds])
+  }, [allDocs, filters, unreadDocIds])
 
-  // Bell count = unread docs from full unfiltered list (no search/filter applied)
+  // Bell count = unread docs (DA_DOC has record = unread)
   const unreadCount = useMemo(
-    () => allDocs.filter(d => !readDocIds.has(String(d.ID))).length,
-    [allDocs, readDocIds]
+    () => unreadDocIds.size,
+    [unreadDocIds]
   )
 
   // Detect newly arrived unread docs for bell animation
@@ -204,7 +240,11 @@ export default function MainApp() {
     try {
       const ids = [...selectedIds]
       await gasCall('api_markMultipleAsRead', session.token, ids)
-      setReadDocIds(prev => new Set([...prev, ...ids.map(String)]))
+      setUnreadDocIds(prev => {
+        const next = new Set(prev)
+        ids.forEach(id => next.delete(String(id)))
+        return next
+      })
       setSelectedIds(new Set())
     } catch (err) {
       alert('Lỗi: ' + err.message)
@@ -235,6 +275,7 @@ export default function MainApp() {
         onCreateDoc={canCreate ? () => { setPage('documents'); setDocModal({ mode: 'create' }) } : undefined}
         collapsed={sidebarCollapsed}
         role={session.role}
+        canCreateSubCat={session.canCreateSubCat}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -257,14 +298,30 @@ export default function MainApp() {
 
               {/* Toolbar */}
               <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap gap-3 items-center">
-                <div className="relative flex-1 min-w-0 max-w-64">
+                <div className="relative flex-1 min-w-0 max-w-72">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>search</span>
                   <input
-                    className="bg-surface-container-low border-none rounded-xl pl-9 pr-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/20"
-                    placeholder="Tìm kiếm hồ sơ..."
+                    className={`bg-surface-container-low border-none rounded-xl pl-9 pr-8 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/20 ${searchKeyword ? 'ring-2 ring-primary/30' : ''}`}
+                    placeholder="Tìm kiếm hồ sơ… (Enter)"
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        const kw = searchInput.trim()
+                        setSearchKeyword(kw); searchKeywordRef.current = kw
+                        loadDocs({ keyword: kw })
+                      }
+                    }}
                   />
+                  {searchKeyword && (
+                    <button
+                      type="button"
+                      onClick={() => { setSearchInput(''); setSearchKeyword(''); searchKeywordRef.current = ''; loadDocs() }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* hidden — kept for bell-click programmatic filter */}
@@ -272,6 +329,27 @@ export default function MainApp() {
                   <option value="">Tất cả danh mục</option>
                   {lookups.danhMuc.map(c => <option key={c.ID} value={c.ID}>{c['Tên danh mục']}</option>)}
                 </select>
+
+                {session.role !== 'admin' && session.role !== 'Quản trị viên' && (
+                <button
+                  onClick={() => {
+                    if (filters.myWork) {
+                      setFilters({ myWork: false })
+                    } else {
+                      setFilters({ myWork: true })
+                      if (searchKeyword) { setSearchInput(''); setSearchKeyword(''); searchKeywordRef.current = ''; loadDocs() }
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    filters.myWork
+                      ? 'bg-primary text-on-primary shadow-md3-1'
+                      : 'bg-surface-container-low text-on-surface-variant hover:bg-primary/10 hover:text-primary'
+                  }`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>assignment_ind</span>
+                  Công việc của tôi
+                </button>
+                )}
 
                 <select
                   className="min-w-0 bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-on-surface"
@@ -365,7 +443,7 @@ export default function MainApp() {
                 usersMap={usersMap}
                 collapsed={collapsed}
                 danhMuc={lookups.danhMuc}
-                readDocIds={readDocIds}
+                unreadDocIds={unreadDocIds}
                 selectedIds={selectedIds}
                 rootDisplayCounts={rootDisplayCounts}
                 role={session.role}
@@ -410,7 +488,7 @@ export default function MainApp() {
           )}
 
           {page === 'categories' && (
-            <CategoryManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} />
+            <CategoryManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} session={session} />
           )}
 
           {page === 'groups' && isAdmin && (
@@ -478,7 +556,7 @@ export default function MainApp() {
           token={session.token}
           session={session}
           onClose={() => {
-            setReadDocIds(prev => new Set([...prev, String(previewDoc.ID)]))
+            setUnreadDocIds(prev => { const next = new Set(prev); next.delete(String(previewDoc.ID)); return next })
             setPreviewDoc(null)
           }}
           onEdit={() => {
@@ -500,7 +578,7 @@ export default function MainApp() {
 }
 
 // ── Grouped document table (by category tree) with per-root load more ──────
-function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed, danhMuc, readDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
+function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
   // Build docs-by-category map for ALL filtered docs (filters stay offline)
   const docsMap = {}
   docs.forEach(doc => {
@@ -604,7 +682,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
               return (
                 <Fragment key={cat.ID}>
                   <CatGroup cat={cat} depth={0} rootId={cat.ID}
-                    danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} readDocIds={readDocIds}
+                    danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} unreadDocIds={unreadDocIds}
                     visibleDocIds={rootVisibleIdsMap[rootKey] || new Set()}
                     indexMap={rootVisibleIndexMap[rootKey] || {}}
                     selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
@@ -637,7 +715,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
                   </td>
                 </tr>
                 {!collapsed['__uncat__'] && uncategorizedVisible.map(doc => (
-                  <DocRow key={doc.ID} doc={doc} depth={0} readDocIds={readDocIds} selectedIds={selectedIds}
+                  <DocRow key={doc.ID} doc={doc} depth={0} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
                     rowIndex={uncategorizedIndexMap[String(doc.ID)]}
                     onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
                 ))}
@@ -671,7 +749,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
   )
 }
 
-function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, readDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
+function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
   const total = subtreeDocCount(cat.ID)
   const visibleTotal = visibleSubtreeDocCount(cat.ID, rootId)
   if (depth > 0 && visibleTotal === 0) return null
@@ -695,7 +773,7 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, readDocIds,
       </tr>
       {!isCollapsed && children.map(child => (
         <CatGroup key={child.ID} cat={child} depth={depth + 1} rootId={rootId}
-          danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} readDocIds={readDocIds}
+          danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} unreadDocIds={unreadDocIds}
           visibleDocIds={visibleDocIds}
           indexMap={indexMap}
           selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
@@ -704,7 +782,7 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, readDocIds,
         />
       ))}
       {!isCollapsed && directDocs.map(doc => (
-        <DocRow key={doc.ID} doc={doc} depth={depth + 1} readDocIds={readDocIds} selectedIds={selectedIds}
+        <DocRow key={doc.ID} doc={doc} depth={depth + 1} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
           rowIndex={indexMap[String(doc.ID)]}
           onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
         ))}
@@ -712,8 +790,8 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, readDocIds,
   )
 }
 
-function DocRow({ doc, depth, rowIndex, readDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role }) {
-  const isRead = readDocIds.has(String(doc.ID))
+function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role }) {
+  const isRead = !unreadDocIds.has(String(doc.ID))
   const isSelected = selectedIds.has(String(doc.ID))
   const indent = depth * 16 + 16
   const { showToast } = useToast()

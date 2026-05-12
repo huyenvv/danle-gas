@@ -218,11 +218,24 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     }
   }
 
-  function openGiaoViec() {
-    setGiaoViecForm({ phuTrach: '', phoiHop: parseAssignees(doc['Người phối hợp']) })
+  function openGiaoViec(mode) {
+    if (mode === 'nhanViec') {
+      // Phụ trách nhận việc: chọn phối hợp rồi chuyển trạng thái
+      setGiaoViecForm({ phoiHop: parseAssignees(doc['Người phối hợp']), mode: 'nhanViec' })
+    } else {
+      // Giám đốc/Admin giao việc
+      setGiaoViecForm({ phuTrach: '', phoiHop: parseAssignees(doc['Người phối hợp']), mode: 'giaoViec' })
+    }
   }
 
   async function submitGiaoViec() {
+    if (giaoViecForm.mode === 'nhanViec') {
+      // Nhận việc + cập nhật phối hợp
+      await handleTransition('nhanViec', {
+        'Người phối hợp': giaoViecForm.phoiHop,
+      })
+      return
+    }
     if (!giaoViecForm.phuTrach) { showToast('Phải chọn người phụ trách', 'error'); return }
     await handleTransition('giaoViec', {
       'Phụ trách': giaoViecForm.phuTrach,
@@ -384,7 +397,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     }
                     return (
                       <button key={a.key} disabled={transitioning}
-                        onClick={() => a.key === 'giaoViec' ? openGiaoViec() : handleTransition(a.key)}
+                        onClick={() => (a.key === 'giaoViec' || (a.key === 'nhanViec' && isPhuTrach)) ? openGiaoViec(a.key) : handleTransition(a.key)}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-medium transition-colors disabled:opacity-50 shadow-md3-1 ${colorMap[a.color] || colorMap.primary}`}>
                         <Icon name={a.icon} size={18} />
                         {a.label}
@@ -395,9 +408,15 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
               )}
 
               {/* Giao việc inline form */}
-              {giaoViecForm && (
-                <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3 mt-2">
-                  <p className="text-xs font-semibold text-primary uppercase tracking-wide">Giao việc</p>
+              {giaoViecForm && (() => {
+                const isNhanViec = giaoViecForm.mode === 'nhanViec'
+                const accent = isNhanViec ? 'blue-600' : 'primary'
+                return (
+                <div className={`${isNhanViec ? 'bg-blue-50 border-blue-200' : 'bg-primary/5 border-primary/20'} border rounded-2xl p-4 space-y-3 mt-2`}>
+                  <p className={`text-xs font-semibold ${isNhanViec ? 'text-blue-600' : 'text-primary'} uppercase tracking-wide`}>
+                    {isNhanViec ? 'Nhận việc — chọn người phối hợp' : 'Giao việc'}
+                  </p>
+                  {!isNhanViec && (
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phụ trách *</label>
                     <select className="w-full bg-surface-container-low border-none rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -409,6 +428,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       ))}
                     </select>
                   </div>
+                  )}
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phối hợp</label>
                     <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -440,12 +460,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     <button onClick={() => setGiaoViecForm(null)}
                       className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
                     <button onClick={submitGiaoViec} disabled={transitioning}
-                      className="px-4 py-1.5 text-xs bg-primary text-on-primary rounded-full disabled:opacity-50 hover:bg-primary-700 transition-colors shadow-md3-1">
-                      {transitioning ? 'Đang xử lý…' : 'Xác nhận giao việc'}
+                      className={`px-4 py-1.5 text-xs ${isNhanViec ? 'bg-blue-600' : 'bg-primary'} text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1`}>
+                      {transitioning ? 'Đang xử lý…' : isNhanViec ? 'Xác nhận nhận việc' : 'Xác nhận giao việc'}
                     </button>
                   </div>
                 </div>
-              )}
+                )
+              })()}
             </div>
             )}
 

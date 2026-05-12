@@ -111,19 +111,12 @@ export function startPolling(token) {
   stopPolling()
   _pollTimer = setInterval(async () => {
     try {
-      // Refresh docs
-      const docsRes = await gasCall('api_getDocuments', token, {})
-      dataCache.set('docs', docsRes.data || [])
-
-      // Refresh unread count
-      const unreadRes = await gasCall('api_getUnreadCount', token)
-      dataCache.set('unreadCount', unreadRes.count || 0)
-
-      // Refresh lookups if stale
-      if (dataCache.isStale('lookups')) {
-        const lookups = await gasCall('api_getAllData', token)
-        dataCache.set('lookups', lookups)
-      }
+      // Single GAS call for all polling data (replaces 3 parallel calls)
+      const opts = { includeLookups: dataCache.isStale('lookups') }
+      const res = await gasCall('api_pollUpdates', token, opts)
+      dataCache.set('docs', res.docs || [])
+      dataCache.set('unreadIds', res.unreadIds || [])
+      if (res.lookups) dataCache.set('lookups', res.lookups)
     } catch (_) {
       // Silently ignore polling errors
     }

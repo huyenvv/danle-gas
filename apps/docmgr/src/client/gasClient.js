@@ -19,12 +19,20 @@ function _isRetryableError(msg) {
     text.includes('too many') ||
     text.includes('service invoked too many times') ||
     text.includes('try again later') ||
-    text.includes('resource has been exhausted')
+    text.includes('resource has been exhausted') ||
+    text.includes('service unavailable') ||
+    text.includes('internal error') ||
+    text.includes('server error') ||
+    text.includes('service error') ||
+    text.includes('backend error') ||
+    text.includes('network') ||
+    text.includes('failed to fetch') ||
+    text.includes('we\'re sorry, a server error occurred')
   )
 }
 
 function _getRetryPolicy(fnName) {
-  if (fnName === 'api_getDocuments' || fnName === 'api_getDocumentStats') {
+  if (fnName === 'api_getInitialData' || fnName === 'api_getDocuments' || fnName === 'api_getDocumentStats') {
     return { retries: 5, baseDelayMs: 1500 }
   }
   return { retries: 2, baseDelayMs: 1000 }
@@ -102,7 +110,7 @@ export default gasCall
 // ── Dev mock ─────────────────────────────────────────────────────────────────
 let _mockSession = null
 let _nextId = 100
-const _mockReadIds = new Set(['1'])
+const _mockUnreadIds = new Set()
 const _mockConfig = {}
 const _mockComments = []
 let _nextCommentId = 1
@@ -183,8 +191,8 @@ async function mockCall(fn, ...args) {
         _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true }
       }
       return { ..._mockSession }
-    case 'api_getAllData':
-      return {
+    case 'api_getAllData': {
+      const _lookups = {
         danhMuc:     _mockData.danhMuc.map(i => ({ ...i })),
         nhom:        _mockData.nhom.map(i => ({ ...i })),
         duAn:        _mockData.duAn.map(i => ({ ...i })),
@@ -195,6 +203,49 @@ async function mockCall(fn, ...args) {
           { ID: 3, 'Tên đăng nhập': 'truongphong',  'Tên nhân viên': 'Trần Thị Bình',   'Email': 'ttb@test.com',    'Quyền': 'Trưởng phòng' },
         ],
       }
+      return _lookups
+    }
+    case 'api_getInitialData': {
+      const docs = _mockData.docs.map(d => ({ ...d }))
+      const byStatus = {}
+      let totalValue = 0
+      docs.forEach(d => { const s = d['Tình trạng'] || 'Không rõ'; byStatus[s] = (byStatus[s] || 0) + 1; totalValue += Number(d['Giá trị HĐ']) || 0 })
+      return {
+        lookups: {
+          danhMuc: _mockData.danhMuc.map(i => ({ ...i })),
+          nhom: _mockData.nhom.map(i => ({ ...i })),
+          duAn: _mockData.duAn.map(i => ({ ...i })),
+          nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
+          users: [
+            { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
+            { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
+            { ID: 3, 'Tên đăng nhập': 'truongphong', 'Tên nhân viên': 'Trần Thị Bình', 'Email': 'ttb@test.com', 'Quyền': 'Trưởng phòng' },
+          ],
+        },
+        docs,
+        stats: { total: docs.length, byStatus, totalValue },
+        unreadIds: [..._mockUnreadIds],
+        companyName: _mockConfig['COMPANY_NAME'] || '',
+      }
+    }
+    case 'api_pollUpdates': {
+      const pollDocs = _mockData.docs.map(d => ({ ...d }))
+      const res = { docs: pollDocs, unreadIds: [..._mockUnreadIds] }
+      if (args[1] && args[1].includeLookups) {
+        res.lookups = {
+          danhMuc: _mockData.danhMuc.map(i => ({ ...i })),
+          nhom: _mockData.nhom.map(i => ({ ...i })),
+          duAn: _mockData.duAn.map(i => ({ ...i })),
+          nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
+          users: [
+            { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
+            { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
+            { ID: 3, 'Tên đăng nhập': 'truongphong', 'Tên nhân viên': 'Trần Thị Bình', 'Email': 'ttb@test.com', 'Quyền': 'Trưởng phòng' },
+          ],
+        }
+      }
+      return res
+    }
     case 'api_getDocuments':
       return { data: _mockData.docs.map(d => ({ ...d })) }
     case 'api_getDocumentStats': {
@@ -255,15 +306,15 @@ async function mockCall(fn, ...args) {
     case 'api_removeUserRole':
       return { success: true }
     case 'api_markAsRead':
-      _mockReadIds.add(String(args[1]))
+      _mockUnreadIds.delete(String(args[1]))
       return { success: true }
-    case 'api_getReadDocIds':
-      return { readIds: [..._mockReadIds] }
+    case 'api_getUnreadDocIds':
+      return { unreadIds: [..._mockUnreadIds] }
     case 'api_markMultipleAsRead':
-      ;(args[1] || []).forEach(id => _mockReadIds.add(String(id)))
+      ;(args[1] || []).forEach(id => _mockUnreadIds.delete(String(id)))
       return { success: true, marked: (args[1] || []).length }
     case 'api_getUnreadCount':
-      return { count: Math.max(0, _mockData.docs.length - _mockReadIds.size) }
+      return { count: _mockUnreadIds.size }
     case 'api_getAuditLogs':
       return { data: [
         { ID: 1, 'Thời gian': new Date().toISOString(), 'Người dùng': 'admin', 'Email': 'admin@test.com', 'Hành động': 'Tạo', 'Loại': 'Hồ sơ', 'Đối tượng': 'Hợp đồng mua sắm', 'Chi tiết': '{}' },
