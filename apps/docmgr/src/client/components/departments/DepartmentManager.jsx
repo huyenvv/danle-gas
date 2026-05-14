@@ -81,7 +81,7 @@ export default function DepartmentManager({ token, lookups, onUpdate }) {
         <span className="text-sm text-on-surface-variant">{filtered.length} phòng ban</span>
         <div className="ml-auto">
           <button onClick={openAdd}
-            className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
+            className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
             <Icon name="add" size={18} />
             Thêm phòng ban
           </button>
@@ -159,7 +159,7 @@ export default function DepartmentManager({ token, lookups, onUpdate }) {
                 const active = allowed.map(String).includes(String(cat.ID))
                 return (
                   <button key={cat.ID} type="button"
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-accent text-white' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
                     onClick={() => {
                       let cur = []
                       try { const v = form['Danh mục cho phép']; if (v && v.charAt(0) === '[') cur = JSON.parse(v) } catch(_) {}

@@ -19,7 +19,7 @@ export const fieldCls =
   'space-y-1'
 
 export const btnPrimary =
-  'flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1 disabled:opacity-50'
+  'flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-50'
 
 export const btnOutline =
   'flex items-center gap-2 border border-outline-variant text-on-surface-variant px-4 py-2 rounded-full text-sm font-medium hover:bg-surface-container transition-colors disabled:opacity-50'

@@ -480,8 +480,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
             {/* ── RIGHT COLUMN ── */}
             <div className="space-y-5">
-              {/* Dự án (Phòng ban) */}
-              <Field label="Dự án (Phòng ban)">
+              {/* Dự án (Nơi nhận) */}
+              <Field label="Dự án (Nơi nhận)">
                 <div className="flex gap-2">
                   <select className={iCls + ' flex-1'} value={form['Dự án (Phòng ban)']} onChange={e => setField('Dự án (Phòng ban)', e.target.value)}>
                     <option value="">-- Chọn dự án --</option>
@@ -493,15 +493,15 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <button type="button"
                     onClick={() => { setQuickAdd('duAn'); setQuickForm({ 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '' }) }}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors shrink-0"
-                    title="Thêm dự án mới">
+                    title="Thêm dự án / nơi nhận mới">
                     <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add_circle</span>
                   </button>
                   )}
                 </div>
               </Field>
 
-              {/* Nhà cung cấp (Nơi ban hành) */}
-              <Field label="Nhà cung cấp (Nơi ban hành)">
+              {/* NCC (Nơi gửi) */}
+              <Field label="NCC (Nơi gửi)">
                 <div className="flex gap-2">
                   <select className={iCls + ' flex-1'} value={form['Nhà cung cấp (Nơi ban hành)']} onChange={e => setField('Nhà cung cấp (Nơi ban hành)', e.target.value)}>
                     <option value="">-- Chọn NCC --</option>
@@ -513,7 +513,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <button type="button"
                     onClick={() => { setQuickAdd('nhaCungCap'); setQuickForm({ 'Tên NCC viết tắt': '', 'Tên NCC đầy đủ': '' }) }}
                     className="w-9 h-9 flex items-center justify-center rounded-xl bg-secondary/10 text-secondary hover:bg-secondary/20 transition-colors shrink-0"
-                    title="Thêm NCC mới">
+                    title="Thêm NCC / nơi gửi mới">
                     <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add_circle</span>
                   </button>
                   )}
@@ -524,7 +524,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               {quickAdd && (
                 <div className="bg-secondary/5 border border-secondary/20 rounded-2xl p-4 space-y-3">
                   <p className="text-xs font-semibold text-secondary">
-                    + Thêm nhanh {quickAdd === 'duAn' ? 'dự án' : 'nhà cung cấp'}
+                    + Thêm nhanh {quickAdd === 'duAn' ? 'dự án / nơi nhận' : 'NCC / nơi gửi'}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {quickAdd === 'duAn' ? (<>
@@ -631,7 +631,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
                     notifyTargetRef.current = 'directors'; document.getElementById('_docModalForm')?.requestSubmit()
                   }}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                  className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
                   {uploading ? 'Đang lưu…' : 'Trình duyệt'}
                 </button>
@@ -639,7 +639,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               </>
             ) : (
               <button type="submit" disabled={uploading}
-                className="flex items-center gap-2 px-6 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                   {uploading ? 'sync' : 'save'}
                 </span>

@@ -11,7 +11,7 @@ function AppInner() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-surface-container-low gap-4">
         <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
-          <span className="material-symbols-outlined text-on-primary text-2xl" style={{ fontVariationSettings: '"FILL" 1' }}>folder_special</span>
+          <span className="material-symbols-outlined text-on-primary text-2xl" style={{ fontVariationSettings: '"FILL" 1' }}>description</span>
         </div>
         <span className="text-on-surface-variant text-sm">Đang khởi tạo…</span>
       </div>
@@ -30,7 +30,7 @@ function AppInner() {
           <p className="text-xs text-on-surface-variant">Nếu quản trị viên vừa cấp quyền cho bạn, hãy tải lại trang để cập nhật.</p>
           <button
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1"
           >
             <span className="material-symbols-outlined text-base">refresh</span>
             Tải lại trang

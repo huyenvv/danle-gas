@@ -128,7 +128,7 @@ export default function FolderPicker({ token, currentFolderId, onSelect, onClose
               Hủy
             </button>
             <button onClick={handleSelect} disabled={!current}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-primary text-on-primary rounded-full font-medium hover:bg-primary-700 transition-colors shadow-md3-1 disabled:opacity-60">
+              className="flex items-center gap-1.5 px-4 py-2 text-sm bg-accent text-white rounded-full font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-60">
               <Icon name="check" size={16} />
               Chọn thư mục này
             </button>

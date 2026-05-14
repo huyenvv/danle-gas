@@ -26,7 +26,7 @@ export default function PageHeader({ icon, title, subtitle, action }) {
       {action && (
         <button
           onClick={action.onClick}
-          className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1 shrink-0"
+          className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 shrink-0"
         >
           {action.icon && <Icon name={action.icon} size={18} />}
           {action.label}

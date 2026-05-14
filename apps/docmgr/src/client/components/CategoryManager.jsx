@@ -153,7 +153,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
         <div className="ml-auto">
           {isAdminRole && (
             <button onClick={openAdd}
-              className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
+              className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
               <Icon name="add" size={18} />
               Thêm danh mục
             </button>
@@ -225,7 +225,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
                   onClick={() => setForm(f => ({ ...f, 'Icon': icon }))}
                   className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
                     form['Icon'] === icon
-                      ? 'bg-primary text-on-primary shadow-md3-1'
+                      ? 'bg-accent text-white shadow-md3-1'
                       : 'bg-surface-container-low text-on-surface-variant hover:bg-primary/10 hover:text-primary'
                   }`}
                 >
@@ -258,7 +258,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
                 const label = u['Email'] ? `${name} (${u['Email']})` : name
                 return (
                   <button key={u.ID} type="button"
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${active ? 'bg-accent text-white' : 'bg-surface-container text-on-surface-variant hover:bg-primary/10'}`}
                     onClick={() => {
                       const next = active ? current.filter(x => x !== String(u.ID)) : [...current, String(u.ID)]
                       setForm(f => ({ ...f, 'Người được xem': next.length ? JSON.stringify(next) : '' }))

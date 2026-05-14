@@ -183,7 +183,7 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
             </div>
 
             <button type="submit" disabled={saving || !rootFolderId}
-              className="flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1 disabled:opacity-60">
+              className="flex items-center gap-2 bg-accent text-white px-5 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-60">
               <Icon name="save" size={16} />
               {saving ? 'Đang lưu…' : 'Lưu cài đặt'}
             </button>
@@ -207,7 +207,7 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
           <MailTabs templates={templates} onSetTpl={setTpl} />
 
           <button type="button" onClick={handleSaveMail} disabled={savingMail}
-            className="flex items-center gap-2 bg-secondary text-on-secondary px-5 py-2 rounded-full text-sm font-medium hover:opacity-90 transition-opacity shadow-md3-1 disabled:opacity-60">
+            className="flex items-center gap-2 bg-accent text-white px-5 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-60">
             <Icon name="save" size={16} />
             {savingMail ? 'Đang lưu…' : 'Lưu cài đặt email'}
           </button>

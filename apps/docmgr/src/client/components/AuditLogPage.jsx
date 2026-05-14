@@ -4,14 +4,14 @@ import Icon from './common/Icon.jsx'
 import { formatDate } from '../utils/format.js'
 
 const ACTION_COLORS = {
-  'Tạo':        'bg-emerald-100 text-emerald-800',
-  'Sửa':        'bg-primary/10 text-primary',
-  'Xóa':        'bg-error-container text-on-error-container',
-  'Đăng nhập':  'bg-secondary/10 text-secondary',
-  'Phân quyền': 'bg-amber-100 text-amber-800',
-  'Xóa quyền':  'bg-orange-100 text-orange-800',
-  'Workflow':   'bg-purple-100 text-purple-800',
-  'Giao việc':  'bg-teal-100 text-teal-800',
+  'Tạo':        'text-emerald-700',
+  'Sửa':        'text-primary',
+  'Xóa':        'text-error',
+  'Đăng nhập':  'text-secondary',
+  'Phân quyền': 'text-amber-700',
+  'Xóa quyền':  'text-orange-700',
+  'Workflow':   'text-purple-700',
+  'Giao việc':  'text-teal-700',
 }
 
 const TYPE_COLORS = {
@@ -25,6 +25,14 @@ const TYPE_COLORS = {
 
 const PAGE_SIZE = 20
 
+function formatDetail(val) {
+  if (!val) return null
+  try {
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val
+    return JSON.stringify(parsed, null, 2)
+  } catch { return String(val) }
+}
+
 export default function AuditLogPage({ token }) {
   const [logs, setLogs]       = useState([])
   const [loading, setLoading] = useState(true)
@@ -32,11 +40,13 @@ export default function AuditLogPage({ token }) {
   const [error, setError]     = useState('')
   const [filterType, setFilterType] = useState('')
   const [search, setSearch] = useState('')
+  const [searchCommitted, setSearchCommitted] = useState('')
   const [hasMore, setHasMore] = useState(false)
   const [total, setTotal] = useState(0)
   const [types, setTypes] = useState([])
+  const [selected, setSelected] = useState(null)
 
-  useEffect(() => { loadLogs({ reset: true }) }, [token, filterType, search])
+  useEffect(() => { loadLogs({ reset: true }) }, [token, searchCommitted])
 
   async function loadLogs({ reset = false } = {}) {
     const nextOffset = reset ? 0 : logs.length
@@ -50,8 +60,7 @@ export default function AuditLogPage({ token }) {
       const res = await gasCall('api_getAuditLogs', token, {
         offset: nextOffset,
         limit: PAGE_SIZE,
-        type: filterType,
-        keyword: search,
+        keyword: searchCommitted,
       })
       const incoming = res.data || []
       setLogs(prev => reset ? incoming : [...prev, ...incoming])
@@ -69,6 +78,8 @@ export default function AuditLogPage({ token }) {
     }
   }
 
+  const filtered = filterType ? logs.filter(l => l['Loại'] === filterType) : logs
+
   return (
     <div className="space-y-5">
       {/* Toolbar */}
@@ -80,6 +91,7 @@ export default function AuditLogPage({ token }) {
             placeholder="Tìm kiếm..."
             value={search}
             onChange={e => { setSearch(e.target.value) }}
+            onKeyDown={e => { if (e.key === 'Enter') setSearchCommitted(search) }}
           />
         </div>
         <select
@@ -90,11 +102,11 @@ export default function AuditLogPage({ token }) {
           <option value="">Tất cả loại</option>
           {types.map(t => <option key={t}>{t}</option>)}
         </select>
-        <span className="text-sm text-on-surface-variant whitespace-nowrap">{total} bản ghi</span>
+        <span className="text-sm text-on-surface-variant whitespace-nowrap">{filtered.length} bản ghi</span>
         <button onClick={() => loadLogs({ reset: true })}
-          className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors"
+          className="ml-auto w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors"
           title="Làm mới">
-          <Icon name="refresh" size={20} />
+          <Icon name="refresh" size={16} />
         </button>
       </div>
 
@@ -110,26 +122,25 @@ export default function AuditLogPage({ token }) {
               <tr className="bg-surface-container-low border-b border-outline-variant">
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Thời gian</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Hành động</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Loại</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Đối tượng</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Nội dung</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Chi tiết</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {loading && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">
                   <div className="flex items-center justify-center gap-2">
                     <Icon name="sync" size={18} className="animate-spin" />
                     Đang tải...
                   </div>
                 </td></tr>
               )}
-              {!loading && logs.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không có bản ghi nào</td></tr>
+              {!loading && filtered.length === 0 && (
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">Không có bản ghi nào</td></tr>
               )}
-              {!loading && logs.map((log, i) => (
-                <tr key={i} className="hover:bg-surface-container-low transition-colors">
+              {!loading && filtered.map((log, i) => (
+                <tr key={i} onClick={() => setSelected(log)}
+                  className="hover:bg-surface-container-low transition-colors cursor-pointer">
                   <td className="px-4 py-3 text-on-surface-variant text-xs whitespace-nowrap">
                     {log['Thời gian'] ? formatDate(log['Thời gian']) : '—'}
                   </td>
@@ -152,23 +163,25 @@ export default function AuditLogPage({ token }) {
                     ) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[log['Hành động']] || 'bg-surface-container text-on-surface-variant'}`}>
-                      {log['Hành động'] || '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {log['Loại'] ? (
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[log['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>
-                        {log['Loại']}
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                      <span className={`font-semibold ${ACTION_COLORS[log['Hành động']] || 'text-on-surface-variant'}`}>
+                        {log['Hành động'] || '—'}
                       </span>
-                    ) : '—'}
+                      {log['Loại'] && (
+                        <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[log['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>
+                          {log['Loại']}
+                        </span>
+                      )}
+                      {log['Đối tượng'] && (
+                        <span className="text-on-surface font-medium truncate max-w-[200px]">"{log['Đối tượng']}"</span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-on-surface text-xs max-w-[160px] truncate">{log['Đối tượng'] || '—'}</td>
                   <td className="px-4 py-3 text-on-surface-variant text-xs max-w-[200px] truncate">{log['Chi tiết'] || '—'}</td>
                 </tr>
               ))}
               {!loading && loadingMore && (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-on-surface-variant">
+                <tr><td colSpan={4} className="px-4 py-6 text-center text-on-surface-variant">
                   <div className="flex items-center justify-center gap-2">
                     <Icon name="sync" size={18} className="animate-spin" />
                     Đang tải thêm...
@@ -178,10 +191,10 @@ export default function AuditLogPage({ token }) {
             </tbody>
           </table>
         </div>
-        {!loading && logs.length > 0 && (
+        {!loading && filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-outline-variant/40 bg-surface-container-lowest flex flex-col items-center gap-2">
             <span className="text-on-surface-variant text-xs">
-              Hiển thị {logs.length} / {total}
+              Hiển thị {filtered.length}{filterType ? ` (lọc từ ${logs.length})` : ''} / {total}
             </span>
             {hasMore && (
               <button
@@ -196,6 +209,70 @@ export default function AuditLogPage({ token }) {
           </div>
         )}
       </div>
+
+      {/* Detail Modal */}
+      {selected && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={() => setSelected(null)}>
+          <div className="bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-5xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/40">
+              <div className="flex items-center gap-2 text-sm">
+                <Icon name="history" size={20} className="text-primary" />
+                <span className={`font-semibold ${ACTION_COLORS[selected['Hành động']] || 'text-on-surface'}`}>{selected['Hành động']}</span>
+                {selected['Loại'] && (
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[selected['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>{selected['Loại']}</span>
+                )}
+                {selected['Đối tượng'] && (
+                  <span className="font-medium text-on-surface">"{selected['Đối tượng']}"</span>
+                )}
+              </div>
+              <button onClick={() => setSelected(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors">
+                <Icon name="close" size={20} className="text-on-surface-variant" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Thời gian</span>
+                  <p className="text-sm text-on-surface mt-0.5">{selected['Thời gian'] ? formatDate(selected['Thời gian']) : '—'}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Người dùng</span>
+                  <p className="text-sm text-on-surface mt-0.5">{selected['Người dùng'] || '—'}{selected['Email'] ? ` (${selected['Email']})` : ''}</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Hành động</span>
+                  <p className="mt-0.5">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[selected['Hành động']] || 'bg-surface-container text-on-surface-variant'}`}>
+                      {selected['Hành động'] || '—'}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Loại</span>
+                  <p className="mt-0.5">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[selected['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>
+                      {selected['Loại'] || '—'}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Đối tượng</span>
+                <p className="text-sm text-on-surface mt-0.5">{selected['Đối tượng'] || '—'}</p>
+              </div>
+              {selected['Chi tiết'] && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Chi tiết</span>
+                  <pre className="mt-1 bg-surface-container-low rounded-xl p-4 text-xs text-on-surface-variant whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[60vh] overflow-y-auto">
+                    {formatDetail(selected['Chi tiết'])}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

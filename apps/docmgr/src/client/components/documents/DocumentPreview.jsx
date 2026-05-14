@@ -258,8 +258,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     : noteText
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="relative bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="relative bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
         {transitioning && (
           <div className="absolute inset-0 z-20 bg-white/70 backdrop-blur-[1px] flex flex-col items-center justify-center gap-3">
@@ -371,7 +371,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 )}
                 {primaryGiaoViecAction && (
                 <button onClick={openGiaoViec} disabled={transitioning}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-primary text-on-primary hover:bg-primary-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-accent text-white hover:bg-accent-hover transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
                   <Icon name={primaryGiaoViecAction.icon} size={18} />
                   {primaryGiaoViecAction.label}
                 </button>
@@ -390,7 +390,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 <div className="flex flex-wrap gap-2 pt-1">
                   {workflowActions.map(a => {
                     const colorMap = {
-                      primary: 'bg-primary text-on-primary hover:bg-primary-700',
+                      primary: 'bg-accent text-white hover:bg-accent-hover',
                       blue: 'bg-blue-600 text-white hover:bg-blue-700',
                       emerald: 'bg-emerald-600 text-white hover:bg-emerald-700',
                       amber: 'bg-amber-500 text-white hover:bg-amber-600',
@@ -564,8 +564,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
             {/* Business Context */}
             <div className="p-4 border-b border-outline-variant">
               <div className="grid grid-cols-2 gap-3">
-                <InfoRow icon="account_tree" label="Dự án (Phòng ban)" value={doc['Dự án (Phòng ban)']} />
-                <InfoRow icon="inventory_2" label="NCC (Nơi ban hành)" value={doc['Nhà cung cấp (Nơi ban hành)']} />
+                <InfoRow icon="apartment" label="Dự án (Nơi nhận)" value={doc['Dự án (Phòng ban)']} />
+                <InfoRow icon="send" label="NCC (Nơi gửi)" value={doc['Nhà cung cấp (Nơi ban hành)']} />
                 {doc['Giá trị HĐ'] && (
                   <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
                 )}
@@ -703,7 +703,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   onChange={e => setCommentInput(e.target.value)}
                 />
                 <button type="submit" disabled={!commentInput.trim()}
-                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-primary text-on-primary hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0">
+                  className="w-9 h-9 flex items-center justify-center rounded-xl bg-accent text-white hover:opacity-90 disabled:opacity-40 transition-opacity shrink-0">
                   <Icon name="send" size={16} />
                 </button>
               </form>

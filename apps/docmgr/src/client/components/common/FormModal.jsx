@@ -44,7 +44,6 @@ export default function FormModal({
     <div
       ref={backdropRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
-      onMouseDown={e => { if (e.target === backdropRef.current) onClose() }}
     >
       <div
         className={`bg-white rounded-3xl shadow-md3-3 w-full ${maxWidth} flex flex-col max-h-[90vh] overflow-hidden`}
@@ -93,7 +92,7 @@ export default function FormModal({
             type="button"
             onClick={onSave}
             disabled={saving}
-            className="px-5 py-2 rounded-full bg-primary text-on-primary text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1 disabled:opacity-50 flex items-center gap-2"
+            className="px-5 py-2 rounded-full bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-50 flex items-center gap-2"
           >
             {saving && (
               <span className="w-4 h-4 border-2 border-on-primary/30 border-t-on-primary rounded-full animate-spin" />

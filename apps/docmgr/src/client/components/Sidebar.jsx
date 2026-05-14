@@ -4,8 +4,8 @@ const NAV_ITEMS = [
   { key: 'documents',   icon: 'description',   label: 'Hồ sơ',         admin: false, superAdmin: false },
   { key: 'categories',  icon: 'folder_open',   label: 'Danh mục',      admin: false, superAdmin: false, hiddenRoles: ['Văn thư'] },
   { key: 'groups',      icon: 'groups',        label: 'Nhóm',          admin: true,  superAdmin: false },
-  { key: 'suppliers',   icon: 'inventory_2',   label: 'Nhà cung cấp',  admin: false, superAdmin: false },
-  { key: 'projects',    icon: 'account_tree',  label: 'Dự án',         admin: false, superAdmin: false },
+  { key: 'suppliers',   icon: 'send',           label: 'NCC / Nơi gửi',   admin: false, superAdmin: false },
+  { key: 'projects',    icon: 'apartment',      label: 'Dự án / Nơi nhận', admin: false, superAdmin: false },
   { key: 'users',       icon: 'group',         label: 'Người dùng',    admin: true,  superAdmin: false },
   { key: 'auditlogs',   icon: 'history',       label: 'Nhật ký',       admin: true,  superAdmin: false },
   { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
@@ -28,8 +28,8 @@ export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateD
     >
       {/* Brand */}
       <div className={`flex items-center gap-3 h-14 border-b border-outline-variant shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4'}`}>
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-          <Icon name="folder_special" size={18} className="text-on-primary" />
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-500 flex items-center justify-center shrink-0">
+          <Icon name="description" size={18} className="text-on-primary" />
         </div>
         {!collapsed && (
           <span className="font-bold text-sm text-on-surface leading-tight truncate">
@@ -44,7 +44,7 @@ export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateD
           <button
             onClick={onCreateDoc}
             title="Tạo hồ sơ mới"
-            className={`w-full flex items-center gap-2 bg-primary text-on-primary rounded-full py-2.5 font-medium text-sm hover:bg-primary-700 transition-colors shadow-md3-2 ${collapsed ? 'justify-center px-0' : 'px-4'}`}
+            className={`w-full flex items-center gap-2 bg-accent text-white rounded-full py-2.5 font-medium text-sm hover:bg-accent-hover transition-colors shadow-md3-2 ${collapsed ? 'justify-center px-0' : 'px-4'}`}
           >
             <Icon name="add" size={18} />
             {!collapsed && <span>Tạo hồ sơ mới</span>}

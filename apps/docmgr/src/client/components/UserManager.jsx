@@ -207,13 +207,14 @@ export default function UserManager({ token, session }) {
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quyền</th>
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo hồ sơ</th>
+              <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo danh mục con</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Trạng thái (SSO)</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
             )}
             {filtered.map(user => (
               <tr key={user.ID} className="hover:bg-surface-container-low transition-colors">
@@ -243,6 +244,18 @@ export default function UserManager({ token, session }) {
                     const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
                     const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true
                     return canCreate ? (
+                      <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                    ) : (
+                      <Icon name="cancel" size={18} className="text-on-surface-variant/40 inline-block" />
+                    )
+                  })()}
+                </td>
+                <td className="px-4 py-3 text-center hidden md:table-cell">
+                  {(() => {
+                    const r = user['Quyền']
+                    const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên'
+                    const canSubCat = isFullRole || user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true
+                    return canSubCat ? (
                       <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
                     ) : (
                       <Icon name="cancel" size={18} className="text-on-surface-variant/40 inline-block" />

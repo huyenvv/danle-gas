@@ -342,8 +342,8 @@ export default function MainApp() {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
                     filters.myWork
-                      ? 'bg-primary text-on-primary shadow-md3-1'
-                      : 'bg-surface-container-low text-on-surface-variant hover:bg-primary/10 hover:text-primary'
+                      ? 'bg-accent text-white shadow-md3-1'
+                      : 'bg-surface-container-low text-on-surface-variant hover:bg-accent/10 hover:text-accent'
                   }`}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>assignment_ind</span>
@@ -421,7 +421,7 @@ export default function MainApp() {
                   {canCreate && (
                     <button
                       onClick={() => setDocModal({ mode: 'create' })}
-                      className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1"
+                      className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1"
                     >
                       <span className="material-symbols-outlined text-base leading-none">add</span>
                       <span>Thêm hồ sơ</span>
@@ -474,7 +474,7 @@ export default function MainApp() {
                   <span className="text-sm font-medium">Đã chọn {selectedIds.size} hồ sơ</span>
                   <button
                     onClick={handleBatchMarkRead}
-                    className="flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-full text-sm font-medium hover:bg-primary-700 transition-colors"
+                    className="flex items-center gap-1.5 bg-accent text-white px-3 py-1.5 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors"
                   >
                     <span className="material-symbols-outlined text-base leading-none">mark_email_read</span>
                     Đánh dấu đã đọc
@@ -658,8 +658,8 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
               <th className="px-3 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-16">STT</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-64 min-w-[16rem]">Tên hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Số hồ sơ</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Dự án (PB)</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">NCC (NBH)</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Dự án (Nơi nhận)</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">NCC (Nơi gửi)</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phụ trách</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tình trạng</th>
               <th className="hidden">Giá trị HĐ</th>
@@ -833,7 +833,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
       <td className="px-3 py-3 text-on-surface-variant text-xs">{rowIndex || '—'}</td>
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
         <span className={`${isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
-          {!isRead && <span className="inline-block w-2 h-2 rounded-full bg-primary mr-2 align-middle" />}
+          {!isRead && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
           {doc['Tên hồ sơ']}
         </span>
       </td>

@@ -55,10 +55,11 @@ export default function TopHeader({ username, email, role, onToggleSidebar, onBe
       {/* Brand / spacer */}
       <div className="flex-1 min-w-0" />
 
-      {/* Company name — centered */}
-      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
+      {/* Company name — centered with SBM logo */}
+      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none flex items-center gap-2">
+        <img src="https://sbm.com.vn/wp-content/uploads/2022/03/logo.png" alt="SBM" className="h-6 shrink-0" />
         {companyName && (
-          <span className="text-sm font-semibold text-on-surface tracking-wide truncate max-w-[240px] block text-center">{companyName}</span>
+          <span className="text-sm font-semibold text-on-surface tracking-wide truncate max-w-[240px]">{companyName}</span>
         )}
       </div>
 
