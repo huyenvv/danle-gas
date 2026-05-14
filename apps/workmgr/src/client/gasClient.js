@@ -73,18 +73,18 @@ let _nextId = 100
 const _mockComments = []
 let _nextCommentId = 1
 
-const ADMIN_PERMS = { duAn: { c:true,r:true,u:true,d:true }, congViec: { c:true,r:true,u:true,d:true }, nhan: { c:true,r:true,u:true,d:true }, user: { c:true,r:true,u:true,d:true }, caiDat: { c:true,r:true,u:true,d:true } }
+const ADMIN_PERMS = { phongBan: { c:true,r:true,u:true,d:true }, congViec: { c:true,r:true,u:true,d:true }, nhan: { c:true,r:true,u:true,d:true }, user: { c:true,r:true,u:true,d:true }, caiDat: { c:true,r:true,u:true,d:true } }
 
 const _mockData = {
   users: [
-    { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
-    { ID: 2, 'Tên đăng nhập': 'leader1', 'Tên nhân viên': 'Nguyễn Văn Hùng', 'Email': 'hung@test.com', 'Quyền': 'Trưởng phòng' },
-    { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Tên nhân viên': 'Trần Thị Mai', 'Email': 'mai@test.com', 'Quyền': 'Nhân viên' },
+    { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Trạng thái': 'Active' },
+    { ID: 2, 'Tên đăng nhập': 'leader1', 'Tên nhân viên': 'Nguyễn Văn Hùng', 'Email': 'hung@test.com', 'Quyền': 'Trưởng phòng', 'Trạng thái': 'Active' },
+    { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Tên nhân viên': 'Trần Thị Mai', 'Email': 'mai@test.com', 'Quyền': 'Nhân viên', 'Trạng thái': 'Active' },
   ],
-  duAn: [
-    { ID: 1, 'Tên dự án': 'Website E-Commerce', 'Mô tả': 'Xây dựng hệ thống bán hàng online', 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngân sách': 500000000, 'Chi phí thực tế': 320000000, 'Ngày bắt đầu': '2026-01-15', 'Ngày kết thúc': '2026-06-30', 'Leader ID': 2, 'Thành viên': '2,3', 'Tiến độ': 65, 'Người tạo': 1, 'Ngày tạo': '2026-01-10' },
-    { ID: 2, 'Tên dự án': 'Mobile App v2', 'Mô tả': 'Nâng cấp ứng dụng mobile', 'Trạng thái': 'Lên Kế Hoạch', 'Mức độ ưu tiên': 'Trung Bình', 'Ngân sách': 300000000, 'Chi phí thực tế': 0, 'Ngày bắt đầu': '2026-03-01', 'Ngày kết thúc': '2026-09-30', 'Leader ID': 2, 'Thành viên': '2,3', 'Tiến độ': 10, 'Người tạo': 1, 'Ngày tạo': '2026-02-20' },
-    { ID: 3, 'Tên dự án': 'CRM Internal', 'Mô tả': 'Hệ thống quản lý khách hàng nội bộ', 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngân sách': 200000000, 'Chi phí thực tế': 150000000, 'Leader ID': 1, 'Thành viên': '1,2,3', 'Tiến độ': 80, 'Người tạo': 1, 'Ngày tạo': '2025-11-01', 'Ngày bắt đầu': '2025-11-15', 'Ngày kết thúc': '2026-05-31' },
+  phongBan: [
+    { ID: 1, 'Tên phòng ban': 'Phòng Công Nghệ', 'Mô tả': 'Phát triển phần mềm', 'Trưởng phòng ID': 2, 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '2,3', 'Sheet Name': 'CV_1', 'Người tạo': 1, 'Ngày tạo': '2026-01-10' },
+    { ID: 2, 'Tên phòng ban': 'Phòng Marketing', 'Mô tả': 'Marketing và truyền thông', 'Trưởng phòng ID': 1, 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '1,3', 'Sheet Name': 'CV_2', 'Người tạo': 1, 'Ngày tạo': '2026-02-01' },
+    { ID: 3, 'Tên phòng ban': 'Phòng Nhân Sự', 'Mô tả': 'Quản lý nhân sự', 'Trưởng phòng ID': 1, 'Phó phòng ID': 2, 'PGĐ phụ trách ID': '', 'Thành viên': '1,2,3', 'Sheet Name': 'CV_3', 'Người tạo': 1, 'Ngày tạo': '2026-02-15' },
   ],
   nhan: [
     { ID: 1, 'Tên nhãn': 'Bug', 'Màu sắc': '#e53935' },
@@ -94,20 +94,20 @@ const _mockData = {
     { ID: 5, 'Tên nhãn': 'Urgent', 'Màu sắc': '#c62828' },
   ],
   congViec: [
-    { ID: 1, 'Tiêu đề': 'Thiết kế giao diện trang chủ', 'Dự án ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Hoàn Thành', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-01-20', 'Ngày hết hạn': '2026-02-10', 'Ngày hoàn thành': '2026-02-08', 'Nhãn': 'Design', 'Tiến độ': 100, 'Ngày tạo': '2026-01-18' },
-    { ID: 2, 'Tiêu đề': 'Xây dựng API thanh toán', 'Dự án ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-15', 'Ngày hết hạn': '2026-03-15', 'Nhãn': 'Backend,API', 'Tiến độ': 60, 'Ngày tạo': '2026-02-10' },
-    { ID: 3, 'Tiêu đề': 'Viết unit test module auth', 'Dự án ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-03-01', 'Ngày hết hạn': '2026-03-20', 'Nhãn': 'Testing', 'Tiến độ': 0, 'Ngày tạo': '2026-02-28' },
-    { ID: 4, 'Tiêu đề': 'Fix lỗi responsive mobile', 'Dự án ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Đang Xem Xét', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-20', 'Ngày hết hạn': '2026-03-05', 'Nhãn': 'Bug', 'Tiến độ': 90, 'Ngày tạo': '2026-02-18' },
-    { ID: 5, 'Tiêu đề': 'Nghiên cứu UI framework mới', 'Dự án ID': 2, 'Người thực hiện ID': 3, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-03-10', 'Ngày hết hạn': '2026-04-01', 'Nhãn': 'Feature', 'Tiến độ': 0, 'Ngày tạo': '2026-03-05' },
-    { ID: 6, 'Tiêu đề': 'Tích hợp hệ thống CRM', 'Dự án ID': 3, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-04-01', 'Ngày hết hạn': '2026-05-15', 'Nhãn': 'Backend', 'Tiến độ': 40, 'Ngày tạo': '2026-03-28' },
-    { ID: 7, 'Tiêu đề': 'Deploy production v1.0', 'Dự án ID': 3, 'Người thực hiện ID': 1, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-05-01', 'Ngày hết hạn': '2026-05-10', 'Nhãn': 'Urgent', 'Tiến độ': 0, 'Ngày tạo': '2026-04-25' },
-    { ID: 8, 'Tiêu đề': 'Cập nhật tài liệu API', 'Dự án ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-04-20', 'Ngày hết hạn': '2026-04-30', 'Nhãn': '', 'Tiến độ': 0, 'Ngày tạo': '2026-04-15' },
+    { ID: 1, 'Tiêu đề': 'Thiết kế giao diện trang chủ', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Hoàn Thành', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-01-20', 'Ngày hết hạn': '2026-02-10', 'Ngày hoàn thành': '2026-02-08', 'Nhãn': 'Design', 'Tiến độ': 100, 'Ngày tạo': '2026-01-18' },
+    { ID: 2, 'Tiêu đề': 'Xây dựng API thanh toán', 'Phòng ban ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-15', 'Ngày hết hạn': '2026-03-15', 'Nhãn': 'Backend,API', 'Tiến độ': 60, 'Ngày tạo': '2026-02-10' },
+    { ID: 3, 'Tiêu đề': 'Viết unit test module auth', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-03-01', 'Ngày hết hạn': '2026-03-20', 'Nhãn': 'Testing', 'Tiến độ': 0, 'Ngày tạo': '2026-02-28' },
+    { ID: 4, 'Tiêu đề': 'Fix lỗi responsive mobile', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Chờ Duyệt', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-20', 'Ngày hết hạn': '2026-03-05', 'Nhãn': 'Bug', 'Tiến độ': 90, 'Ngày tạo': '2026-02-18' },
+    { ID: 5, 'Tiêu đề': 'Nghiên cứu UI framework mới', 'Phòng ban ID': 2, 'Người thực hiện ID': 3, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-03-10', 'Ngày hết hạn': '2026-04-01', 'Nhãn': 'Feature', 'Tiến độ': 0, 'Ngày tạo': '2026-03-05' },
+    { ID: 6, 'Tiêu đề': 'Tích hợp hệ thống CRM', 'Phòng ban ID': 3, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-04-01', 'Ngày hết hạn': '2026-05-15', 'Nhãn': 'Backend', 'Tiến độ': 40, 'Ngày tạo': '2026-03-28' },
+    { ID: 7, 'Tiêu đề': 'Deploy production v1.0', 'Phòng ban ID': 3, 'Người thực hiện ID': 1, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-05-01', 'Ngày hết hạn': '2026-05-10', 'Nhãn': 'Urgent', 'Tiến độ': 0, 'Ngày tạo': '2026-04-25' },
+    { ID: 8, 'Tiêu đề': 'Cập nhật tài liệu API', 'Phòng ban ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-04-20', 'Ngày hết hạn': '2026-04-30', 'Nhãn': '', 'Tiến độ': 0, 'Ngày tạo': '2026-04-15' },
   ],
   hoatDong: [
-    { ID: 1, 'Loại': 'Tạo dự án', 'Mô tả': 'Website E-Commerce', 'Đối tượng': 'Dự Án', 'Mã đối tượng': 1, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-01-10T08:00:00Z' },
+    { ID: 1, 'Loại': 'Tạo phòng ban', 'Mô tả': 'Phòng Công Nghệ', 'Đối tượng': 'Phòng Ban', 'Mã đối tượng': 1, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-01-10T08:00:00Z' },
     { ID: 2, 'Loại': 'Tạo công việc', 'Mô tả': 'Thiết kế giao diện trang chủ', 'Đối tượng': 'Công Việc', 'Mã đối tượng': 1, 'UserID': 2, 'Tên người dùng': 'Nguyễn Văn Hùng', 'Thời gian': '2026-01-18T09:30:00Z' },
     { ID: 3, 'Loại': 'Chuyển trạng thái', 'Mô tả': 'Hoàn Thành', 'Đối tượng': 'Công Việc', 'Mã đối tượng': 1, 'UserID': 3, 'Tên người dùng': 'Trần Thị Mai', 'Thời gian': '2026-02-08T16:00:00Z' },
-    { ID: 4, 'Loại': 'Cập nhật dự án', 'Mô tả': 'CRM Internal', 'Đối tượng': 'Dự Án', 'Mã đối tượng': 3, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-04-20T10:15:00Z' },
+    { ID: 4, 'Loại': 'Cập nhật phòng ban', 'Mô tả': 'Phòng Nhân Sự', 'Đối tượng': 'Phòng Ban', 'Mã đối tượng': 3, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-04-20T10:15:00Z' },
   ],
 }
 
@@ -124,11 +124,11 @@ async function mockCall(fn, ...args) {
       if (!_mockSession) _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, permissions: ADMIN_PERMS }
       return { ..._mockSession }
     case 'api_getAllData':
-      return { duAn: _mockData.duAn.map(i => ({...i})), nhan: _mockData.nhan.map(i => ({...i})), users: _mockData.users.map(i => ({...i})) }
-    case 'api_getProjects': return _mockData.duAn.map(i => ({...i}))
-    case 'api_createProject': return _mockAdd(_mockData.duAn, args[1])
-    case 'api_updateProject': return _mockUpdate(_mockData.duAn, args[1], args[2])
-    case 'api_deleteProject': return _mockDelete(_mockData.duAn, args[1])
+      return { phongBan: _mockData.phongBan.map(i => ({...i})), nhan: _mockData.nhan.map(i => ({...i})), users: _mockData.users.map(i => ({...i})) }
+    case 'api_getDepartments': return _mockData.phongBan.map(i => ({...i}))
+    case 'api_createDepartment': return _mockAdd(_mockData.phongBan, { ...(args[1]||{}), 'Sheet Name': 'CV_' + (_nextId+1) })
+    case 'api_updateDepartment': return _mockUpdate(_mockData.phongBan, args[1], args[2])
+    case 'api_deleteDepartment': return _mockDelete(_mockData.phongBan, args[1])
     case 'api_getTasks': return _mockData.congViec.map(i => ({...i}))
     case 'api_createTask': return _mockAdd(_mockData.congViec, { ...(args[1]||{}), 'Ngày tạo': new Date().toISOString() })
     case 'api_updateTask': return _mockUpdate(_mockData.congViec, args[1], args[2])
@@ -145,31 +145,24 @@ async function mockCall(fn, ...args) {
     case 'api_removeUserRole': return { success: true }
     case 'api_getDashboardStats': {
       const tasks = _mockData.congViec
-      const projects = _mockData.duAn
+      const depts = _mockData.phongBan
       const now = new Date()
       const taskStats = { todo: 0, inProgress: 0, review: 0, completed: 0 }
       const priorityStats = { high: 0, medium: 0, low: 0 }
       let overdue = 0
       tasks.forEach(t => {
         if (t['Trạng thái']==='Cần Làm') taskStats.todo++; else if (t['Trạng thái']==='Đang Thực Hiện') taskStats.inProgress++
-        else if (t['Trạng thái']==='Đang Xem Xét') taskStats.review++; else if (t['Trạng thái']==='Hoàn Thành') taskStats.completed++
+        else if (t['Trạng thái']==='Chờ Duyệt') taskStats.review++; else if (t['Trạng thái']==='Hoàn Thành') taskStats.completed++
         if (t['Mức độ ưu tiên']==='Cao') priorityStats.high++; else if (t['Mức độ ưu tiên']==='Trung Bình') priorityStats.medium++; else priorityStats.low++
         if (t['Ngày hết hạn'] && t['Trạng thái']!=='Hoàn Thành' && new Date(t['Ngày hết hạn']) < now) overdue++
       })
       let totalBudget = 0, totalCost = 0
-      const projectStats = { planning:0, inProgress:0, completed:0, paused:0, cancelled:0 }
-      projects.forEach(p => {
-        totalBudget += Number(p['Ngân sách'])||0; totalCost += Number(p['Chi phí thực tế'])||0
-        if (p['Trạng thái']==='Lên Kế Hoạch') projectStats.planning++; else if (p['Trạng thái']==='Đang Thực Hiện') projectStats.inProgress++
-        else if (p['Trạng thái']==='Hoàn Thành') projectStats.completed++
-      })
+      tasks.forEach(t => { totalBudget += Number(t['Chi phí ước tính'])||0; totalCost += Number(t['Chi phí thực tế'])||0 })
       return {
-        totalProjects: projects.length, totalTasks: tasks.length, totalCompleted: taskStats.completed, totalOverdue: overdue,
-        totalBudget, totalActualCost: totalCost, projectStats, taskStats, priorityStats,
-        overdueTasks: [], upcomingTasks: [],
-        weeklyTrend: [{label:'T1',created:3,completed:1},{label:'T2',created:2,completed:2},{label:'T3',created:4,completed:3},{label:'T4',created:1,completed:0}],
-        recentActivities: _mockData.hoatDong.slice().reverse(),
-        projectProgress: projects.map(p => ({id:p.ID,name:p['Tên dự án'],progress:Number(p['Tiến độ'])||0,status:p['Trạng thái']})),
+        totalDepartments: depts.length, totalTasks: tasks.length, totalMembers: _mockData.users.length,
+        totalCompleted: taskStats.completed, totalOverdue: overdue,
+        totalBudget, totalActualCost: totalCost, taskStats, priorityStats,
+        overdueTasks: [], upcomingTasks: [], deptDistribution: [],
       }
     }
     case 'api_getAuditLogs': return { data: [], hasMore: false, total: 0, types: [] }

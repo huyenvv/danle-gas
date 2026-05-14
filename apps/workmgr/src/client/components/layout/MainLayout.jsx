@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useCachedFetch } from '../../hooks/useCachedFetch.js'
 import gasCall from '../../gasClient.js'
 import Sidebar from './Sidebar.jsx'
 import TopHeader from './TopHeader.jsx'
 import DashboardPage from '../dashboard/DashboardPage.jsx'
-import ProjectListPage from '../projects/ProjectListPage.jsx'
+import DepartmentListPage from '../departments/DepartmentListPage.jsx'
 import KanbanPage from '../kanban/KanbanPage.jsx'
 import TaskListPage from '../tasks/TaskListPage.jsx'
+import CalendarPage from '../calendar/CalendarPage.jsx'
+import SchedulePage from '../schedule/SchedulePage.jsx'
 import TimelinePage from '../timeline/TimelinePage.jsx'
 import ActivityPage from '../activities/ActivityPage.jsx'
 import LabelManager from '../labels/LabelManager.jsx'
@@ -18,8 +21,6 @@ export default function MainLayout() {
   const { session } = useAuth()
   const [currentView, setCurrentView] = useState('dashboard')
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true')
-  const [masterData, setMasterData] = useState({ duAn: [], nhan: [], users: [] })
-  const [loading, setLoading] = useState(true)
 
   const handleToggleSidebar = useCallback(() => {
     setCollapsed((prev) => {
@@ -29,23 +30,24 @@ export default function MainLayout() {
     })
   }, [])
 
-  const loadMasterData = useCallback(async () => {
-    try {
-      const data = await gasCall('api_getAllData', session.token)
-      if (data) setMasterData(data)
-    } catch (e) { console.error('loadMasterData:', e) }
-    setLoading(false)
-  }, [session?.token])
-
-  useEffect(() => { loadMasterData() }, [loadMasterData])
+  // masterData rarely changes — cache 10 min in localStorage. Background refresh
+  // on mount + when child screens call reloadMaster() after a write.
+  const { data: masterData, loading, refresh: loadMasterData } = useCachedFetch(
+    'masterData:' + (session?.token || ''),
+    () => gasCall('api_getAllData', session.token),
+    { ttl: 600_000, persistent: true, enabled: !!session?.token }
+  )
+  const md = masterData || { phongBan: [], nhan: [], users: [] }
 
   const renderView = () => {
-    const props = { masterData, reloadMaster: loadMasterData, token: session.token }
+    const props = { masterData: md, reloadMaster: loadMasterData, token: session.token }
     switch (currentView) {
       case 'dashboard': return <DashboardPage {...props} />
-      case 'projects': return <ProjectListPage {...props} />
+      case 'departments': return <DepartmentListPage {...props} />
       case 'kanban': return <KanbanPage {...props} />
       case 'tasks': return <TaskListPage {...props} />
+      case 'calendar': return <SchedulePage {...props} />
+      case 'task-calendar': return <CalendarPage {...props} />
       case 'timeline': return <TimelinePage {...props} />
       case 'activities': return <ActivityPage {...props} />
       case 'labels': return <LabelManager {...props} />

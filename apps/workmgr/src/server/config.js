@@ -4,20 +4,33 @@
 
 var SHEETS = {
   APP_ROLES:   '_Phân Quyền',
-  DU_AN:       'Dự Án',
-  CONG_VIEC:   'Công Việc',
+  PHONG_BAN:   'Phòng Ban',
   BINH_LUAN:   '_Bình Luận',
   HOAT_DONG:   '_Hoạt Động',
   NHAN:        'Nhãn',
   NHAT_KY:     '_Nhật Ký',
+  LICH:        'Lịch',
 }
+
+// Schedule statuses (workflow):
+//   Chờ TP   → registered by employee, awaiting Trưởng phòng confirmation
+//   Chờ GĐ   → confirmed by TP (or registered by TP), awaiting GĐ approval
+//   Đã duyệt → approved by GĐ
+//   Từ chối  → rejected
+var SCHEDULE_STATUSES = ['Chờ TP', 'Chờ GĐ', 'Đã duyệt', 'Từ chối']
+var SCHEDULE_TYPES = ['Công tác', 'Họp']
 
 var APP_ID = 'workmgr'
 
 // ===== Status & priority constants =====
-var PROJECT_STATUSES = ['Lên Kế Hoạch', 'Đang Thực Hiện', 'Hoàn Thành', 'Tạm Dừng', 'Đã Hủy']
-var TASK_STATUSES = ['Cần Làm', 'Đang Thực Hiện', 'Đang Xem Xét', 'Hoàn Thành']
+var TASK_STATUSES = ['Cần Làm', 'Đang Thực Hiện', 'Chờ Duyệt', 'Hoàn Thành']
 var PRIORITIES = ['Cao', 'Trung Bình', 'Thấp']
+
+// Prefix for per-department task sheets (e.g. "CV_PB001")
+var TASK_SHEET_PREFIX = 'CV_'
+
+// Headers for per-department task sheets
+var TASK_HEADERS = ['ID', 'Tiêu đề', 'Mô tả', 'Phòng ban ID', 'Người thực hiện ID', 'Người giao ID', 'Trạng thái', 'Mức độ ưu tiên', 'Ngày bắt đầu', 'Ngày hết hạn', 'Ngày hoàn thành', 'Nhãn', 'Tiến độ', 'Người phối hợp', 'Subtasks', 'Người tạo', 'Ngày tạo', 'Ghi chú']
 
 // ===== First-run initialization =====
 function ensureInitialized() {
@@ -28,12 +41,12 @@ function ensureInitialized() {
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
     { name: SHEETS.APP_ROLES,  headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết'] },
-    { name: SHEETS.DU_AN,      headers: ['ID', 'Tên dự án', 'Mô tả', 'Trạng thái', 'Mức độ ưu tiên', 'Ngân sách', 'Chi phí thực tế', 'Ngày bắt đầu', 'Ngày kết thúc', 'Ngày hoàn thành', 'Leader ID', 'Thành viên', 'Tiến độ', 'Người tạo', 'Ngày tạo', 'Ghi chú'] },
-    { name: SHEETS.CONG_VIEC,  headers: ['ID', 'Tiêu đề', 'Mô tả', 'Dự án ID', 'Người thực hiện ID', 'Người giao ID', 'Trạng thái', 'Mức độ ưu tiên', 'Ngày bắt đầu', 'Ngày hết hạn', 'Ngày hoàn thành', 'Chi phí ước tính', 'Chi phí thực tế', 'Nhãn', 'Tiến độ', 'Người tạo', 'Ngày tạo', 'Ghi chú'] },
+    { name: SHEETS.PHONG_BAN,  headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Trưởng phòng ID', 'Phó phòng ID', 'PGĐ phụ trách ID', 'Thành viên', 'Đơn vị quản lý', 'Sheet Name', 'Người tạo', 'Ngày tạo', 'Ghi chú'] },
     { name: SHEETS.BINH_LUAN,  headers: ['ID', 'Mã đối tượng', 'Loại đối tượng', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },
     { name: SHEETS.HOAT_DONG,  headers: ['ID', 'Loại', 'Mô tả', 'Đối tượng', 'Mã đối tượng', 'UserID', 'Tên người dùng', 'Thời gian'] },
     { name: SHEETS.NHAN,       headers: ['ID', 'Tên nhãn', 'Màu sắc'] },
     { name: SHEETS.NHAT_KY,    headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
+    { name: SHEETS.LICH,       headers: ['ID', 'Loại', 'Nội dung', 'Thời gian bắt đầu', 'Thời gian kết thúc', 'Địa điểm', 'Người chủ trì ID', 'Thành phần', 'Ghi chú', 'Link họp', 'File đính kèm', 'Trạng thái', 'Lý do từ chối', 'Người đăng ký ID', 'Phòng ban ID', 'Ngày đăng ký', 'Người duyệt ID', 'Ngày duyệt'] },
   ]
 
   tabDefs.forEach(function(def) {
@@ -65,4 +78,28 @@ function _ensureAllTabsExist(ss) {
       labelSheet.appendRow(row)
     })
   }
+}
+
+/**
+ * Create a task sheet for a department if it doesn't exist.
+ * Returns the sheet name (e.g. "CV_PB001").
+ */
+function ensureDepartmentTaskSheet(deptId) {
+  var sheetName = TASK_SHEET_PREFIX + deptId
+  var ss = getCentralSheet()
+  var sheet = ss.getSheetByName(sheetName)
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName)
+    sheet.getRange(1, 1, 1, TASK_HEADERS.length).setValues([TASK_HEADERS])
+    sheet.setFrozenRows(1)
+  }
+  return sheetName
+}
+
+/**
+ * Get all department task sheet names from the Phòng Ban registry.
+ */
+function getAllDeptTaskSheetNames() {
+  var depts = getSheetData(SHEETS.PHONG_BAN)
+  return depts.map(function(d) { return d['Sheet Name'] || (TASK_SHEET_PREFIX + d['ID']) }).filter(Boolean)
 }

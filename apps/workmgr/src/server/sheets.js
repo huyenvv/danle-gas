@@ -3,33 +3,41 @@
 // This file adds: referential integrity checks, getAllData, and user resolution from SSO parent.
 
 var REFERENCE_MAP = {}
-REFERENCE_MAP[SHEETS.DU_AN] = { targetSheet: SHEETS.CONG_VIEC, targetColumn: 'Dự án ID' }
+
+var PARENT_USERS_CACHE_KEY = 'sso_parent_users'
+var PARENT_USERS_CACHE_TTL = 300 // 5 minutes — parent sheet read is the slowest part of getAllData
+
+function _getParentUsersMap() {
+  var cached = cacheGet(PARENT_USERS_CACHE_KEY)
+  if (cached) return cached
+
+  var map = {}
+  try {
+    var parentId = ssoGetParentSheetId()
+    if (!parentId) return map
+    var parentSs = SpreadsheetApp.openById(parentId)
+    var parentSheet = parentSs.getSheetByName('_Người Dùng')
+    if (!parentSheet) return map
+    var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
+    parentUsers.forEach(function(u) {
+      map[String(u['ID'])] = {
+        name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
+        email: u['Email'] || '',
+      }
+    })
+    cachePut(PARENT_USERS_CACHE_KEY, map, PARENT_USERS_CACHE_TTL)
+  } catch(e) {
+    Logger.log('_getParentUsersMap error: ' + e.message)
+  }
+  return map
+}
 
 /**
  * Get all lookup data for client initialization.
  */
 function getAllData() {
-  // Read authorized users from local _Phân Quyền (users are managed by SSO Portal)
   var roles = getSheetData(SHEETS.APP_ROLES)
-
-  // Cross-reference parent SSO sheet to get Tên nhân viên + Email
-  var parentInfoMap = {}
-  try {
-    var parentId = ssoGetParentSheetId()
-    if (parentId) {
-      var parentSs = SpreadsheetApp.openById(parentId)
-      var parentSheet = parentSs.getSheetByName('_Người Dùng')
-      if (parentSheet) {
-        var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
-        parentUsers.forEach(function(u) {
-          parentInfoMap[String(u['ID'])] = {
-            name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
-            email: u['Email'] || '',
-          }
-        })
-      }
-    }
-  } catch(e) { Logger.log('getAllData parentInfoMap error: ' + e.message) }
+  var parentInfoMap = _getParentUsersMap()
 
   var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     var info = parentInfoMap[String(r['UserID'])] || {}
@@ -43,9 +51,9 @@ function getAllData() {
   })
 
   return {
-    duAn:   getSheetData(SHEETS.DU_AN),
-    nhan:   getSheetData(SHEETS.NHAN),
-    users:  users,
+    phongBan: getSheetData(SHEETS.PHONG_BAN),
+    nhan:     getSheetData(SHEETS.NHAN),
+    users:    users,
   }
 }
 
@@ -54,18 +62,9 @@ function getAllData() {
  */
 function resolveUserName(userId) {
   if (!userId) return ''
-  try {
-    var parentId = ssoGetParentSheetId()
-    if (!parentId) return String(userId)
-    var parentSs = SpreadsheetApp.openById(parentId)
-    var parentSheet = parentSs.getSheetByName('_Người Dùng')
-    if (!parentSheet) return String(userId)
-    var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
-    var user = parentUsers.find(function(u) { return String(u['ID']) === String(userId) })
-    return user ? (user['Tên nhân viên'] || user['Tên đăng nhập'] || String(userId)) : String(userId)
-  } catch(e) {
-    return String(userId)
-  }
+  var map = _getParentUsersMap()
+  var entry = map[String(userId)]
+  return entry ? entry.name : String(userId)
 }
 
 // Override gas-core deleteRow to add referential integrity check

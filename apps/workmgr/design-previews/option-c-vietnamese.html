@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Option C — Soft Vietnamese Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream:       #fdf8f1;
+    --cream-warm:  #f7ede0;
+    --peach:       #f9d9b9;
+    --peach-soft:  #fce5d0;
+    --terracotta:  #c66b3d;
+    --terracotta-d: #a4502a;
+    --sage:        #7a8c5a;
+    --sage-soft:   #d8dfc6;
+    --ink:         #3a2e25;
+    --ink-soft:    #6b5d50;
+    --muted:       #9a8b7d;
+    --rose:        #d97a7a;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    font-family: 'Be Vietnam Pro', sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(249, 217, 185, 0.4), transparent 40%),
+      radial-gradient(circle at 80% 90%, rgba(216, 223, 198, 0.35), transparent 45%);
+  }
+  .serif { font-family: 'Cormorant Garamond', serif; }
+  .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; gap: 0; }
+
+  /* Sidebar */
+  .sidebar {
+    padding: 28px 22px;
+    background: var(--cream-warm);
+    border-right: 1px dashed rgba(58, 46, 37, 0.18);
+    position: relative;
+  }
+  .sidebar::after {
+    content: '';
+    position: absolute;
+    top: 24px; bottom: 24px; right: -1px;
+    width: 2px;
+    background: linear-gradient(to bottom, transparent, var(--peach) 30%, var(--peach) 70%, transparent);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .brand-icon {
+    width: 46px; height: 46px;
+    background: var(--terracotta);
+    border-radius: 16px 16px 4px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cream);
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 600;
+    font-style: italic;
+    box-shadow: 0 6px 14px -4px rgba(198, 107, 61, 0.4);
+  }
+  .brand-text h2 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--ink);
+  }
+  .brand-text p {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+  }
+
+  .nav-section-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 13px;
+    font-style: italic;
+    color: var(--terracotta);
+    margin: 18px 0 8px 8px;
+    letter-spacing: 0.02em;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    text-decoration: none;
+    margin-bottom: 2px;
+    transition: all 0.25s ease;
+    position: relative;
+  }
+  .nav-item .ic {
+    width: 22px; height: 22px;
+    border-radius: 6px;
+    background: var(--cream);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    color: var(--terracotta);
+    transition: all 0.25s ease;
+  }
+  .nav-item:hover {
+    background: var(--peach-soft);
+    color: var(--ink);
+  }
+  .nav-item.active {
+    background: var(--ink);
+    color: var(--cream);
+  }
+  .nav-item.active .ic {
+    background: var(--terracotta);
+    color: var(--cream);
+  }
+  .nav-item.active::before {
+    content: '';
+    position: absolute;
+    right: -22px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px; height: 60%;
+    background: var(--terracotta);
+    border-radius: 4px 0 0 4px;
+  }
+
+  /* Main */
+  .main { padding: 32px 40px; }
+
+  .top {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 28px;
+  }
+  .top-l h1 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 44px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .top-l h1 .accent {
+    color: var(--terracotta);
+    font-style: italic;
+    font-weight: 600;
+  }
+  .top-l .greeting {
+    margin-top: 8px;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+  .top-l .greeting .day {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    color: var(--terracotta);
+  }
+  .top-r {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .avatar {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--terracotta), var(--rose));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--cream);
+    font-weight: 600;
+    box-shadow: 0 4px 12px -2px rgba(198, 107, 61, 0.35);
+  }
+  .user-info { line-height: 1.2; }
+  .user-info .name { font-weight: 600; font-size: 14px; }
+  .user-info .role { font-size: 11px; color: var(--ink-soft); }
+
+  /* Stat cards — mixed shapes */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .card {
+    background: var(--cream-warm);
+    border-radius: 22px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 30px -10px rgba(58, 46, 37, 0.18);
+  }
+  .card-1 { background: var(--peach); }
+  .card-1::before {
+    content: '';
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: var(--terracotta);
+    opacity: 0.18;
+  }
+  .card-2 {
+    background: var(--cream);
+    border: 1.5px solid var(--ink);
+    border-radius: 22px 4px 22px 22px;
+  }
+  .card-3 { background: var(--sage-soft); }
+  .card-3::before {
+    content: '';
+    position: absolute;
+    bottom: -30px; left: -30px;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: var(--sage);
+    opacity: 0.18;
+  }
+  .card-4 {
+    background: var(--ink);
+    color: var(--cream);
+    border-radius: 22px;
+    position: relative;
+  }
+  .card-4 .icon { color: var(--peach); }
+  .card-4 .label { color: var(--cream); opacity: 0.7; }
+  .card-4 .value { color: var(--cream); }
+  .card-4 .delta { color: var(--peach); }
+
+  .card .icon {
+    width: 40px; height: 40px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.4);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px;
+    font-style: italic;
+    color: var(--terracotta);
+  }
+  .card .label {
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-bottom: 6px;
+    letter-spacing: 0.01em;
+  }
+  .card .value {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 44px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .card .delta {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--terracotta);
+    font-weight: 500;
+  }
+  .card .delta.calm { color: var(--sage); }
+
+  /* Body */
+  .body { display: grid; grid-template-columns: 1.3fr 1fr; gap: 24px; }
+
+  .panel {
+    background: #fff;
+    border-radius: 24px;
+    padding: 24px;
+    box-shadow: 0 4px 16px -4px rgba(58, 46, 37, 0.06);
+  }
+  .panel-title {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .panel-title em {
+    color: var(--terracotta);
+    font-weight: 500;
+  }
+  .panel-subtitle {
+    color: var(--ink-soft);
+    font-size: 12px;
+    margin-bottom: 18px;
+    font-style: italic;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 14px;
+  }
+
+  /* Donut */
+  .donut-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 28px;
+    align-items: center;
+  }
+  .legend { display: flex; flex-direction: column; gap: 12px; }
+  .legend-row {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--cream-warm);
+    border-radius: 12px;
+  }
+  .legend-row .dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+  }
+  .legend-row .lbl { font-size: 13px; font-weight: 500; }
+  .legend-row .val {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--terracotta);
+  }
+
+  /* Task list */
+  .task-card {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    background: var(--cream-warm);
+    border-radius: 16px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+  }
+  .task-card:hover {
+    background: var(--peach-soft);
+    transform: translateX(4px);
+  }
+  .task-card:last-child { margin-bottom: 0; }
+  .task-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: var(--peach);
+    color: var(--terracotta);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 600;
+    font-style: italic;
+    font-size: 16px;
+  }
+  .task-avatar.danger { background: var(--rose); color: #fff; }
+  .task-avatar.sage { background: var(--sage); color: #fff; }
+  .task-info .title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .task-info .meta {
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 13px;
+  }
+  .task-tag {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tag-danger { background: rgba(217, 122, 122, 0.15); color: var(--rose); }
+  .tag-sage { background: var(--sage-soft); color: var(--sage); }
+  .tag-warn { background: var(--peach); color: var(--terracotta-d); }
+
+  .quote-card {
+    margin-top: 18px;
+    padding: 18px 22px;
+    background: linear-gradient(135deg, var(--peach) 0%, var(--peach-soft) 100%);
+    border-radius: 20px;
+    position: relative;
+  }
+  .quote-card::before {
+    content: '"';
+    position: absolute;
+    top: -10px; left: 18px;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 64px;
+    color: var(--terracotta);
+    line-height: 1;
+    font-weight: 600;
+  }
+  .quote-card .text {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink);
+    line-height: 1.45;
+    padding-left: 24px;
+  }
+  .quote-card .text strong { font-style: normal; color: var(--terracotta-d); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">Q</div>
+      <div class="brand-text">
+        <h2>Quản Lý</h2>
+        <p>Công việc · Phòng ban</p>
+      </div>
+    </div>
+
+    <div class="nav-section-title">Tổng quan</div>
+    <a class="nav-item active"><span class="ic">◇</span>Tổng Quan</a>
+    <a class="nav-item"><span class="ic">▤</span>Phòng / Ban</a>
+
+    <div class="nav-section-title">Công việc</div>
+    <a class="nav-item"><span class="ic">◫</span>Kanban</a>
+    <a class="nav-item"><span class="ic">≡</span>Công Việc</a>
+    <a class="nav-item"><span class="ic">↗</span>Timeline</a>
+    <a class="nav-item"><span class="ic">▥</span>Lịch</a>
+
+    <div class="nav-section-title">Hệ thống</div>
+    <a class="nav-item"><span class="ic">♢</span>Thành Viên</a>
+    <a class="nav-item"><span class="ic">⟲</span>Hoạt Động</a>
+    <a class="nav-item"><span class="ic">∎</span>Nhật Ký</a>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <div class="top-l">
+        <h1>Xin chào, <span class="accent">Huyền</span></h1>
+        <div class="greeting"><span class="day">Thứ Tư</span> · 13 tháng 5, 2026 · Một ngày tốt lành cho công việc</div>
+      </div>
+      <div class="top-r">
+        <div class="user-info"><div class="name">Vũ Văn Huyền</div><div class="role">Chủ Doanh Nghiệp</div></div>
+        <div class="avatar">H</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="card card-1">
+        <div class="icon">B</div>
+        <div class="label">Bộ phận</div>
+        <div class="value">17</div>
+        <div class="delta">9 đang thực hiện</div>
+      </div>
+      <div class="card card-2">
+        <div class="icon">C</div>
+        <div class="label">Công việc</div>
+        <div class="value">48</div>
+        <div class="delta calm">7 đã hoàn thành</div>
+      </div>
+      <div class="card card-3">
+        <div class="icon">T</div>
+        <div class="label">Thành viên</div>
+        <div class="value">50</div>
+        <div class="delta calm">45 đang hoạt động</div>
+      </div>
+      <div class="card card-4">
+        <div class="icon">!</div>
+        <div class="label">Quá hạn</div>
+        <div class="value">25</div>
+        <div class="delta">Cần xử lý sớm</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <section class="panel">
+        <div class="panel-title">Trạng thái <em>công việc</em></div>
+        <div class="panel-subtitle">Bức tranh tổng quan sáng nay</div>
+        <div class="donut-row">
+          <svg viewBox="0 0 200 200" width="180" height="180">
+            <g transform="rotate(-90 100 100)">
+              <circle r="68" cx="100" cy="100" fill="none" stroke="#c66b3d" stroke-width="26" stroke-dasharray="120 320" stroke-linecap="round"/>
+              <circle r="68" cx="100" cy="100" fill="none" stroke="#f9d9b9" stroke-width="26" stroke-dasharray="100 320" stroke-dashoffset="-122" stroke-linecap="round"/>
+              <circle r="68" cx="100" cy="100" fill="none" stroke="#7a8c5a" stroke-width="26" stroke-dasharray="80 320" stroke-dashoffset="-224" stroke-linecap="round"/>
+              <circle r="68" cx="100" cy="100" fill="none" stroke="#d97a7a" stroke-width="26" stroke-dasharray="40 320" stroke-dashoffset="-306" stroke-linecap="round"/>
+            </g>
+            <text x="100" y="98" text-anchor="middle" font-family="Cormorant Garamond" font-size="38" font-weight="600" fill="#3a2e25">48</text>
+            <text x="100" y="116" text-anchor="middle" font-family="Be Vietnam Pro" font-size="9" fill="#9a8b7d" font-style="italic">tổng số</text>
+          </svg>
+          <div class="legend">
+            <div class="legend-row"><span class="dot" style="background:#c66b3d"></span><span class="lbl">Cần Làm</span><span class="val">19</span></div>
+            <div class="legend-row"><span class="dot" style="background:#f9d9b9"></span><span class="lbl">Đang Thực Hiện</span><span class="val">15</span></div>
+            <div class="legend-row"><span class="dot" style="background:#7a8c5a"></span><span class="lbl">Chờ Duyệt</span><span class="val">7</span></div>
+            <div class="legend-row"><span class="dot" style="background:#d97a7a"></span><span class="lbl">Hoàn Thành</span><span class="val">7</span></div>
+          </div>
+        </div>
+        <div class="quote-card">
+          <div class="text"><strong>Phòng Công Nghệ</strong> đang dẫn đầu về số công việc hoàn thành — chúc một ngày làm việc nhiều niềm vui.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">Cần <em>chú ý</em> hôm nay</div>
+        <div class="panel-subtitle">07 công việc đang chờ xử lý</div>
+        <div class="task-card">
+          <div class="task-avatar danger">B</div>
+          <div class="task-info">
+            <div class="title">Báo cáo tài chính Q1</div>
+            <div class="meta">Lê Đức Bình · Phòng Tài Chính</div>
+          </div>
+          <span class="task-tag tag-danger">−24 ngày</span>
+        </div>
+        <div class="task-card">
+          <div class="task-avatar">D</div>
+          <div class="task-info">
+            <div class="title">Module giỏ hàng</div>
+            <div class="meta">Hoàng Quốc Dũng · Website TMĐT</div>
+          </div>
+          <span class="task-tag tag-warn">−20 ngày</span>
+        </div>
+        <div class="task-card">
+          <div class="task-avatar danger">U</div>
+          <div class="task-info">
+            <div class="title">Tích hợp Zalo OA</div>
+            <div class="meta">Hoàng Quốc Uyên · Hệ Thống CRM</div>
+          </div>
+          <span class="task-tag tag-danger">−77 ngày</span>
+        </div>
+        <div class="task-card">
+          <div class="task-avatar sage">T</div>
+          <div class="task-info">
+            <div class="title">Animation &amp; micro-interaction</div>
+            <div class="meta">Dương Xuân Trí · Redesign Website</div>
+          </div>
+          <span class="task-tag tag-sage">Hôm nay</span>
+        </div>
+        <div class="task-card">
+          <div class="task-avatar">M</div>
+          <div class="task-info">
+            <div class="title">Pipeline sales dashboard</div>
+            <div class="meta">Phan Ngọc Mai · Phòng Sales</div>
+          </div>
+          <span class="task-tag tag-warn">3 ngày nữa</span>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

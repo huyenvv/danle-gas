@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import gasCall from '../../gasClient.js'
+import { mutate } from '../../utils/mutate.js'
 import { useToast } from '../../context/ToastContext.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import LabelModal from './LabelModal.jsx'
@@ -11,8 +11,8 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
 
   const handleSave = async (form, mode) => {
     try {
-      if (mode === 'edit' && modal.data) await gasCall('api_updateLabel', token, modal.data.ID, form)
-      else await gasCall('api_addLabel', token, form)
+      if (mode === 'edit' && modal.data) await mutate('api_updateLabel', token, modal.data.ID, form)
+      else await mutate('api_addLabel', token, form)
       showToast(mode === 'edit' ? 'Đã cập nhật' : 'Đã tạo nhãn', 'success')
       setModal({ open: false, mode: 'add', data: null })
       reloadMaster()
@@ -26,7 +26,7 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
   const handleDelete = async (l) => {
     const ok = await confirm('Xóa nhãn', `Xóa nhãn "${l['Tên nhãn']}"?`)
     if (!ok) return
-    try { await gasCall('api_deleteLabel', token, l.ID); showToast('Đã xóa', 'success'); reloadMaster() }
+    try { await mutate('api_deleteLabel', token, l.ID); showToast('Đã xóa', 'success'); reloadMaster() }
     catch (e) { showToast(e.message, 'error') }
   }
 
@@ -34,7 +34,7 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap gap-3 items-center">
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => setModal({ open: true, mode: 'add', data: null })} className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1">
+          <button onClick={() => setModal({ open: true, mode: 'add', data: null })} className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
             <span className="material-symbols-outlined text-base">add</span>Tạo Nhãn
           </button>
         </div>

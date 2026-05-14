@@ -30,7 +30,7 @@ function AppInner() {
           <p className="text-xs text-on-surface-variant">Nếu quản trị viên vừa cấp quyền cho bạn, hãy tải lại trang để cập nhật.</p>
           <button
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:bg-primary-700 transition-colors shadow-md3-1"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1"
           >
             <span className="material-symbols-outlined text-base">refresh</span>
             Tải lại trang

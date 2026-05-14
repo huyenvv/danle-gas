@@ -49,10 +49,11 @@ export default function TopHeader({ username, email, role, appName, onToggleSide
 
       <div className="flex-1 min-w-0" />
 
-      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none px-4">
-        <span className="text-sm font-semibold text-on-surface tracking-wide truncate max-w-[240px] block text-center">
-          {appName}
-        </span>
+      <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none flex items-center gap-2">
+        <img src="https://sbm.com.vn/wp-content/uploads/2022/03/logo.png" alt="SBM" className="h-6 shrink-0" />
+        {appName && (
+          <span className="text-sm font-semibold text-on-surface tracking-wide truncate max-w-[240px]">{appName}</span>
+        )}
       </div>
 
       <div className="flex items-center gap-1">

@@ -1,11 +1,50 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import gasCall from '../../gasClient.js'
+import { mutate } from '../../utils/mutate.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useToast } from '../../context/ToastContext.jsx'
+import { canUpdateTaskProgress } from '../../utils/permissions.js'
 import { formatDate, timeAgo } from '../../utils/format.js'
 
-export default function TaskDetailModal({ task, token, users, labels, projects, onClose }) {
+function parseSubtasks(raw) {
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
+
+export default function TaskDetailModal({ task, token, users, labels, departments, onClose }) {
+  const { session } = useAuth()
+  const { showToast } = useToast()
   const [comments, setComments] = useState([])
   const [newComment, setNewComment] = useState('')
   const [sending, setSending] = useState(false)
+  const [progress, setProgress] = useState(Number(task['Tiến độ']) || 0)
+  const [savingProgress, setSavingProgress] = useState(false)
+
+  const taskDept = useMemo(
+    () => departments.find(d => String(d.ID) === String(task['Phòng ban ID'])),
+    [departments, task]
+  )
+  const canEditProgress = canUpdateTaskProgress(session, taskDept, task)
+
+  useEffect(() => { setProgress(Number(task['Tiến độ']) || 0) }, [task.ID, task['Tiến độ']])
+
+  const saveProgress = async (value) => {
+    if (value === Number(task['Tiến độ'] || 0)) return
+    setSavingProgress(true)
+    try {
+      await mutate('api_updateTaskProgress', token, task.ID, task['Phòng ban ID'], value)
+      task['Tiến độ'] = value
+      showToast('Đã cập nhật tiến độ', 'success')
+    } catch (e) {
+      setProgress(Number(task['Tiến độ']) || 0)
+      showToast(e.message, 'error')
+    }
+    setSavingProgress(false)
+  }
 
   useEffect(() => {
     gasCall('api_getComments', token, task.ID, 'Công Việc')
@@ -14,29 +53,27 @@ export default function TaskDetailModal({ task, token, users, labels, projects, 
   }, [task.ID, token])
 
   const getUserName = (id) => { const u = users.find(u => String(u.ID) === String(id)); return u ? (u['Tên nhân viên']||u['Tên đăng nhập']) : '' }
-  const getProjectName = (id) => { const p = projects.find(p => String(p.ID) === String(id)); return p ? p['Tên dự án'] : '' }
+  const getDeptName = (id) => { const d = departments.find(d => String(d.ID) === String(id)); return d ? d['Tên phòng ban'] : '' }
 
   const handleSend = async () => {
     if (!newComment.trim()) return
     setSending(true)
     try {
-      await gasCall('api_addComment', token, task.ID, 'Công Việc', newComment)
+      const created = await gasCall('api_addComment', token, task.ID, 'Công Việc', newComment)
       setNewComment('')
-      const data = await gasCall('api_getComments', token, task.ID, 'Công Việc')
-      setComments(Array.isArray(data) ? data : [])
+      if (created && created.ID) setComments(prev => [...prev, created])
     } catch (e) { console.error(e) }
     setSending(false)
   }
 
   const fields = [
-    { label: 'Dự án', value: getProjectName(task['Dự án ID']) },
+    { label: 'Phòng/ Ban/ NM', value: getDeptName(task['Phòng ban ID']) },
     { label: 'Trạng thái', value: task['Trạng thái'] },
     { label: 'Ưu tiên', value: task['Mức độ ưu tiên'] },
     { label: 'Người thực hiện', value: getUserName(task['Người thực hiện ID']) },
     { label: 'Người giao', value: getUserName(task['Người giao ID']) },
     { label: 'Ngày bắt đầu', value: formatDate(task['Ngày bắt đầu']) },
     { label: 'Ngày hết hạn', value: formatDate(task['Ngày hết hạn']) },
-    { label: 'Tiến độ', value: (task['Tiến độ'] || 0) + '%' },
   ]
 
   return (
@@ -56,9 +93,61 @@ export default function TaskDetailModal({ task, token, users, labels, projects, 
               </div>
             ))}
           </div>
-          {task['Tiến độ'] > 0 && (
-            <div className="h-2 bg-surface-variant rounded-full overflow-hidden">
-              <div className="h-full bg-primary rounded-full" style={{ width: task['Tiến độ'] + '%' }} />
+          <div>
+            <div className="flex items-center justify-between text-xs text-on-surface-variant mb-1">
+              <span className="font-semibold uppercase tracking-wider">Tiến độ</span>
+              <span className="font-medium text-on-surface">{progress}%{savingProgress && ' (đang lưu…)'}</span>
+            </div>
+            {canEditProgress ? (
+              <input
+                type="range" min={0} max={100} step={5}
+                value={progress}
+                onChange={e => setProgress(Number(e.target.value))}
+                onMouseUp={e => saveProgress(Number(e.target.value))}
+                onTouchEnd={e => saveProgress(Number(e.target.value))}
+                disabled={savingProgress}
+                className="w-full accent-primary"
+              />
+            ) : (
+              <div className="h-2 bg-surface-variant rounded-full overflow-hidden">
+                <div className="h-full bg-primary rounded-full" style={{ width: progress + '%' }} />
+              </div>
+            )}
+          </div>
+
+          {task['Người phối hợp'] && (
+            <div>
+              <h4 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Người phối hợp</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {String(task['Người phối hợp']).split(',').map(s => s.trim()).filter(Boolean).map(id => (
+                  <span key={id} className="px-2.5 py-1 rounded-full text-xs font-medium bg-surface-container text-on-surface">{getUserName(id) || id}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {parseSubtasks(task['Subtasks']).length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
+                Công việc con ({parseSubtasks(task['Subtasks']).filter(s => s.done).length}/{parseSubtasks(task['Subtasks']).length})
+              </h4>
+              <div className="space-y-1">
+                {parseSubtasks(task['Subtasks']).map((s, i) => (
+                  <div key={s.id || i} className="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-1.5">
+                    <span className={`material-symbols-outlined text-base ${s.done ? 'text-primary icon-filled' : 'text-on-surface-variant'}`}>
+                      {s.done ? 'check_box' : 'check_box_outline_blank'}
+                    </span>
+                    <span className={`text-sm flex-1 ${s.done ? 'line-through text-on-surface-variant' : 'text-on-surface'}`}>{s.title || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {task['Ghi chú'] && (
+            <div>
+              <h4 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">Ghi chú</h4>
+              <p className="text-sm text-on-surface-variant whitespace-pre-wrap bg-surface-container-low rounded-xl px-3 py-2">{task['Ghi chú']}</p>
             </div>
           )}
 
@@ -85,7 +174,7 @@ export default function TaskDetailModal({ task, token, users, labels, projects, 
             <div className="flex gap-2">
               <input value={newComment} onChange={e => setNewComment(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()}
                 placeholder="Viết bình luận…" className="flex-1 px-3 py-2 bg-surface-container rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-primary/30" />
-              <button onClick={handleSend} disabled={sending || !newComment.trim()} className="px-4 py-2 bg-primary text-on-primary rounded-xl text-sm font-medium disabled:opacity-50 hover:bg-primary-700 transition-colors">
+              <button onClick={handleSend} disabled={sending || !newComment.trim()} className="px-4 py-2 bg-accent text-white rounded-xl text-sm font-medium disabled:opacity-50 hover:bg-accent-hover transition-colors">
                 <span className="material-symbols-outlined text-base">send</span>
               </button>
             </div>

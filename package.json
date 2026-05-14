@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev": "npx concurrently -n sso,doc,work -c blue,green,yellow \"npm run dev:sso\" \"npm run dev:docmgr\" \"npm run dev:workmgr\"",
     "dev:docmgr": "npm run dev -w apps/docmgr",
     "dev:sso": "npm run dev -w apps/sso-portal",
     "dev:license": "npm run dev -w apps/license-server",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@google/clasp": "^3.3.0",
+    "concurrently": "^9.2.1",
     "javascript-obfuscator": "^4.1.1",
     "jest": "^29.7.0",
     "jest-environment-node": "^29.7.0",

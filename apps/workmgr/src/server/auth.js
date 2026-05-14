@@ -12,21 +12,21 @@ var DEFAULT_PERMS = {
   'admin':         null,
   'Giám đốc':      null,
   'Trưởng phòng': {
-    duAn:      { c: true,  r: true,  u: true,  d: false },
+    phongBan:      { c: true,  r: true,  u: true,  d: false },
     congViec:  { c: true,  r: true,  u: true,  d: true  },
     nhan:      { c: false, r: true,  u: false, d: false },
     user:      { c: false, r: false, u: false, d: false },
     caiDat:    { c: false, r: false, u: false, d: false },
   },
   'Nhân viên': {
-    duAn:      { c: false, r: true,  u: false, d: false },
+    phongBan:      { c: false, r: true,  u: false, d: false },
     congViec:  { c: false, r: true,  u: true,  d: false },
     nhan:      { c: false, r: true,  u: false, d: false },
     user:      { c: false, r: false, u: false, d: false },
     caiDat:    { c: false, r: false, u: false, d: false },
   },
   'Xem': {
-    duAn:      { c: false, r: true,  u: false, d: false },
+    phongBan:      { c: false, r: true,  u: false, d: false },
     congViec:  { c: false, r: true,  u: false, d: false },
     nhan:      { c: false, r: true,  u: false, d: false },
     user:      { c: false, r: false, u: false, d: false },
@@ -35,7 +35,7 @@ var DEFAULT_PERMS = {
 }
 
 var FULL_ADMIN_PERMS = {
-  duAn:      { c: true, r: true, u: true, d: true },
+  phongBan:      { c: true, r: true, u: true, d: true },
   congViec:  { c: true, r: true, u: true, d: true },
   nhan:      { c: true, r: true, u: true, d: true },
   user:      { c: true, r: true, u: true, d: true },
@@ -59,6 +59,80 @@ function getPermissions(appRole) {
   }
 
   return DEFAULT_PERMS[role] || DEFAULT_PERMS['Xem']
+}
+
+// ===== Department & task permission helpers =====
+// Apply customer-defined rules:
+// - Admin/GĐ: full access
+// - PGĐ (Phó Giám đốc): manage depts they oversee (PGĐ phụ trách ID === userId)
+// - Trưởng/Phó phòng: manage tasks in their own dept
+// - Người thực hiện (assignee): can update own task progress/status (within Kanban limits)
+// - All employees: can VIEW all tasks across all depts (cross-view) — only EDIT restricted
+
+function _isAdminRole(role) {
+  return role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
+}
+
+function _isPGDOfDept(session, dept) {
+  if (!dept) return false
+  return String(dept['PGĐ phụ trách ID']) === String(session.userId)
+}
+
+function _isLeaderOfDept(session, dept) {
+  if (!dept) return false
+  var uid = String(session.userId)
+  return String(dept['Trưởng phòng ID']) === uid || String(dept['Phó phòng ID']) === uid
+}
+
+/**
+ * Whether user can create/update/delete the dept itself (the row in PHONG_BAN).
+ * Only Admin/GĐ per customer requirement (image 2.1).
+ */
+function canManageDept(session) {
+  return _isAdminRole(session.role)
+}
+
+/**
+ * Whether user can create/edit/delete tasks in this dept.
+ * Admin/GĐ → any; PGĐ → depts they manage; Trưởng/Phó phòng → own dept.
+ */
+function canManageDeptTasks(session, dept) {
+  if (_isAdminRole(session.role)) return true
+  if (_isPGDOfDept(session, dept)) return true
+  if (_isLeaderOfDept(session, dept)) return true
+  return false
+}
+
+/**
+ * Whether user can update task progress (Tiến độ %).
+ * Leaders, PGĐ phụ trách, the assignee, or Admin/GĐ.
+ */
+function canUpdateTaskProgress(session, dept, task) {
+  if (_isAdminRole(session.role)) return true
+  if (_isPGDOfDept(session, dept)) return true
+  if (_isLeaderOfDept(session, dept)) return true
+  if (task && String(task['Người thực hiện ID']) === String(session.userId)) return true
+  return false
+}
+
+/**
+ * Whether user can move a task between Kanban columns.
+ *  - Cần Làm → Đang Thực Hiện: assignee (+ leaders/admin)
+ *  - Đang Thực Hiện → Chờ Duyệt: assignee (+ leaders/admin)
+ *  - Chờ Duyệt → Hoàn Thành: leaders / PGĐ / Admin/GĐ only
+ *  - Any other transition: leaders / admin override
+ */
+function canMoveTaskStatus(session, dept, task, fromStatus, toStatus) {
+  if (_isAdminRole(session.role)) return true
+  var isAssignee = task && String(task['Người thực hiện ID']) === String(session.userId)
+  var isLeaderOrPGD = _isLeaderOfDept(session, dept) || _isPGDOfDept(session, dept)
+
+  if (toStatus === 'Hoàn Thành') return isLeaderOrPGD
+  if ((fromStatus === 'Cần Làm' && toStatus === 'Đang Thực Hiện') ||
+      (fromStatus === 'Đang Thực Hiện' && toStatus === 'Chờ Duyệt')) {
+    return isAssignee || isLeaderOrPGD
+  }
+  return isLeaderOrPGD
 }
 
 /**

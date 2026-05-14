@@ -120,26 +120,91 @@ function api_getAllData(token) {
   })
 }
 
-// ===== Projects API =====
+// ===== Departments API =====
 
-function api_getProjects(token, filters) {
-  return _wrap(function() { return getProjects(token, filters) })
+function api_getDepartments(token, filters) {
+  return _wrap(function() { return getDepartments(token, filters) })
 }
 
-function api_createProject(token, data) {
-  return _wrap(function() { return createProject(token, data) })
+function api_createDepartment(token, data) {
+  return _wrap(function() { return createDepartment(token, data) })
 }
 
-function api_updateProject(token, id, data) {
-  return _wrap(function() { return updateProject(token, id, data) })
+function api_updateDepartment(token, id, data) {
+  return _wrap(function() { return updateDepartment(token, id, data) })
 }
 
-function api_deleteProject(token, id) {
-  return _wrap(function() { return _deleteProject(token, id) })
+function api_deleteDepartment(token, id) {
+  return _wrap(function() { return _deleteDepartment(token, id) })
 }
 
-function api_getDashboardStats(token) {
-  return _wrap(function() { return getDashboardStats(token) })
+// Generic paginated, filterable log reader. Mirrors docmgr's audit endpoint.
+// userField defaults to 'Tên người dùng' (workmgr's HOAT_DONG column) — docmgr
+// uses 'Người dùng' on its NHAT_KY sheet.
+function _readLogPage(sheetName, filters, userField) {
+  filters = filters || {}
+  var uf = userField || 'Tên người dùng'
+  var limit = Math.max(1, Math.min(500, Number(filters.limit) || 50))
+  var offset = Math.max(0, Number(filters.offset) || 0)
+  var keyword = String(filters.keyword || '').toLowerCase()
+
+  var logs = getSheetData(sheetName)
+  logs = logs.slice().sort(function(a, b) {
+    var av = a['Thời gian'] ? new Date(a['Thời gian']).getTime() : 0
+    var bv = b['Thời gian'] ? new Date(b['Thời gian']).getTime() : 0
+    return bv - av
+  })
+  var types = [], users = []
+  logs.forEach(function(l) {
+    var type = l['Loại'] || ''
+    if (type && types.indexOf(type) === -1) types.push(type)
+    var user = l[uf] || ''
+    if (user && users.indexOf(user) === -1) users.push(user)
+  })
+  users.sort()
+  if (filters.type) {
+    logs = logs.filter(function(l) { return l['Loại'] === filters.type })
+  }
+  if (filters.user) {
+    var q = String(filters.user).toLowerCase()
+    logs = logs.filter(function(l) { return String(l[uf] || '').toLowerCase().indexOf(q) !== -1 })
+  }
+  if (keyword) {
+    logs = logs.filter(function(l) {
+      return (
+        String(l[uf] || '').toLowerCase().indexOf(keyword) !== -1 ||
+        String(l['Loại'] || '').toLowerCase().indexOf(keyword) !== -1 ||
+        String(l['Mô tả'] || l['Đối tượng'] || '').toLowerCase().indexOf(keyword) !== -1 ||
+        String(l['Mã đối tượng'] || l['Chi tiết'] || '').toLowerCase().indexOf(keyword) !== -1
+      )
+    })
+  }
+  return {
+    data: logs.slice(offset, offset + limit),
+    hasMore: offset + limit < logs.length,
+    total: logs.length,
+    types: types,
+    users: users,
+  }
+}
+
+function api_getActivities(token, filters) {
+  return _wrap(function() {
+    requireAuth(token)
+    return _readLogPage(SHEETS.HOAT_DONG, filters, 'Tên người dùng')
+  })
+}
+
+function api_getAuditLogs(token, filters) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    if (!_isAdminRole(session.role)) throw new Error('Chỉ Admin/Giám đốc được xem nhật ký')
+    return _readLogPage(SHEETS.NHAT_KY, filters, 'Người dùng')
+  })
+}
+
+function api_getDashboardStats(token, filters) {
+  return _wrap(function() { return getDashboardStats(token, filters) })
 }
 
 // ===== Tasks API =====
@@ -156,12 +221,85 @@ function api_updateTask(token, id, data) {
   return _wrap(function() { return updateTask(token, id, data) })
 }
 
-function api_updateTaskStatus(token, id, status) {
-  return _wrap(function() { return updateTaskStatus(token, id, status) })
+function api_updateTaskStatus(token, id, status, departmentId) {
+  return _wrap(function() { return updateTaskStatus(token, id, status, departmentId) })
 }
 
-function api_deleteTask(token, id) {
-  return _wrap(function() { return _deleteTask(token, id) })
+function api_batchUpdateTaskStatus(token, items) {
+  return _wrap(function() {
+    requireAuth(token)
+    if (!Array.isArray(items)) throw new Error('items must be array')
+    var results = []
+    items.forEach(function(item) {
+      try {
+        updateTaskStatus(token, item.id, item.status, item.deptId)
+        results.push({ id: item.id, ok: true })
+      } catch(e) {
+        results.push({ id: item.id, ok: false, error: e.message })
+      }
+    })
+    return results
+  })
+}
+
+function api_updateTaskProgress(token, id, departmentId, progress) {
+  return _wrap(function() { return updateTaskProgress(token, id, departmentId, progress) })
+}
+
+function api_deleteTask(token, id, departmentId) {
+  return _wrap(function() { return _deleteTask(token, id, departmentId) })
+}
+
+// ===== Archive API =====
+
+function api_runArchive(token) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    if (!_isAdminRole(session.role)) throw new Error('Chỉ Admin/Giám đốc được chạy archive')
+    return archiveOldCompletedTasks()
+  })
+}
+
+function api_setupArchiveTrigger(token) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    if (!_isAdminRole(session.role)) throw new Error('Chỉ Admin/Giám đốc được cài trigger')
+    return setupArchiveTrigger()
+  })
+}
+
+function api_rebuildTaskIndex(token) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    if (!_isAdminRole(session.role)) throw new Error('Chỉ Admin/Giám đốc được rebuild index')
+    return rebuildTaskIndex()
+  })
+}
+
+// ===== Schedules API =====
+
+function api_getSchedules(token, filters) {
+  return _wrap(function() { return getSchedules(token, filters) })
+}
+
+function api_createSchedule(token, data) {
+  return _wrap(function() { return createSchedule(token, data) })
+}
+
+function api_approveSchedule(token, id) {
+  return _wrap(function() { return approveSchedule(token, id) })
+}
+
+function api_rejectSchedule(token, id, reason) {
+  return _wrap(function() { return rejectSchedule(token, id, reason) })
+}
+
+function api_updateSchedule(token, id, data) {
+  return _wrap(function() { return updateSchedule(token, id, data) })
+}
+
+function api_deleteSchedule(token, id) {
+  return _wrap(function() { return _deleteSchedule(token, id) })
 }
 
 // ===== Comments API =====

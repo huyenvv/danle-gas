@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const DEFAULT_FORM = { 'Tên nhãn': '', 'Màu sắc': '#0053db' }
+const DEFAULT_FORM = { 'Tên nhãn': '', 'Màu sắc': '#01458e' }
 
 export default function LabelModal({ mode, data, onSave, onClose }) {
   const [form, setForm] = useState(DEFAULT_FORM)
@@ -10,7 +10,7 @@ export default function LabelModal({ mode, data, onSave, onClose }) {
     if (mode === 'edit' && data) {
       setForm({
         'Tên nhãn': data['Tên nhãn'] || '',
-        'Màu sắc': data['Màu sắc'] || '#0053db',
+        'Màu sắc': data['Màu sắc'] || '#01458e',
       })
       return
     }
@@ -67,7 +67,7 @@ export default function LabelModal({ mode, data, onSave, onClose }) {
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container rounded-full">
               Hủy
             </button>
-            <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-medium bg-primary text-on-primary rounded-full hover:bg-primary-700 disabled:opacity-50 shadow-md3-1">
+            <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-medium bg-accent text-white rounded-full hover:bg-accent-hover disabled:opacity-50 shadow-md3-1">
               {saving ? 'Đang lưu…' : mode === 'add' ? 'Tạo' : 'Cập nhật'}
             </button>
           </div>
