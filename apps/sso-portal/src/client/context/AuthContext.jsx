@@ -75,21 +75,12 @@ export function AuthProvider({ children }) {
     await logout()
   }, [logout])
 
-  // Show expiry modal on any API call returning session expired
+  // Server is source of truth — sliding window in validateSession() keeps session alive
+  // during active use. Modal only fires when an actual API call returns session expired.
   useEffect(() => {
     window.__onSessionExpired = expireSession
     return () => { window.__onSessionExpired = null }
   }, [expireSession])
-
-  // Show expiry modal exactly when session expires
-  useEffect(() => {
-    if (!session) return
-    const SESSION_TTL_MS = 28800 * 1000 // 8 hours fallback
-    const ms = (session.expiresAt ? session.expiresAt - Date.now() : SESSION_TTL_MS) + 10000
-    if (ms <= 0) { expireSession(); return }
-    const timer = setTimeout(expireSession, ms)
-    return () => clearTimeout(timer)
-  }, [session, expireSession])
 
   const value = { session, loading, ssoToken, parentSheetId, login, logout, updateSession, sessionExpired, acknowledgeExpiry }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

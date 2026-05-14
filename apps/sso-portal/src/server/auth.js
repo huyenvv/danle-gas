@@ -36,7 +36,7 @@ function login(email, password) {
     isOwner: isOwner,
     mustChangePass: mustChange,
     ssoToken: ssoToken,
-    expiresAt: new Date().getTime() + SESSION_TTL * 1000,
+    expiresAt: new Date().getTime() + SSO_TOKEN_TTL * 1000,
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
 

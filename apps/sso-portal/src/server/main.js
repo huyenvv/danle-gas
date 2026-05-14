@@ -18,7 +18,29 @@ function api_logout(token) {
 }
 
 function api_validateSession(token) {
-  return _wrap(function() { return validateSession(token) })
+  return _wrap(function() {
+    var session = validateSession(token)
+    if (!session) return null
+
+    // Sliding window: extend SSO token expiry in sheet when less than half TTL remains.
+    // (Sheet writes are expensive — at most ~2 writes per 24h per active user.)
+    var nowMs = new Date().getTime()
+    var halfTtlMs = (SSO_TOKEN_TTL * 1000) / 2
+    if (!session.expiresAt || session.expiresAt - nowMs < halfTtlMs) {
+      var newExpiry = nowMs + (SSO_TOKEN_TTL * 1000)
+      session.expiresAt = newExpiry
+      cachePut('sess_' + token, session, SESSION_TTL)
+      try {
+        var users = getSheetData(SHEETS.USERS)
+        var user = users.find(function(u) { return String(u['ID']) === String(session.userId) })
+        if (user && user['SSO_Token']) {
+          updateRow(SHEETS.USERS, user['ID'], { 'SSO_Expiry': newExpiry })
+        }
+      } catch(e) { Logger.log('SSO token refresh error: ' + e.message) }
+    }
+
+    return session
+  })
 }
 
 function api_changePassword(token, oldPassword, newPassword) {

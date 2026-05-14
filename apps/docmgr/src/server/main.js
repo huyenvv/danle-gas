@@ -105,14 +105,11 @@ function api_validateSession(token) {
       var perms = getPermissions(appRole)
       var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
       var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
-      var changed = appRole['Quyền'] !== session.role || !!canCreate !== !!session.canCreate || !!canCreateSubCat !== !!session.canCreateSubCat
-      if (changed) {
-        session.role = appRole['Quyền']
-        session.permissions = perms
-        session.canCreate = !!canCreate
-        session.canCreateSubCat = !!canCreateSubCat
-        cachePut('sess_' + token, session, SESSION_TTL)
-      }
+      session.role = appRole['Quyền']
+      session.permissions = perms
+      session.canCreate = !!canCreate
+      session.canCreateSubCat = !!canCreateSubCat
+      cachePut('sess_' + token, session, SESSION_TTL)
     }
 
     return session

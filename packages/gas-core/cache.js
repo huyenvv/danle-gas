@@ -1,5 +1,6 @@
 // ===== CacheService wrapper =====
 var CACHE_TTL = 600 // 10 minutes
+var CACHE_MAX_TTL = 21600 // GAS hard limit: 6 hours
 
 function _getCache() {
   return CacheService.getScriptCache()
@@ -12,7 +13,9 @@ function cacheGet(key) {
 }
 
 function cachePut(key, value, ttl) {
-  _getCache().put(key, JSON.stringify(value), ttl || CACHE_TTL)
+  var t = ttl || CACHE_TTL
+  if (t > CACHE_MAX_TTL) t = CACHE_MAX_TTL
+  _getCache().put(key, JSON.stringify(value), t)
 }
 
 function cacheRemove(key) {

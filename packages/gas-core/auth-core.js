@@ -1,6 +1,9 @@
 // ===== Auth core — session & password management =====
 
-var SESSION_TTL = 28800 // 8 hours in seconds
+// Cache TTL for sessions. GAS caps at 6h, so we use that.
+// Sliding window in validateSession() keeps session alive as long as user is active.
+// Logical session duration (SSO_TOKEN_TTL = 24h) is tracked separately via session.expiresAt.
+var SESSION_TTL = 21600 // 6 hours (GAS CacheService max)
 
 function hashPassword(username, password) {
   return _hashPassword(username, password)
@@ -17,7 +20,11 @@ function logout(token) {
 
 function validateSession(token) {
   if (!token) return null
-  return cacheGet('sess_' + token)
+  var session = cacheGet('sess_' + token)
+  if (!session) return null
+  // Sliding window: refresh cache TTL on every validate to keep session alive
+  cachePut('sess_' + token, session, SESSION_TTL)
+  return session
 }
 
 function requireAuth(token) {
