@@ -28,7 +28,8 @@ export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack }
         className="fixed top-0 left-1/2 -translate-x-1/2 z-50 transition-transform duration-300 ease-in-out"
         style={{ transform: `translateX(-50%) translateY(${collapsed ? '-100%' : '0'})` }}
       >
-        <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-lowest/95 backdrop-blur-sm rounded-b-2xl shadow-md3-2 border border-t-0 border-outline-variant/30 min-w-[340px] max-w-[500px]">
+        <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-lowest/95 backdrop-blur-sm rounded-b-2xl shadow-md3-2 border border-t-0 border-outline-variant/30 min-w-[340px] max-w-[500px] relative">
+          <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #01458e, #e87a1e)' }} />
           {/* App info */}
           <span className="material-symbols-outlined text-lg text-primary">{activeApp['Icon'] || 'apps'}</span>
           <span className="text-sm font-semibold text-on-surface truncate max-w-[140px]">{activeApp['Tên App']}</span>
@@ -40,7 +41,7 @@ export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack }
             <div className="relative">
               <button onClick={() => setMenuOpen(v => !v)}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-on-surface-variant hover:bg-surface-container transition">
-                <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                <span className="material-symbols-outlined text-sm text-accent">swap_horiz</span>
                 <span className="hidden sm:inline">Chuyển</span>
                 <span className="material-symbols-outlined text-xs">expand_more</span>
               </button>

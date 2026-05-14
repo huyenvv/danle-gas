@@ -43,7 +43,7 @@ function AppInner() {
             </div>
             <div className="flex justify-end">
               <button onClick={acknowledgeExpiry}
-                className="px-5 py-2 rounded-xl text-sm font-medium bg-primary text-on-primary hover:opacity-90 transition-opacity">
+                className="px-5 py-2 rounded-xl text-sm font-medium bg-accent text-white hover:bg-accent-hover transition-colors">
                 Đăng nhập lại
               </button>
             </div>

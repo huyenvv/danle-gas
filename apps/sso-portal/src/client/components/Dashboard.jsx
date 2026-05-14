@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
 import AppCard from './AppCard.jsx'
 import IframeOverlay from './IframeOverlay.jsx'
@@ -19,6 +20,7 @@ const TABS = [
 export default function Dashboard() {
   const { session, ssoToken, parentSheetId, logout } = useAuth()
   const { addToast } = useToast()
+  const confirm = useConfirm()
   const [apps, setApps] = useState([])
   const [activeApp, setActiveApp] = useState(null)
   const [tab, setTab] = useState('apps')
@@ -96,8 +98,9 @@ export default function Dashboard() {
       <header className="bg-surface-container-lowest border-b border-outline-variant/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-2xl text-primary">shield_person</span>
-            <h1 className="text-base font-bold text-on-surface">SSO Portal</h1>
+            <img src="https://sbm.com.vn/wp-content/uploads/2022/03/logo.png" alt="SBM" className="h-8" />
+            <span className="text-outline-variant/40">|</span>
+            <h1 className="text-sm font-semibold text-primary">Cổng Đăng Nhập</h1>
           </div>
           <div className="relative">
             <button onClick={() => setShowUserMenu(v => !v)}
@@ -121,7 +124,7 @@ export default function Dashboard() {
                     <span className="material-symbols-outlined text-lg">key</span>
                     Đổi mật khẩu
                   </button>
-                  <button onClick={logout}
+                  <button onClick={async () => { if (await confirm('Bạn có chắc muốn đăng xuất?')) logout() }}
                     className="w-full px-4 py-2 text-left text-sm text-error hover:bg-error-container/40 flex items-center gap-2 transition">
                     <span className="material-symbols-outlined text-lg">logout</span>
                     Đăng xuất
@@ -140,7 +143,7 @@ export default function Dashboard() {
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`px-4 py-3 text-sm font-medium flex items-center gap-2 border-b-2 transition whitespace-nowrap
                 ${tab === t.id
-                  ? 'border-primary text-primary'
+                  ? 'border-accent text-primary font-semibold'
                   : 'border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
                 }`}>
               <span className="material-symbols-outlined text-lg">{t.icon}</span>

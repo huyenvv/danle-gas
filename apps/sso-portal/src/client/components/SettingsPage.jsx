@@ -63,7 +63,7 @@ export default function SettingsPage() {
             <button
               onClick={() => updateConfig('MAIL_ENABLED', config.MAIL_ENABLED === 'TRUE' ? 'FALSE' : 'TRUE')}
               className={`w-11 h-6 rounded-full transition-colors relative
-                ${config.MAIL_ENABLED === 'TRUE' ? 'bg-primary' : 'bg-outline-variant'}`}
+                ${config.MAIL_ENABLED === 'TRUE' ? 'bg-accent' : 'bg-outline-variant'}`}
             >
               <div className={`w-5 h-5 bg-white rounded-full shadow absolute top-0.5 transition-transform
                 ${config.MAIL_ENABLED === 'TRUE' ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
@@ -121,7 +121,7 @@ export default function SettingsPage() {
       </div>
 
       <button onClick={handleSave} disabled={saving}
-        className="px-6 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 transition flex items-center gap-2">
+        className="px-6 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 transition flex items-center gap-2">
         <span className="material-symbols-outlined text-lg">save</span>
         {saving ? 'Đang lưu...' : 'Lưu cấu hình'}
       </button>

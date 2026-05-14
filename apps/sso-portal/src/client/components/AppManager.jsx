@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
 
 const POPULAR_ICONS = [
@@ -16,6 +17,7 @@ const POPULAR_ICONS = [
 export default function AppManager({ apps, setApps }) {
   const { session } = useAuth()
   const { addToast } = useToast()
+  const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [formData, setFormData] = useState({ 'Tên App': '', 'Webapp URL': '', 'Icon': 'apps', 'Mô tả': '' })
@@ -45,6 +47,7 @@ export default function AppManager({ apps, setApps }) {
   }
 
   async function handleDelete(id) {
+    if (!await confirm('Bạn có chắc muốn xóa ứng dụng này?')) return
     try {
       await gasCall('api_deleteApp', session.token, id)
       setApps(prev => prev.filter(a => a.ID !== id))
@@ -83,7 +86,7 @@ export default function AppManager({ apps, setApps }) {
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-lg font-bold text-on-surface">Quản lý ứng dụng</h2>
         <button onClick={() => { closeForm(); setShowForm(true) }}
-          className="px-4 py-2 rounded-xl bg-primary text-on-primary text-sm font-medium flex items-center gap-2 hover:bg-primary-700 transition">
+          className="px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium flex items-center gap-2 hover:bg-accent-hover transition">
           <span className="material-symbols-outlined text-lg">add</span>
           Thêm App
         </button>
@@ -189,7 +192,7 @@ export default function AppManager({ apps, setApps }) {
                   Hủy
                 </button>
                 <button type="submit" disabled={saving || !formData['Tên App']?.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 transition">
+                  className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 transition">
                   {saving ? 'Đang lưu...' : (editId ? 'Cập nhật' : 'Thêm')}
                 </button>
               </div>

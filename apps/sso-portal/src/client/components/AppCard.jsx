@@ -10,7 +10,7 @@ export default function AppCard({ app, onClick }) {
       disabled={!hasUrl}
       className={`group relative text-left w-full bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-5 transition-all duration-200
         ${hasUrl
-          ? 'hover:shadow-md3-3 hover:border-primary/30 hover:-translate-y-0.5 cursor-pointer'
+          ? 'hover:shadow-md3-3 hover:border-accent/30 hover:-translate-y-0.5 cursor-pointer'
           : 'opacity-60 cursor-not-allowed'
         }`}
     >
@@ -41,7 +41,7 @@ export default function AppCard({ app, onClick }) {
       {/* Hover arrow */}
       {hasUrl && (
         <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-          <span className="material-symbols-outlined text-lg text-primary">arrow_forward</span>
+          <span className="material-symbols-outlined text-lg text-accent">arrow_forward</span>
         </div>
       )}
     </button>

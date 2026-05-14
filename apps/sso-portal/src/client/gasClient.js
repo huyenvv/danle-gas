@@ -41,9 +41,8 @@ const _mockUsers = [
 ]
 
 const _mockApps = [
-  { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'https://script.google.com/macros/s/xxx/exec', 'Icon': 'description', 'Mô tả': 'Quản lý hồ sơ, tài liệu', 'Trạng thái': 'Active' },
-  { ID: 2, 'Tên App': 'Quản lý Nhân sự', 'Webapp URL': '', 'Icon': 'group', 'Mô tả': 'Quản lý thông tin nhân viên', 'Trạng thái': 'Active' },
-  { ID: 3, 'Tên App': 'Báo cáo KPI', 'Webapp URL': '', 'Icon': 'bar_chart', 'Mô tả': 'Theo dõi hiệu suất', 'Trạng thái': 'Active' },
+  { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'http://localhost:5173/', 'Icon': 'description', 'Mô tả': 'Quản lý hồ sơ, tài liệu', 'Trạng thái': 'Active' },
+  { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://localhost:5175/', 'Icon': 'task_alt', 'Mô tả': 'Quản lý công việc, dự án', 'Trạng thái': 'Active' },
 ]
 
 async function mockCall(fn, ...args) {

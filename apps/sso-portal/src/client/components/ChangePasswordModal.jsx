@@ -45,13 +45,19 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-surface-container-lowest rounded-3xl shadow-md3-3 w-full max-w-md p-6">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-tertiary/10 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-tertiary/10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-2xl text-tertiary">key</span>
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-lg font-bold text-on-surface">Đổi mật khẩu</h2>
             {forced && <p className="text-xs text-on-surface-variant">Bạn cần đổi mật khẩu trước khi tiếp tục</p>}
           </div>
+          {!forced && onClose && (
+            <button onClick={onClose} disabled={loading}
+              className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors shrink-0 disabled:opacity-50">
+              <span className="material-symbols-outlined text-xl text-on-surface-variant">close</span>
+            </button>
+          )}
         </div>
 
         {error && (
@@ -116,7 +122,7 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
               </button>
             )}
             <button type="submit" disabled={!canSubmit}
-              className="flex-1 py-2.5 rounded-xl bg-primary text-on-primary text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
               {loading ? (
                 <span className="material-symbols-outlined animate-spin text-lg">progress_activity</span>
               ) : (
