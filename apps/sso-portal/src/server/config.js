@@ -52,6 +52,7 @@ function _seedAdminUser(ss) {
 
   var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
   usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+  invalidateSheetCache(SHEETS.USERS)
 }
 
 function _getOwnerBootstrapInfo(ss) {
@@ -68,9 +69,12 @@ function _ensureOwnerUser(ss) {
   var owner = _getOwnerBootstrapInfo(ss)
   if (!owner.email) return
 
+  invalidateSheetCache(SHEETS.USERS)
   var users = getSheetData(SHEETS.USERS)
+  var ownerLower = owner.email.toLowerCase()
   var exists = users.some(function(user) {
-    return user['Email'] && user['Email'].toLowerCase() === owner.email.toLowerCase()
+    return (user['Email'] && user['Email'].toLowerCase() === ownerLower) ||
+           (user['Tên đăng nhập'] && user['Tên đăng nhập'].toLowerCase() === ownerLower)
   })
 
   if (exists) return
@@ -95,4 +99,5 @@ function _ensureOwnerUser(ss) {
     '',
     ''
   ])
+  invalidateSheetCache(SHEETS.USERS)
 }

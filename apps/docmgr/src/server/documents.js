@@ -107,8 +107,19 @@ function _getAppLink() {
   return ''
 }
 
-function _sendNotificationEmails(recipients, docName, mailType, session) {
+function _buildFileLinks(doc) {
+  if (!doc || !doc['File ID']) return ''
+  var files = []
+  try { files = JSON.parse(doc['File ID']) } catch(e) { return '' }
+  if (!Array.isArray(files) || files.length === 0) return ''
+  return files.map(function(f) {
+    return '• ' + (f.fileName || 'File') + ': https://drive.google.com/file/d/' + f.fileId + '/view'
+  }).join('\n')
+}
+
+function _sendNotificationEmails(recipients, doc, mailType, session) {
   if (!recipients || recipients.length === 0) return
+  var docName = (typeof doc === 'string') ? doc : (doc['Tên hồ sơ'] || '')
   // Dev override: redirect all emails to test address for huyenvv90 owner
   try {
     var ownerEmail = getCentralSheet().getOwner().getEmail()
@@ -128,6 +139,10 @@ function _sendNotificationEmails(recipients, docName, mailType, session) {
       if (config['MAIL_SENDER_EMAIL']) mailOptions.from = config['MAIL_SENDER_EMAIL']
     }
 
+    var fileLinks = (typeof doc === 'object') ? _buildFileLinks(doc) : ''
+    var ngayBanHanh = (typeof doc === 'object') ? (doc['Ngày ban hành'] || '') : ''
+    var ngayKetThuc = (typeof doc === 'object') ? (doc['Ngày kết thúc'] || '') : ''
+
     recipients.forEach(function(r) {
       if (!r.email) return
       var vars = {
@@ -136,7 +151,10 @@ function _sendNotificationEmails(recipients, docName, mailType, session) {
         '{emailNgườiGửi}': session ? (session.email || '') : '',
         '{tênNgườiNhận}': r.name || '',
         '{vaiTròNgườiNhận}': r.role || '',
-        '{linkHệThống}': appLink
+        '{linkHệThống}': appLink,
+        '{linkTàiLiệu}': fileLinks,
+        '{ngàyBanHành}': ngayBanHanh,
+        '{ngàyKếtThúc}': ngayKetThuc
       }
       var subject = _applyTemplate(tpl.subject, vars)
       var body = _applyTemplate(tpl.body, vars)
@@ -375,7 +393,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
     _markUnreadForUsers(dirUserIds, added['ID'])
     var dirRecipients = _getRecipientsByUsernames(dirUserIds)
-    _sendNotificationEmails(dirRecipients, record['Tên hồ sơ'], 'trinhDuyet', session)
+    _sendNotificationEmails(dirRecipients, added, 'trinhDuyet', session)
   }
 
   return { data: added }
@@ -701,7 +719,7 @@ function transitionDocument(token, id, action, data) {
     Logger.log('[giaoViec] after exclude self=' + JSON.stringify(notifyUsers))
     _markUnreadForUsers(notifyUsers, id)
     var recipientList = _getRecipientsByUsernames(notifyUsers)
-    _sendNotificationEmails(recipientList, updated['Tên hồ sơ'], 'giaoViec', session)
+    _sendNotificationEmails(recipientList, updated, 'giaoViec', session)
   } else if (action === 'nhanViec' && updates['Người phối hợp']) {
     // nhanViec: notify only NEW collaborators
     var oldPhoiHop = _parseAssignees(doc['Người phối hợp'])
@@ -710,7 +728,7 @@ function transitionDocument(token, id, action, data) {
     if (addedUsers.length > 0) {
       _markUnreadForUsers(addedUsers, id)
       var newRecipients = _getRecipientsByUsernames(addedUsers)
-      _sendNotificationEmails(newRecipients, updated['Tên hồ sơ'], 'giaoViec', session)
+      _sendNotificationEmails(newRecipients, updated, 'giaoViec', session)
     }
   }
 

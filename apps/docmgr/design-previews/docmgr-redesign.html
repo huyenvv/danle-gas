@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocMgr — SBM Redesign Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+<style>
+  :root {
+    --navy: #01458e;
+    --navy-dark: #003370;
+    --navy-light: #1a5fa8;
+    --navy-10: rgba(1,69,142,0.08);
+    --navy-15: rgba(1,69,142,0.12);
+    --orange: #e87a1e;
+    --orange-hover: #d06a12;
+    --orange-light: #fff3e8;
+    --orange-glow: rgba(232,122,30,0.12);
+    --surface: #f5f7fa;
+    --surface-container: #eceef2;
+    --surface-low: #f0f2f6;
+    --white: #ffffff;
+    --text: #1a1c1e;
+    --text-secondary: #4a4d5e;
+    --text-muted: #6b7084;
+    --border: #d4d7e3;
+    --border-light: #e8eaf0;
+    --error: #c4302b;
+    --error-bg: #fef2f2;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --warning: #d97706;
+    --warning-bg: #fffbeb;
+    --shadow-sm: 0 1px 3px rgba(1,69,142,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md: 0 4px 16px rgba(1,69,142,0.08), 0 2px 4px rgba(0,0,0,0.04);
+    --shadow-lg: 0 8px 32px rgba(1,69,142,0.12), 0 4px 8px rgba(0,0,0,0.04);
+    --shadow-card: 0 2px 12px rgba(1,69,142,0.06), 0 1px 2px rgba(0,0,0,0.03);
+    --sidebar-w: 256px;
+    --header-h: 56px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Be Vietnam Pro', sans-serif; font-size: 14px; color: var(--text); background: var(--surface); -webkit-font-smoothing: antialiased; }
+  * { scrollbar-width: thin; scrollbar-color: #c3c6d7 transparent; }
+
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    user-select: none; line-height: 1; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  }
+  .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  .section-label {
+    text-align: center; font-size: 13px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 3px; text-transform: uppercase; margin: 48px 0 16px;
+    display: flex; align-items: center; gap: 16px; justify-content: center;
+  }
+  .section-label::before, .section-label::after {
+    content: ''; height: 1px; width: 60px; background: var(--border);
+  }
+
+  /* ════════════════════════════════════════════
+     FULL LAYOUT
+  ════════════════════════════════════════════ */
+  .app-shell {
+    display: flex; height: 680px; background: var(--surface);
+    border-radius: 16px; overflow: hidden; border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg); margin: 0 auto; max-width: 1400px;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w); background: var(--surface-low);
+    border-right: 1px solid var(--border-light); display: flex; flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .sidebar-brand {
+    height: var(--header-h); border-bottom: 1px solid var(--border-light);
+    display: flex; align-items: center; gap: 10px; padding: 0 16px; flex-shrink: 0;
+  }
+  .sidebar-brand-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--navy), var(--navy-light));
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .sidebar-brand-icon .material-symbols-outlined { font-size: 18px; color: #fff; }
+  .sidebar-brand-text { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .sidebar-brand-text span { color: var(--navy); }
+
+  .sidebar-cta {
+    padding: 16px 12px 8px; flex-shrink: 0;
+  }
+  .sidebar-cta-btn {
+    width: 100%; display: flex; align-items: center; gap: 8px; justify-content: center;
+    padding: 10px 16px; border: none; border-radius: 24px;
+    background: var(--orange); color: #fff; font-size: 13px; font-weight: 600;
+    font-family: inherit; cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(232,122,30,0.25);
+  }
+  .sidebar-cta-btn:hover { background: var(--orange-hover); box-shadow: 0 4px 12px rgba(232,122,30,0.3); }
+  .sidebar-cta-btn .material-symbols-outlined { font-size: 18px; }
+
+  .sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 8px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 12px; font-size: 13px; font-weight: 500; color: var(--text-secondary);
+    cursor: pointer; transition: all 0.15s; border: none; background: none;
+    width: 100%; text-align: left; font-family: inherit;
+  }
+  .nav-item:hover { background: var(--surface-container); color: var(--text); transform: translateX(2px); }
+  .nav-item.active {
+    background: var(--white); color: var(--navy); font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+  .nav-item .material-symbols-outlined { font-size: 20px; }
+  .nav-item.active .material-symbols-outlined { color: var(--navy); }
+
+  /* ── Main area ── */
+  .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Top header ── */
+  .top-header {
+    height: var(--header-h); background: var(--white);
+    border-bottom: 1px solid var(--border-light); box-shadow: var(--shadow-sm);
+    display: flex; align-items: center; padding: 0 16px; gap: 8px; flex-shrink: 0;
+    position: relative;
+  }
+  .hamburger {
+    width: 40px; height: 40px; border-radius: 50%; border: none; background: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); transition: background 0.15s;
+  }
+  .hamburger:hover { background: var(--surface-container); }
+  .hamburger .material-symbols-outlined { font-size: 22px; }
+
+  .company-name {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: 0.3px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .company-name svg { height: 22px; }
+
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+
+  .bell-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: none; background: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); transition: all 0.15s; position: relative;
+  }
+  .bell-btn:hover { background: var(--surface-container); }
+  .bell-btn .material-symbols-outlined { font-size: 22px; }
+  .bell-badge {
+    position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px;
+    background: var(--error); color: #fff; border-radius: 99px; font-size: 10px;
+    font-weight: 700; display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+  }
+
+  .header-username {
+    font-size: 13px; font-weight: 500; color: var(--text); margin-right: 4px;
+  }
+  .role-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px;
+  }
+  .role-badge.admin { background: #fef2f2; color: #dc2626; }
+  .role-badge.director { background: #faf5ff; color: #7c3aed; }
+  .role-badge.clerk { background: rgba(1,69,142,0.08); color: var(--navy); }
+
+  .avatar-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--navy), var(--navy-light));
+    color: #fff; border: none; cursor: pointer; font-size: 13px; font-weight: 600;
+    font-family: inherit; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s; margin-left: 4px;
+  }
+  .avatar-btn:hover { box-shadow: 0 0 0 3px rgba(1,69,142,0.15); }
+
+  /* ── Content area ── */
+  .content { flex: 1; overflow-y: auto; padding: 20px; background: var(--surface); }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    background: var(--white); border-radius: 4px; box-shadow: var(--shadow-card);
+    padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-bottom: 16px; border: 1px solid var(--border-light);
+  }
+  .search-box {
+    position: relative; flex: 1; min-width: 0; max-width: 280px;
+  }
+  .search-box .material-symbols-outlined {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 18px; color: var(--text-muted); pointer-events: none;
+  }
+  .search-input {
+    width: 100%; padding: 9px 12px 9px 36px; border: none; border-radius: 4px;
+    background: var(--surface-low); font-size: 13px; font-family: inherit;
+    color: var(--text); outline: none; transition: all 0.2s;
+  }
+  .search-input:focus { background: var(--white); box-shadow: 0 0 0 2px rgba(1,69,142,0.1); }
+  .search-input::placeholder { color: #b0b3c0; }
+
+  .filter-btn {
+    padding: 8px 12px; border: none; border-radius: 4px;
+    background: var(--surface-low); font-size: 12px; font-weight: 500;
+    font-family: inherit; color: var(--text-secondary); cursor: pointer;
+    transition: all 0.15s; display: flex; align-items: center; gap: 4px;
+  }
+  .filter-btn:hover { background: var(--surface-container); color: var(--text); }
+  .filter-btn.active { background: var(--navy); color: #fff; }
+  .filter-btn .material-symbols-outlined { font-size: 16px; }
+
+  .filter-select {
+    padding: 8px 28px 8px 10px; border: none; border-radius: 4px;
+    background: var(--surface-low); font-size: 12px; font-family: inherit;
+    color: var(--text-secondary); cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%236b7084' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center;
+    outline: none;
+  }
+
+  .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .refresh-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+    background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); transition: all 0.15s;
+  }
+  .refresh-btn:hover { background: var(--surface-container); border-color: transparent; }
+
+  .add-btn {
+    display: flex; align-items: center; gap: 6px; padding: 9px 16px;
+    border: none; border-radius: 24px; background: var(--orange); color: #fff;
+    font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+    transition: all 0.2s; box-shadow: 0 2px 8px rgba(232,122,30,0.2);
+  }
+  .add-btn:hover { background: var(--orange-hover); box-shadow: 0 4px 12px rgba(232,122,30,0.3); }
+  .add-btn .material-symbols-outlined { font-size: 16px; }
+
+  /* ── Table ── */
+  .doc-table-wrap {
+    background: var(--white); border-radius: 4px; box-shadow: var(--shadow-card);
+    overflow: hidden; border: 1px solid var(--border-light);
+  }
+  .doc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .doc-table thead th {
+    padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600;
+    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+    background: var(--surface-low); border-bottom: 1px solid var(--border-light);
+    white-space: nowrap;
+  }
+  .doc-table tbody td { padding: 12px 14px; border-bottom: 1px solid var(--border-light); }
+  .doc-table tbody tr { transition: background 0.1s; cursor: pointer; }
+  .doc-table tbody tr:hover { background: var(--surface-low); }
+
+  /* Category header row */
+  .cat-row { background: rgba(1,69,142,0.04); cursor: pointer; }
+  .cat-row:hover { background: rgba(1,69,142,0.07) !important; }
+  .cat-row td {
+    padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--navy);
+    border-bottom: 1px solid var(--border-light);
+  }
+  .cat-arrow { font-size: 10px; margin-right: 6px; }
+  .cat-count { font-weight: 400; color: var(--navy-light); opacity: 0.7; margin-left: 4px; }
+
+  /* Doc name */
+  .doc-name { font-weight: 500; color: var(--text); }
+  .doc-name.unread { font-weight: 600; }
+  .unread-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--orange); margin-right: 6px; vertical-align: middle;
+  }
+
+  /* Status badges */
+  .status {
+    display: inline-block; padding: 2px 10px; border-radius: 99px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .status.pending { background: #fff7ed; color: #c2410c; }
+  .status.processing { background: #eff6ff; color: #2563eb; }
+  .status.in-progress { background: #fefce8; color: #a16207; }
+  .status.done { background: #f0fdf4; color: #16a34a; }
+
+  /* Assignee avatars */
+  .assignees { display: flex; align-items: center; }
+  .assignee-avatar {
+    width: 24px; height: 24px; border-radius: 50%; font-size: 10px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--white); margin-left: -6px;
+  }
+  .assignee-avatar:first-child { margin-left: 0; }
+  .assignee-avatar.navy { background: var(--navy); color: #fff; }
+  .assignee-avatar.orange { background: var(--orange); color: #fff; }
+  .assignee-avatar.teal { background: #0d9488; color: #fff; }
+  .assignee-avatar.more { background: var(--surface-container); color: var(--text-muted); font-size: 9px; }
+
+  /* Table footer */
+  .table-footer {
+    padding: 10px 14px; border-top: 1px solid var(--border-light);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--text-muted);
+  }
+
+  /* checkbox */
+  .cb { width: 16px; height: 16px; accent-color: var(--navy); cursor: pointer; border-radius: 3px; }
+
+  /* ── Batch action bar ── */
+  .batch-bar {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--navy-dark); color: #fff; padding: 12px 20px;
+    border-radius: 16px; box-shadow: var(--shadow-lg); z-index: 50;
+    font-size: 13px;
+  }
+  .batch-bar-btn {
+    display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+    border: none; border-radius: 24px; background: var(--orange); color: #fff;
+    font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .batch-bar-btn:hover { background: var(--orange-hover); }
+  .batch-bar-close {
+    border: none; background: none; color: rgba(255,255,255,0.5); cursor: pointer;
+    display: flex; padding: 2px; transition: color 0.15s;
+  }
+  .batch-bar-close:hover { color: #fff; }
+
+  /* ── User popover ── */
+  .user-popover {
+    width: 240px; background: var(--white); border-radius: 12px;
+    box-shadow: var(--shadow-lg); border: 1px solid var(--border-light);
+    overflow: hidden;
+  }
+  .user-popover-header {
+    padding: 14px 16px; border-bottom: 1px solid var(--border-light);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-low);
+  }
+  .user-popover-header .av {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--navy), var(--navy-light));
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; flex-shrink: 0;
+  }
+  .user-popover-info p:first-child { font-size: 13px; font-weight: 600; color: var(--text); }
+  .user-popover-info p:last-child { font-size: 11px; color: var(--text-muted); }
+  .user-popover-role {
+    padding: 10px 16px; display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted);
+  }
+  .user-popover-role .material-symbols-outlined { font-size: 16px; color: var(--navy); }
+  .user-popover-role strong { color: var(--navy); font-weight: 600; }
+
+  /* Animation */
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-up { animation: fadeUp 0.25s ease-out; }
+</style>
+</head>
+<body>
+
+<div class="section-label" style="margin-top:24px;">DocMgr — Full Layout</div>
+
+<div style="padding: 0 24px 24px; max-width: 1440px; margin: 0 auto;">
+<div class="app-shell fade-up">
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-brand-icon">
+        <span class="material-symbols-outlined filled" style="font-size:18px;">folder_special</span>
+      </div>
+      <div class="sidebar-brand-text">
+        Quản Lý <span>Tài Liệu</span>
+      </div>
+    </div>
+
+    <div class="sidebar-cta">
+      <button class="sidebar-cta-btn">
+        <span class="material-symbols-outlined">add</span>
+        Tạo hồ sơ mới
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active">
+        <span class="material-symbols-outlined filled">description</span> Hồ sơ
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">folder_open</span> Danh mục
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">groups</span> Nhóm
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">inventory_2</span> Nhà cung cấp
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">account_tree</span> Dự án
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">group</span> Người dùng
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">history</span> Nhật ký
+      </button>
+      <button class="nav-item">
+        <span class="material-symbols-outlined">settings</span> Cài đặt
+      </button>
+    </nav>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main-area">
+    <!-- Top header -->
+    <div class="top-header">
+      <button class="hamburger">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+
+      <div class="company-name">
+        <svg viewBox="0 0 90 28" xmlns="http://www.w3.org/2000/svg" style="height:20px;">
+          <path d="M3,22 C3,11 11,3 22,3" stroke="#01458e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <circle cx="17" cy="2.5" r="1.8" fill="#e87a1e"/>
+          <text x="14" y="21" font-family="Be Vietnam Pro, sans-serif" font-weight="800" font-size="16" fill="#01458e" letter-spacing="1">SBM</text>
+        </svg>
+        <span>CTCP Đầu tư Phát triển Bắc Minh</span>
+      </div>
+
+      <div class="header-right">
+        <button class="bell-btn">
+          <span class="material-symbols-outlined">notifications_active</span>
+          <span class="bell-badge">5</span>
+        </button>
+        <span class="header-username">Nguyễn Văn A</span>
+        <span class="role-badge clerk">Văn thư</span>
+        <button class="avatar-btn">N</button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="material-symbols-outlined">search</span>
+          <input class="search-input" placeholder="Tìm kiếm hồ sơ… (Enter)" value="">
+        </div>
+
+        <button class="filter-btn">
+          <span class="material-symbols-outlined">assignment_ind</span>
+          Công việc của tôi
+        </button>
+
+        <select class="filter-select">
+          <option>Tất cả</option>
+          <option>Chưa đọc</option>
+          <option>Đã đọc</option>
+        </select>
+
+        <select class="filter-select">
+          <option>Tất cả tình trạng</option>
+          <option>Chờ duyệt</option>
+          <option>Chờ xử lý</option>
+          <option>Đang xử lý</option>
+          <option>Hoàn thành</option>
+        </select>
+
+        <select class="filter-select">
+          <option>Tất cả dự án</option>
+          <option>TĐ Suối Sập 3</option>
+          <option>TĐ Tà Cọ</option>
+          <option>TĐ Nà Tẩu</option>
+        </select>
+
+        <div class="toolbar-right">
+          <button class="refresh-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">refresh</span>
+          </button>
+          <button class="add-btn">
+            <span class="material-symbols-outlined">add</span>
+            Thêm hồ sơ
+          </button>
+        </div>
+      </div>
+
+      <!-- Document table -->
+      <div class="doc-table-wrap">
+        <div style="overflow-x:auto;">
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th style="width:40px;"><input type="checkbox" class="cb"></th>
+              <th style="width:50px;">STT</th>
+              <th style="min-width:220px;">Tên hồ sơ</th>
+              <th>Số hồ sơ</th>
+              <th>Dự án (PB)</th>
+              <th>Phụ trách</th>
+              <th>Tình trạng</th>
+              <th>Ghi chú</th>
+              <th>Ngày BH</th>
+              <th style="width:40px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Category: Hồ sơ pháp lý -->
+            <tr class="cat-row">
+              <td colspan="10">
+                <span class="cat-arrow">▼</span>
+                Hồ sơ pháp lý <span class="cat-count">(12 hồ sơ)</span>
+              </td>
+            </tr>
+
+            <!-- Unread doc -->
+            <tr style="background:rgba(232,122,30,0.03);">
+              <td><input type="checkbox" class="cb"></td>
+              <td style="color:var(--text-muted);font-size:12px;">1</td>
+              <td>
+                <span class="doc-name unread">
+                  <span class="unread-dot"></span>
+                  Hợp đồng cung cấp thiết bị điện TĐ Suối Sập 3
+                </span>
+              </td>
+              <td style="color:var(--text-muted);font-size:12px;">HS-2024-0157</td>
+              <td style="color:var(--text-muted);">TĐ Suối Sập 3</td>
+              <td>
+                <div class="assignees">
+                  <div class="assignee-avatar navy">N</div>
+                  <div class="assignee-avatar orange">T</div>
+                </div>
+              </td>
+              <td><span class="status pending">Chờ duyệt</span></td>
+              <td style="color:var(--text-muted);font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Cần bổ sung phụ lục</td>
+              <td style="color:var(--text-muted);">12/05/2026</td>
+              <td><span class="material-symbols-outlined" style="font-size:18px;color:var(--text-muted);cursor:pointer;">more_vert</span></td>
+            </tr>
+
+            <!-- Read doc -->
+            <tr>
+              <td><input type="checkbox" class="cb"></td>
+              <td style="color:var(--text-muted);font-size:12px;">2</td>
+              <td><span class="doc-name">Biên bản nghiệm thu giai đoạn 2</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">HS-2024-0156</td>
+              <td style="color:var(--text-muted);">TĐ Tà Cọ</td>
+              <td>
+                <div class="assignees">
+                  <div class="assignee-avatar teal">H</div>
+                </div>
+              </td>
+              <td><span class="status done">Hoàn thành</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">—</td>
+              <td style="color:var(--text-muted);">08/05/2026</td>
+              <td><span class="material-symbols-outlined" style="font-size:18px;color:var(--text-muted);cursor:pointer;">more_vert</span></td>
+            </tr>
+
+            <tr>
+              <td><input type="checkbox" class="cb"></td>
+              <td style="color:var(--text-muted);font-size:12px;">3</td>
+              <td><span class="doc-name">Quyết định bổ nhiệm Phó GĐ</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">HS-2024-0155</td>
+              <td style="color:var(--text-muted);">—</td>
+              <td>
+                <div class="assignees">
+                  <div class="assignee-avatar navy">A</div>
+                  <div class="assignee-avatar orange">B</div>
+                  <div class="assignee-avatar teal">C</div>
+                  <div class="assignee-avatar more">+2</div>
+                </div>
+              </td>
+              <td><span class="status processing">Đang xử lý</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">Chờ phê duyệt HĐQT</td>
+              <td style="color:var(--text-muted);">07/05/2026</td>
+              <td><span class="material-symbols-outlined" style="font-size:18px;color:var(--text-muted);cursor:pointer;">more_vert</span></td>
+            </tr>
+
+            <!-- Category: Hồ sơ tài chính -->
+            <tr class="cat-row">
+              <td colspan="10">
+                <span class="cat-arrow">▼</span>
+                Hồ sơ tài chính <span class="cat-count">(8 hồ sơ)</span>
+              </td>
+            </tr>
+
+            <tr style="background:rgba(232,122,30,0.03);">
+              <td><input type="checkbox" class="cb"></td>
+              <td style="color:var(--text-muted);font-size:12px;">1</td>
+              <td>
+                <span class="doc-name unread">
+                  <span class="unread-dot"></span>
+                  Báo cáo tài chính Q1/2026
+                </span>
+              </td>
+              <td style="color:var(--text-muted);font-size:12px;">TC-2026-0042</td>
+              <td style="color:var(--text-muted);">—</td>
+              <td>
+                <div class="assignees">
+                  <div class="assignee-avatar orange">L</div>
+                </div>
+              </td>
+              <td><span class="status in-progress">Chờ xử lý</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">—</td>
+              <td style="color:var(--text-muted);">05/05/2026</td>
+              <td><span class="material-symbols-outlined" style="font-size:18px;color:var(--text-muted);cursor:pointer;">more_vert</span></td>
+            </tr>
+
+            <tr>
+              <td><input type="checkbox" class="cb"></td>
+              <td style="color:var(--text-muted);font-size:12px;">2</td>
+              <td><span class="doc-name">Hợp đồng bảo hiểm tài sản 2026</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">TC-2026-0041</td>
+              <td style="color:var(--text-muted);">—</td>
+              <td>
+                <div class="assignees">
+                  <div class="assignee-avatar navy">P</div>
+                  <div class="assignee-avatar teal">M</div>
+                </div>
+              </td>
+              <td><span class="status done">Hoàn thành</span></td>
+              <td style="color:var(--text-muted);font-size:12px;">Đã ký & lưu kho</td>
+              <td style="color:var(--text-muted);">01/05/2026</td>
+              <td><span class="material-symbols-outlined" style="font-size:18px;color:var(--text-muted);cursor:pointer;">more_vert</span></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+
+        <div class="table-footer">
+          <span>Hiển thị 5 / 20 hồ sơ</span>
+          <span style="font-size:11px;">Mỗi thư mục gốc hiển thị 25 hồ sơ mỗi lần tải thêm</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════
+     SECTION 2: Component Details
+═══════════════════════════════════════════ -->
+<div class="section-label">Chi Tiết Components</div>
+
+<div style="padding: 0 24px 48px; max-width: 1440px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;">
+
+  <!-- User popover -->
+  <div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">User popover:</p>
+    <div class="user-popover">
+      <div class="user-popover-header">
+        <div class="av">N</div>
+        <div class="user-popover-info">
+          <p>Nguyễn Văn A</p>
+          <p>nguyenvana@sbm.com.vn</p>
+        </div>
+      </div>
+      <div class="user-popover-role">
+        <span class="material-symbols-outlined">shield_person</span>
+        Vai trò: <strong>Văn thư</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status badges -->
+  <div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Status badges:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      <span class="status pending">Chờ duyệt</span>
+      <span class="status in-progress">Chờ xử lý</span>
+      <span class="status processing">Đang xử lý</span>
+      <span class="status done">Hoàn thành</span>
+    </div>
+
+    <p style="font-size:12px;color:var(--text-muted);margin: 16px 0 10px;">Role badges:</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      <span class="role-badge admin">Quản trị viên</span>
+      <span class="role-badge director">Giám đốc</span>
+      <span class="role-badge clerk">Văn thư</span>
+    </div>
+  </div>
+
+  <!-- Batch bar -->
+  <div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Batch action bar:</p>
+    <div class="batch-bar" style="position:static;transform:none;">
+      <span style="font-weight:500;">Đã chọn 3 hồ sơ</span>
+      <button class="batch-bar-btn">
+        <span class="material-symbols-outlined" style="font-size:16px;">mark_email_read</span>
+        Đánh dấu đã đọc
+      </button>
+      <button class="batch-bar-close">
+        <span class="material-symbols-outlined" style="font-size:16px;">close</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sidebar CTA variations -->
+  <div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">CTA Buttons:</p>
+    <div style="display:flex;flex-direction:column;gap:10px;max-width:220px;">
+      <button class="sidebar-cta-btn">
+        <span class="material-symbols-outlined">add</span>
+        Tạo hồ sơ mới
+      </button>
+      <button class="add-btn" style="justify-content:center;">
+        <span class="material-symbols-outlined">add</span>
+        Thêm hồ sơ
+      </button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

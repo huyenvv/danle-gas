@@ -23,6 +23,9 @@ const TEMPLATE_VARS = [
   { key: '{tênNgườiNhận}', desc: 'Tên người nhận' },
   { key: '{vaiTròNgườiNhận}', desc: 'Vai trò người nhận' },
   { key: '{linkHệThống}', desc: 'Link đăng nhập hệ thống' },
+  { key: '{linkTàiLiệu}', desc: 'Link file đính kèm (nhiều file = nhiều link)' },
+  { key: '{ngàyBanHành}', desc: 'Ngày ban hành' },
+  { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc' },
 ]
 
 const TOP_TABS = [

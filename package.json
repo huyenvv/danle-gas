@@ -24,10 +24,16 @@
     "deploy:workmgr": "node scripts/deploy.js --app workmgr"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.29.5",
+    "@babel/preset-react": "^7.28.5",
     "@google/clasp": "^3.3.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "babel-jest": "^30.4.1",
     "concurrently": "^9.2.1",
     "javascript-obfuscator": "^4.1.1",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^30.4.1",
     "jest-environment-node": "^29.7.0",
     "playwright": "^1.59.1"
   }

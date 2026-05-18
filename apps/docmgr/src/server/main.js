@@ -120,8 +120,8 @@ function api_validateSession(token) {
 
 function api_getAllData(token) {
   return _wrap(function() {
-    requireAuth(token)
-    return getAllData()
+    var session = requireAuth(token)
+    return getAllData(session)
   })
 }
 
@@ -134,7 +134,7 @@ function api_getInitialData(token) {
     var session = requireAuth(token)
 
     // 1. Lookups (getAllData)
-    var lookups = getAllData()
+    var lookups = getAllData(session)
 
     // 2. Documents (getDocuments reuses cached sheet data from getAllData)
     var docsResult = getDocuments(token, {})

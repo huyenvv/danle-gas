@@ -33,7 +33,7 @@ function parseAssignees(v) {
   if (typeof v === 'string' && v.charAt(0) === '[') { try { return JSON.parse(v).map(String) } catch(_) {} }
   return [String(v)]
 }
-const MAX_FILE_MB = 20
+const WARN_FILE_MB = 50
 
 function buildCategoryOptions(danhMuc) {
   const opts = []
@@ -149,8 +149,10 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
   function handleFileChange(e) {
     const newFiles = Array.from(e.target.files || [])
-    const tooBig = newFiles.find(f => f.size > MAX_FILE_MB * 1024 * 1024)
-    if (tooBig) { setError(`File "${tooBig.name}" quá lớn (tối đa ${MAX_FILE_MB}MB)`); return }
+    const bigFile = newFiles.find(f => f.size > WARN_FILE_MB * 1024 * 1024)
+    if (bigFile) {
+      showToast(`File "${bigFile.name}" lớn hơn ${WARN_FILE_MB}MB — upload có thể chậm hoặc thất bại`, 'warning')
+    }
     setFiles(prev => [...prev, ...newFiles.map(f => ({ file: f }))])
     e.target.value = ''
   }
@@ -471,7 +473,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 >
                   <span className="material-symbols-outlined text-on-surface-variant mb-1" style={{ fontSize: 28 }}>upload_file</span>
                   <p className="text-sm text-on-surface-variant">Kéo file vào đây hoặc <span className="text-primary font-medium">chọn file</span></p>
-                  <p className="text-xs text-on-surface-variant mt-0.5">PDF, DOC, XLSX, PNG, JPG — tối đa 20MB/file, nhiều file</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5">PDF, DOC, XLSX, PNG, JPG — nhiều file</p>
                   <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} multiple
                     accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" />
                 </div>

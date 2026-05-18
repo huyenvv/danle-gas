@@ -127,7 +127,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
     return cats
       .filter(c => String(c['Danh mục cha'] || '') === String(parentId || ''))
       .flatMap(cat => [
-        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} />,
+        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} lookups={lookups} />,
         ...renderTree(cat.ID, depth + 1)
       ])
   }
@@ -168,15 +168,16 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
             <tr className="bg-surface-container-low border-b border-outline-variant">
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Danh mục</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Mô tả</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phân quyền</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {cats.length === 0 && (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-on-surface-variant">Chưa có danh mục</td></tr>
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">Chưa có danh mục</td></tr>
             )}
             {filtered
-              ? filtered.map(cat => <CatRow key={cat.ID} cat={cat} cats={cats} indent={0} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} />)
+              ? filtered.map(cat => <CatRow key={cat.ID} cat={cat} cats={cats} indent={0} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} lookups={lookups} />)
               : renderTree('', 0)
             }
           </tbody>
@@ -298,9 +299,26 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
   )
 }
 
-function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isAdminRole, onAddSub }) {
+const PERM_MAX_CHIPS = 3
+
+function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isAdminRole, onAddSub, lookups }) {
   const childCount = cats.filter(c => String(c['Danh mục cha']) === String(cat.ID)).length
   const isChild = indent > 0
+
+  const userIds = parseJsonArray(cat['Người được xem'])
+  const groupIds = parseJsonArray(cat['Nhóm được xem'])
+  const chips = []
+  groupIds.forEach(gid => {
+    const g = (lookups.nhom || []).find(x => String(x.ID) === gid)
+    chips.push({ label: g ? g['Tên nhóm'] : gid, type: 'group' })
+  })
+  userIds.forEach(uid => {
+    const u = (lookups.users || []).find(x => String(x.ID) === uid)
+    chips.push({ label: u ? (u['Tên nhân viên'] || u['Tên đăng nhập']) : uid, type: 'user' })
+  })
+  const overflow = chips.length > PERM_MAX_CHIPS ? chips.length - PERM_MAX_CHIPS : 0
+  const visible = overflow ? chips.slice(0, PERM_MAX_CHIPS) : chips
+
   return (
     <tr className={`hover:bg-surface-container-low transition-colors ${isChild ? 'bg-surface-container-lowest/50' : ''}`}>
       <td className="px-4 py-3" style={{ paddingLeft: indent * 24 + 16 }}>
@@ -316,6 +334,23 @@ function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isA
         </div>
       </td>
       <td className="px-4 py-3 text-on-surface-variant text-xs">{cat['Mô tả'] || '—'}</td>
+      <td className="px-4 py-3">
+        {isChild
+          ? <span className="text-xs text-on-surface-variant italic">Kế thừa</span>
+          : chips.length === 0
+            ? <span className="text-xs text-on-surface-variant">Tất cả</span>
+            : <div className="flex flex-wrap gap-1" title={chips.map(c => c.label).join(', ')}>
+                {visible.map((c, i) => (
+                  <span key={i} className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.type === 'group' ? 'bg-secondary/10 text-secondary' : 'bg-accent/10 text-accent'}`}>
+                    {c.type === 'group' && <Icon name="group" size={12} className="inline-block mr-0.5 -mt-px" />}
+                    {c.type === 'user' && <Icon name="person" size={12} className="inline-block mr-0.5 -mt-px" />}
+                    {c.label}
+                  </span>
+                ))}
+                {overflow > 0 && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-surface-container text-on-surface-variant">+{overflow}</span>}
+              </div>
+        }
+      </td>
       <td className="px-4 py-3">
         <div className="flex gap-1 justify-end">
           {canAddSubCat && (
