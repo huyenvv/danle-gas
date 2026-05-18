@@ -10,7 +10,7 @@ module.exports = {
       displayName: 'client',
       testEnvironment: 'jsdom',
       testMatch: ['<rootDir>/src/client/__tests__/**/*.test.{js,jsx}'],
-      setupFilesAfterEach: ['<rootDir>/src/client/__tests__/setup.js'],
+      setupFilesAfterEnv: ['<rootDir>/src/client/__tests__/setup.js'],
       transform: {
         '^.+\\.(js|jsx)$': 'babel-jest',
       },

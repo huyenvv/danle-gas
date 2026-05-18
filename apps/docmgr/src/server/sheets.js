@@ -24,6 +24,7 @@ function getAllData(session) {
           parentInfoMap[String(u['ID'])] = {
             name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
             email: u['Email'] || '',
+            username: u['Tên đăng nhập'] || '',
           }
         })
       }
@@ -32,9 +33,11 @@ function getAllData(session) {
 
   var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     var info = parentInfoMap[String(r['UserID'])] || {}
+    // SSO _Người Dùng is the source of truth for Tên đăng nhập (session.username comes from there).
+    // APP_ROLES.Tên đăng nhập is a stale cache — only used as fallback when the SSO row is missing.
     return {
       ID: r['UserID'],
-      'Tên đăng nhập': r['Tên đăng nhập'] || '',
+      'Tên đăng nhập': info.username || r['Tên đăng nhập'] || '',
       'Tên nhân viên': info.name || r['Tên đăng nhập'] || '',
       'Email': info.email || '',
       'Phòng ban': '',

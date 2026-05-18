@@ -4,6 +4,8 @@ import { formatCurrency, formatDate, statusColor } from '../../utils/format.js'
 import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
+import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from '../../lib/workflowPermissions.js'
+import WorkflowButtons from './WorkflowButtons.jsx'
 
 function parseFileInfos(fileIdCol) {
   if (!fileIdCol) return []
@@ -14,12 +16,6 @@ function parseFileInfos(fileIdCol) {
     return [{ fileId: fileIdCol, fileName: fileIdCol, mimeType: '', size: 0 }]
   }
   return []
-}
-
-function parseAssignees(v) {
-  if (!v) return []
-  if (typeof v === 'string' && v.charAt(0) === '[') { try { return JSON.parse(v) } catch(_) {} }
-  return [String(v)]
 }
 
 function formatFileSize(size) {
@@ -152,43 +148,14 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   // ── Workflow helpers ──
   const status = doc['Tình trạng'] || ''
   const role = session?.role || ''
-  const isPhuTrach = (() => {
-    const list = parseAssignees(doc['Phụ trách'])
-    return list.includes(String(session?.userId)) || list.includes(session?.username)
-  })()
-  const isPhoiHop = (() => {
-    const list = parseAssignees(doc['Người phối hợp'])
-    return list.includes(String(session?.userId)) || list.includes(session?.username)
-  })()
+  const isPhuTrach = checkPhuTrach(doc, session)
+  const isPhoiHop = checkPhuTrach({ 'Phụ trách': doc['Người phối hợp'] }, session)
   const COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   const canComment = COMMENT_ROLES.includes(role) || isPhuTrach || isPhoiHop
   const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
   const canEditDoc = role === 'Giám đốc'
     ? status === 'Chờ duyệt'
     : isFullAdmin
-
-  function getAvailableActions() {
-    const actions = []
-    if (isFullAdmin) {
-      // Admin sees all possible transitions for current status
-      if (!status || status === 'Chờ duyệt') actions.push({ key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', color: 'primary' })
-      if (status === 'Chờ xử lý') {
-        actions.push({ key: 'thuHoi', label: 'Thu hồi', icon: 'undo', color: 'amber' })
-        actions.push({ key: 'nhanViec', label: 'Nhận việc', icon: 'check_circle', color: 'blue' })
-      }
-      if (status === 'Đang xử lý') actions.push({ key: 'hoanThanh', label: 'Hoàn thành', icon: 'task_alt', color: 'emerald' })
-      return actions
-    }
-    if (role === 'Giám đốc') {
-      if (status === 'Chờ duyệt') actions.push({ key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', color: 'primary' })
-      if (status === 'Chờ xử lý') actions.push({ key: 'thuHoi', label: 'Thu hồi', icon: 'undo', color: 'amber' })
-    }
-    if (isPhuTrach && role !== 'Giám đốc') {
-      if (status === 'Chờ xử lý') actions.push({ key: 'nhanViec', label: 'Nhận việc', icon: 'check_circle', color: 'blue' })
-      if (status === 'Đang xử lý') actions.push({ key: 'hoanThanh', label: 'Hoàn thành', icon: 'task_alt', color: 'emerald' })
-    }
-    return actions
-  }
 
   async function handleTransition(action, data) {
     if (transitioning) return
@@ -221,10 +188,10 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   function openGiaoViec(mode) {
     if (mode === 'nhanViec') {
       // Phụ trách nhận việc: chọn phối hợp rồi chuyển trạng thái
-      setGiaoViecForm({ phoiHop: parseAssignees(doc['Người phối hợp']), mode: 'nhanViec' })
+      setGiaoViecForm({ phoiHop: parsePhuTrach(doc['Người phối hợp']), mode: 'nhanViec' })
     } else {
       // Giám đốc/Admin giao việc
-      setGiaoViecForm({ phuTrach: '', phoiHop: parseAssignees(doc['Người phối hợp']), mode: 'giaoViec' })
+      setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), mode: 'giaoViec' })
     }
   }
 
@@ -243,7 +210,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     })
   }
 
-  const availableActions = getAvailableActions()
+  const availableActions = getAvailableActions(doc, session)
   const primaryGiaoViecAction = role === 'Giám đốc' && status === 'Chờ duyệt'
     ? availableActions.find(a => a.key === 'giaoViec')
     : null
@@ -386,26 +353,16 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
               </div>
 
               {/* Workflow action buttons */}
-              {workflowActions.length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {workflowActions.map(a => {
-                    const colorMap = {
-                      primary: 'bg-accent text-white hover:bg-accent-hover',
-                      blue: 'bg-blue-600 text-white hover:bg-blue-700',
-                      emerald: 'bg-emerald-600 text-white hover:bg-emerald-700',
-                      amber: 'bg-amber-500 text-white hover:bg-amber-600',
-                    }
-                    return (
-                      <button key={a.key} disabled={transitioning}
-                        onClick={() => (a.key === 'giaoViec' || (a.key === 'nhanViec' && isPhuTrach)) ? openGiaoViec(a.key) : handleTransition(a.key)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-2xl text-sm font-medium transition-colors disabled:opacity-50 shadow-md3-1 ${colorMap[a.color] || colorMap.primary}`}>
-                        <Icon name={a.icon} size={18} />
-                        {a.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+              <WorkflowButtons
+                doc={doc}
+                session={session}
+                disabled={transitioning}
+                filter={primaryGiaoViecAction ? (a => a.key !== primaryGiaoViecAction.key) : null}
+                onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
+                  ? openGiaoViec(key)
+                  : handleTransition(key)}
+              />
+
 
               {/* Giao việc inline form */}
               {giaoViecForm && (() => {
@@ -503,7 +460,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <p className="text-xs text-on-surface-variant">Phụ trách</p>
                     {(() => {
-                      const list = parseAssignees(doc['Phụ trách'])
+                      const list = parsePhuTrach(doc['Phụ trách'])
                       if (!list.length) return <p className="text-sm text-on-surface">—</p>
                       const u0 = (lookups.users || []).find(u => u['Tên đăng nhập'] === list[0])
                       const dn = u0?.['Tên nhân viên'] || list[0]
@@ -530,7 +487,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <p className="text-xs text-on-surface-variant">Người phối hợp</p>
                     {(() => {
-                      const list = parseAssignees(doc['Người phối hợp'])
+                      const list = parsePhuTrach(doc['Người phối hợp'])
                       if (!list.length) return <p className="text-sm text-on-surface">—</p>
                       return (
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
