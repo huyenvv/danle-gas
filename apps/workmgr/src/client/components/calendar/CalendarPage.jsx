@@ -17,10 +17,8 @@ export default function CalendarPage({ masterData, token }) {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
 
-  useEffect(() => {
+  const loadTasks = () => {
     setLoading(true)
-    // Pre-month and post-month edges may host events visible in the grid; pull
-    // ~6 weeks around the focused month so we don't lose those.
     const from = new Date(year, month, 1); from.setDate(from.getDate() - 7)
     const to = new Date(year, month + 1, 0); to.setDate(to.getDate() + 7)
     const iso = (d) => d.toISOString().slice(0, 10)
@@ -28,7 +26,9 @@ export default function CalendarPage({ masterData, token }) {
       .then(data => setTasks(Array.isArray(data) ? data : []))
       .catch(e => { console.error('Calendar load:', e); setTasks([]) })
       .finally(() => setLoading(false))
-  }, [token, deptFilter, month, year])
+  }
+
+  useEffect(() => { loadTasks() }, [token, deptFilter, month, year])
 
   const cells = useMemo(() => {
     const todayK = dateKey(today)
@@ -97,7 +97,12 @@ export default function CalendarPage({ masterData, token }) {
           <option value="">Tất cả phòng ban</option>
           {masterData.phongBan.map(d => <option key={d.ID} value={d.ID}>{d['Tên phòng ban']}</option>)}
         </select>
-        <div className="ml-auto flex items-center gap-1">
+        <span className="text-xs text-on-surface-variant whitespace-nowrap">{tasks.length} công việc</span>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={loadTasks} title="Làm mới" className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors">
+            <span className="material-symbols-outlined text-base leading-none">refresh</span>
+          </button>
+          <div className="flex items-center gap-1">
           <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-surface-container text-on-surface-variant" title="Tháng trước">
             <span className="material-symbols-outlined text-xl">chevron_left</span>
           </button>
@@ -110,6 +115,7 @@ export default function CalendarPage({ masterData, token }) {
           <button onClick={goToday} className="inline-flex items-center gap-1 ml-2 px-3 py-2 bg-surface-container-low rounded-xl text-sm hover:bg-surface-container text-on-surface">
             <span className="material-symbols-outlined text-base">today</span> Hôm Nay
           </button>
+          </div>
         </div>
       </div>
 

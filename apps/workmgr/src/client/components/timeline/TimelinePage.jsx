@@ -11,14 +11,16 @@ export default function TimelinePage({ masterData, token }) {
   const [month, setMonth] = useState(() => today.getMonth())
   const [year, setYear] = useState(() => today.getFullYear())
 
-  useEffect(() => {
+  const loadTasks = () => {
     const from = new Date(year, month, 1)
     const to = new Date(year, month + 1, 0)
     const iso = (d) => d.toISOString().slice(0, 10)
     gasCall('api_getTasks', token, { departmentId: deptFilter, dateFrom: iso(from), dateTo: iso(to) })
       .then(data => setTasks(Array.isArray(data) ? data : []))
       .catch(() => {})
-  }, [token, deptFilter, month, year])
+  }
+
+  useEffect(() => { loadTasks() }, [token, deptFilter, month, year])
 
   const { days, items, todayLeft, cellWidth } = useMemo(() => {
     const startDate = new Date(year, month, 1)
@@ -60,7 +62,12 @@ export default function TimelinePage({ masterData, token }) {
           <option value="">Tất cả phòng/ ban/ NM</option>
           {masterData.phongBan.map(d => <option key={d.ID} value={d.ID}>{d['Tên phòng ban']}</option>)}
         </select>
-        <div className="ml-auto flex items-center gap-1">
+        <span className="text-xs text-on-surface-variant whitespace-nowrap">{items.length} công việc</span>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={loadTasks} title="Làm mới" className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors">
+            <span className="material-symbols-outlined text-base leading-none">refresh</span>
+          </button>
+          <div className="flex items-center gap-1">
           <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-surface-container text-on-surface-variant" title="Tháng trước">
             <span className="material-symbols-outlined text-xl">chevron_left</span>
           </button>
@@ -73,6 +80,7 @@ export default function TimelinePage({ masterData, token }) {
           <button onClick={goToday} className="inline-flex items-center gap-1 ml-2 px-3 py-2 bg-surface-container-low rounded-xl text-sm hover:bg-surface-container text-on-surface">
             <span className="material-symbols-outlined text-base">today</span> Hôm Nay
           </button>
+          </div>
         </div>
       </div>
 

@@ -9,6 +9,8 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
   const { confirm } = useConfirm()
   const [modal, setModal] = useState({ open: false, mode: 'add', data: null })
 
+  const labels = masterData.nhan || []
+
   const handleSave = async (form, mode) => {
     try {
       if (mode === 'edit' && modal.data) await mutate('api_updateLabel', token, modal.data.ID, form)
@@ -17,10 +19,6 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
       setModal({ open: false, mode: 'add', data: null })
       reloadMaster()
     } catch (e) { showToast(e.message, 'error') }
-  }
-
-  const handleEdit = (label) => {
-    setModal({ open: true, mode: 'edit', data: label })
   }
 
   const handleDelete = async (l) => {
@@ -32,25 +30,52 @@ export default function LabelManager({ masterData, reloadMaster, token }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap gap-3 items-center">
+      <div className="bg-white rounded-2xl shadow-card p-4 flex items-center gap-3">
+        <span className="text-xs text-on-surface-variant whitespace-nowrap">{labels.length} nhãn</span>
         <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => reloadMaster()} title="Làm mới" className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors">
+            <span className="material-symbols-outlined text-base leading-none">refresh</span>
+          </button>
           <button onClick={() => setModal({ open: true, mode: 'add', data: null })} className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
             <span className="material-symbols-outlined text-base">add</span>Tạo Nhãn
           </button>
         </div>
       </div>
 
-      {/* List */}
-      <div className="bg-white rounded-2xl shadow-card divide-y divide-outline-variant/50">
-        {(masterData.nhan || []).map(l => (
-          <div key={l.ID} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-container-low/50 transition-colors">
-            <div className="w-6 h-6 rounded-lg" style={{ background: l['Màu sắc'] }} />
-            <span className="flex-1 text-sm font-medium text-on-surface">{l['Tên nhãn']}</span>
-            <button onClick={() => handleEdit(l)} className="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant"><span className="material-symbols-outlined text-base">edit</span></button>
-            <button onClick={() => handleDelete(l)} className="p-1.5 rounded-lg hover:bg-error-container text-on-surface-variant hover:text-error"><span className="material-symbols-outlined text-base">delete</span></button>
+      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+        <table className="min-w-full text-sm">
+          <thead><tr className="bg-surface-container-low border-b border-outline-variant">
+            <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Màu</th>
+            <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên nhãn</th>
+            <th className="px-4 py-3"></th>
+          </tr></thead>
+          <tbody className="divide-y divide-outline-variant/40">
+            {labels.length === 0 && (
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-on-surface-variant">Chưa có nhãn nào</td></tr>
+            )}
+            {labels.map(l => (
+              <tr key={l.ID} className="hover:bg-surface-container-low transition-colors">
+                <td className="px-4 py-3">
+                  <div className="w-6 h-6 rounded-lg" style={{ background: l['Màu sắc'] }} />
+                </td>
+                <td className="px-4 py-3 font-medium text-on-surface">{l['Tên nhãn']}</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1 justify-end">
+                    <button onClick={() => setModal({ open: true, mode: 'edit', data: l })}
+                      className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+                    <button onClick={() => handleDelete(l)}
+                      className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">Xóa</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {labels.length > 0 && (
+          <div className="px-4 py-3 border-t border-outline-variant/40 bg-surface-container-lowest">
+            <span className="text-xs text-on-surface-variant">{labels.length} nhãn</span>
           </div>
-        ))}
-        {(!masterData.nhan || masterData.nhan.length === 0) && <div className="text-center py-10 text-sm text-on-surface-variant">Chưa có nhãn nào</div>}
+        )}
       </div>
 
       {modal.open && <LabelModal mode={modal.mode} data={modal.data} onSave={handleSave} onClose={() => setModal({ open: false, mode: 'add', data: null })} />}

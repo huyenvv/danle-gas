@@ -8,6 +8,7 @@ import { Batcher } from '../../utils/batcher.js'
 import { mutate } from '../../utils/mutate.js'
 import { formatDate, isOverdue } from '../../utils/format.js'
 import { canMoveTaskStatus } from '../../utils/permissions.js'
+import TaskDetailModal from '../tasks/TaskDetailModal.jsx'
 
 const COLUMNS = [
   { status: 'Cần Làm', label: 'CẦN LÀM', icon: 'radio_button_unchecked', color: '#01458e' },
@@ -31,6 +32,7 @@ export default function KanbanPage({ masterData, token }) {
   const [deptFilter, setDeptFilter] = useState('')
   const [memberFilter, setMemberFilter] = useState('')
   const [includeArchive, setIncludeArchive] = useState(false)
+  const [detail, setDetail] = useState(null)
   const dragRef = useRef(null)
 
   const cacheKey = `kanban:${deptFilter}|${includeArchive ? 'a' : ''}`
@@ -151,7 +153,8 @@ export default function KanbanPage({ masterData, token }) {
                     const canDrag = COLUMNS.some(c => c.status !== t['Trạng thái'] && canMoveTaskStatus(session, dept, t, t['Trạng thái'], c.status))
                     return (
                       <div key={t.ID} draggable={canDrag} onDragStart={e => onDragStart(e, t)}
-                        className={`bg-white rounded-xl p-3 shadow-md3-1 ${canDrag ? 'cursor-grab active:cursor-grabbing hover:shadow-md3-2' : 'cursor-default opacity-80'} transition-shadow ${isOverdue(t) ? 'border-l-3 border-error' : ''}`}>
+                        onClick={() => setDetail(t)}
+                        className={`bg-white rounded-xl p-3 shadow-md3-1 ${canDrag ? 'cursor-grab active:cursor-grabbing hover:shadow-md3-2' : 'cursor-pointer opacity-80'} transition-shadow ${isOverdue(t) ? 'border-l-3 border-error' : ''}`}>
                         <div className="flex items-start gap-2 mb-1.5">
                           <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${PRIORITY_DOT[t['Mức độ ưu tiên']] || 'bg-gray-400'}`} />
                           <span className="text-sm font-medium text-on-surface leading-snug">{t['Tiêu đề']}</span>
@@ -177,6 +180,7 @@ export default function KanbanPage({ masterData, token }) {
           })}
         </div>
       )}
+      {detail && <TaskDetailModal task={detail} token={token} users={masterData.users} labels={masterData.nhan} departments={masterData.phongBan} onClose={() => setDetail(null)} />}
     </div>
   )
 }

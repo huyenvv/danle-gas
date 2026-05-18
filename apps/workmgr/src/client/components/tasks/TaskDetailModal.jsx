@@ -23,6 +23,7 @@ export default function TaskDetailModal({ task, token, users, labels, department
   const [sending, setSending] = useState(false)
   const [progress, setProgress] = useState(Number(task['Tiến độ']) || 0)
   const [savingProgress, setSavingProgress] = useState(false)
+  const [subtasks, setSubtasks] = useState(parseSubtasks(task['Subtasks']))
 
   const taskDept = useMemo(
     () => departments.find(d => String(d.ID) === String(task['Phòng ban ID'])),
@@ -31,6 +32,24 @@ export default function TaskDetailModal({ task, token, users, labels, department
   const canEditProgress = canUpdateTaskProgress(session, taskDept, task)
 
   useEffect(() => { setProgress(Number(task['Tiến độ']) || 0) }, [task.ID, task['Tiến độ']])
+  useEffect(() => { setSubtasks(parseSubtasks(task['Subtasks'])) }, [task.ID, task['Subtasks']])
+
+  const toggleSubtask = async (index) => {
+    const prev = subtasks
+    const updated = subtasks.map((s, i) => i === index ? { ...s, done: !s.done } : s)
+    const newProgress = Math.round(updated.filter(s => s.done).length / updated.length * 100)
+    setSubtasks(updated)
+    setProgress(newProgress)
+    try {
+      await mutate('api_updateTask', token, task.ID, { 'Subtasks': JSON.stringify(updated), 'Tiến độ': newProgress })
+      task['Subtasks'] = JSON.stringify(updated)
+      task['Tiến độ'] = newProgress
+    } catch (e) {
+      setSubtasks(prev)
+      setProgress(Number(task['Tiến độ']) || 0)
+      showToast(e.message, 'error')
+    }
+  }
 
   const saveProgress = async (value) => {
     if (value === Number(task['Tiến độ'] || 0)) return
@@ -126,14 +145,15 @@ export default function TaskDetailModal({ task, token, users, labels, department
             </div>
           )}
 
-          {parseSubtasks(task['Subtasks']).length > 0 && (
+          {subtasks.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2">
-                Công việc con ({parseSubtasks(task['Subtasks']).filter(s => s.done).length}/{parseSubtasks(task['Subtasks']).length})
+                Công việc con ({subtasks.filter(s => s.done).length}/{subtasks.length})
               </h4>
               <div className="space-y-1">
-                {parseSubtasks(task['Subtasks']).map((s, i) => (
-                  <div key={s.id || i} className="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-1.5">
+                {subtasks.map((s, i) => (
+                  <div key={s.id || i} onClick={() => toggleSubtask(i)}
+                    className="flex items-center gap-2 bg-surface-container-low rounded-lg px-3 py-1.5 cursor-pointer hover:bg-surface-container transition-colors">
                     <span className={`material-symbols-outlined text-base ${s.done ? 'text-primary icon-filled' : 'text-on-surface-variant'}`}>
                       {s.done ? 'check_box' : 'check_box_outline_blank'}
                     </span>

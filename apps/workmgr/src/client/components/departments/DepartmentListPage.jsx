@@ -52,49 +52,52 @@ export default function DepartmentListPage({ masterData, reloadMaster, token }) 
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-0 max-w-64">
-          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">search</span>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm kiếm…" className="w-full pl-10 pr-3 py-2 bg-surface-container-low rounded-xl text-sm border-none outline-none focus:ring-2 focus:ring-primary/20" />
+      <div className="bg-white rounded-2xl shadow-card p-4 flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>search</span>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tìm kiếm…" className="w-full bg-surface-container-low border-none rounded-xl pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" />
         </div>
+        <span className="text-xs text-on-surface-variant whitespace-nowrap">{filtered.length} phòng ban</span>
         <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => reloadMaster()} title="Làm mới" className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors">
+            <span className="material-symbols-outlined text-base leading-none">refresh</span>
+          </button>
           <button onClick={() => setModal({ open: true, mode: 'add', data: null })} className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
             <span className="material-symbols-outlined text-base">add</span>Tạo Phòng Ban
           </button>
         </div>
       </div>
 
-      {loading ? <div className="text-center py-10 text-sm text-on-surface-variant">Đang tải…</div> : filtered.length === 0 ? (
-        <div className="text-center py-16 text-on-surface-variant">
-          <span className="material-symbols-outlined text-5xl mb-2 block opacity-30">apartment</span>
-          <p className="text-sm">Chưa có phòng ban nào</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-surface-container-low text-on-surface-variant text-xs">
-                <th className="px-4 py-3 text-left font-medium">Tên Phòng Ban</th>
-                <th className="px-4 py-3 text-left font-medium">Trưởng Phòng</th>
-                <th className="px-4 py-3 text-left font-medium">Phó Phòng</th>
-                <th className="px-4 py-3 text-left font-medium">P. Giám Đốc</th>
-                <th className="px-4 py-3 text-center font-medium">Thành Viên</th>
-                <th className="px-4 py-3 text-center font-medium w-20"></th>
+      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead><tr className="bg-surface-container-low border-b border-outline-variant">
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên Phòng Ban</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Trưởng Phòng</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phó Phòng</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">P. Giám Đốc</th>
+                <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Thành Viên</th>
+                <th className="px-4 py-3"></th>
               </tr></thead>
-              <tbody className="divide-y divide-outline-variant/50">
+              <tbody className="divide-y divide-outline-variant/40">
+                {filtered.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Chưa có phòng ban nào</td></tr>
+                )}
                 {filtered.map(d => (
-                  <tr key={d.ID} className="hover:bg-surface-container-low/50 transition-colors">
+                  <tr key={d.ID} className="hover:bg-surface-container-low transition-colors">
                     <td className="px-4 py-3 font-medium text-on-surface">{d['Tên phòng ban']}</td>
-                    <td className="px-4 py-3 text-on-surface-variant">{getUserName(d['Trưởng phòng ID'])}</td>
-                    <td className="px-4 py-3 text-on-surface-variant">{getUserName(d['Phó phòng ID'])}</td>
-                    <td className="px-4 py-3 text-on-surface-variant">{getUserName(d['PGĐ phụ trách ID'])}</td>
+                    <td className="px-4 py-3 text-on-surface-variant text-xs">{getUserName(d['Trưởng phòng ID'])}</td>
+                    <td className="px-4 py-3 text-on-surface-variant text-xs">{getUserName(d['Phó phòng ID'])}</td>
+                    <td className="px-4 py-3 text-on-surface-variant text-xs">{getUserName(d['PGĐ phụ trách ID'])}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">{getMemberCount(d)} người</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">{getMemberCount(d)} người</span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-center gap-1">
-                        <button onClick={() => setModal({ open: true, mode: 'edit', data: d })} className="p-1.5 rounded-lg hover:bg-surface-container transition-colors text-on-surface-variant"><span className="material-symbols-outlined text-base">edit</span></button>
-                        <button onClick={() => handleDelete(d)} className="p-1.5 rounded-lg hover:bg-error-container transition-colors text-on-surface-variant hover:text-error"><span className="material-symbols-outlined text-base">delete</span></button>
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => setModal({ open: true, mode: 'edit', data: d })}
+                          className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+                        <button onClick={() => handleDelete(d)}
+                          className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">Xóa</button>
                       </div>
                     </td>
                   </tr>
@@ -102,8 +105,12 @@ export default function DepartmentListPage({ masterData, reloadMaster, token }) 
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        {depts.length > 0 && (
+          <div className="px-4 py-3 border-t border-outline-variant/40 bg-surface-container-lowest">
+            <span className="text-xs text-on-surface-variant">{filtered.length} / {depts.length} phòng ban</span>
+          </div>
+        )}
+      </div>
 
       {modal.open && <DepartmentModal mode={modal.mode} data={modal.data} users={masterData.users} departments={masterData.phongBan} onSave={handleSave} onClose={() => setModal({ open: false })} />}
     </div>
