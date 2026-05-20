@@ -27,39 +27,69 @@ function api_login(email, password) {
   return _wrap(function() { return login(email, password) })
 }
 
-function api_logout(token) {
-  return _wrap(function() { return logout(token) })
-}
-
-// Rotation cadence — must be < docmgr SESSION_TTL (6h) để child kịp reload trước khi cache chết
-var SSO_ROTATE_INTERVAL_MS = 5 * 3600 * 1000 // 5h
-
-function api_validateSession(token) {
+function api_resume(refreshToken) {
   return _wrap(function() {
-    var session = validateSession(token)
-    if (!session) return null
-
-    // Mỗi 5h kể từ lần rotate gần nhất: sinh SSO_Token mới + extend SSO_Expiry.
-    // Client phát hiện ssoToken đổi → update localStorage + reload iframe app con.
-    var nowMs = new Date().getTime()
-    var needsRotate = !session.lastRotatedAt || (nowMs - session.lastRotatedAt) >= SSO_ROTATE_INTERVAL_MS
-    if (needsRotate) {
-      try {
-        var users = getSheetData(SHEETS.USERS)
-        var user = users.find(function(u) { return String(u['ID']) === String(session.userId) })
-        if (user && user['SSO_Token']) {
-          var newSsoToken = generateUuid()
-          var newExpiry = nowMs + (SSO_TOKEN_TTL * 1000)
-          updateRow(SHEETS.USERS, user['ID'], { 'SSO_Token': newSsoToken, 'SSO_Expiry': newExpiry })
-          session.ssoToken = newSsoToken
-          session.expiresAt = newExpiry
-          session.lastRotatedAt = nowMs
-          cachePut('sess_' + token, session, SESSION_TTL)
-        }
-      } catch(e) { Logger.log('SSO token rotate error: ' + e.message) }
+    var found = lookupRefreshToken(SHEETS.USERS, refreshToken)
+    if (!found) throw new Error('TOKEN_REVOKED')
+    var user = found.user
+    if (user['Trạng thái'] === 'Locked') throw new Error('USER_LOCKED')
+    if (isBeforeEpoch(SHEETS.USERS, found.userId, found.entry.createdAt)) {
+      revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
+      throw new Error('TOKEN_REVOKED')
     }
 
-    return session
+    var ownerEmail = ''
+    try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
+    var isOwner = !!(ownerEmail && user['Email'] && user['Email'].toLowerCase() === ownerEmail.toLowerCase())
+    var isAdmin = isOwner || user['Quyền'] === 'Quản trị'
+
+    var sessionData = {
+      userId: user['ID'],
+      username: user['Tên đăng nhập'],
+      email: user['Email'],
+      displayName: user['Tên nhân viên'] || user['Email'],
+      role: isAdmin ? 'admin' : 'user',
+      isOwner: isOwner,
+      mustChangePass: user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true,
+    }
+
+    var newRefreshToken = rotateRefreshToken(SHEETS.USERS, found.userId, refreshToken)
+    var newAccessToken = mintAccessToken(sessionData)
+
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      user: sessionData,
+      parentSheetId: getAppSheet().getId(),
+    }
+  })
+}
+
+function api_logout(refreshToken) {
+  return _wrap(function() {
+    var found = lookupRefreshToken(SHEETS.USERS, refreshToken)
+    if (found) {
+      revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
+    }
+    return { success: true }
+  })
+}
+
+function api_logoutAllDevices(accessToken) {
+  return _wrap(function() {
+    var session = validateAccessToken(accessToken)
+    if (!session) throw new Error('TOKEN_EXPIRED')
+    return portalLogoutAllDevices(session.userId)
+  })
+}
+
+function api_createHandoff(accessToken, appId) {
+  return _wrap(function() {
+    var session = validateAccessToken(accessToken)
+    if (!session) throw new Error('TOKEN_EXPIRED')
+    if (!appId) throw new Error('Missing appId')
+    var handoffToken = mintHandoff(session.userId, appId)
+    return { handoffToken: handoffToken }
   })
 }
 
