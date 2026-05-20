@@ -166,6 +166,7 @@ export default function Dashboard() {
                     Đổi mật khẩu
                   </button>
                   <button onClick={async () => {
+                    setShowUserMenu(false)
                     if (await confirm('Đăng xuất khỏi tất cả thiết bị? Bạn sẽ phải đăng nhập lại trên mọi nơi.')) {
                       await logoutAllDevices()
                     }
