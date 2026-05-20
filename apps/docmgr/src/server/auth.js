@@ -115,6 +115,6 @@ function ssoCreateSession(user, appRole) {
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
   }
-  cachePut('sess_' + token, sessionData, SESSION_TTL)
+  cachePut('at_' + token, sessionData, SESSION_TTL)
   return token
 }

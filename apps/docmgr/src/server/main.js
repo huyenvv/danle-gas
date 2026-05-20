@@ -64,7 +64,7 @@ function doGet(e) {
     // Serve HTML with injected SSO data — eliminates 2 client→server round trips
     var content = HtmlService.createHtmlOutputFromFile('index').getContent()
     if (injectedToken) {
-      var session = validateSession(injectedToken)
+      var session = validateAccessToken(injectedToken)
       var injectParts = ['window.__SSO_TOKEN__="' + injectedToken + '";']
 
       // Inject session data → client skips api_validateSession round trip
@@ -145,12 +145,12 @@ function _ssoErrorPage(title, message) {
 // ===== Session API =====
 
 function api_logout(token) {
-  return _wrap(function() { return logout(token) })
+  return _wrap(function() { return revokeAccessToken(token) })
 }
 
 function api_validateSession(token) {
   return _wrap(function() {
-    var session = validateSession(token)
+    var session = validateAccessToken(token)
     if (!session) return null
 
     // Re-read APP_ROLES to pick up any role changes made by admin since login
@@ -168,7 +168,7 @@ function api_validateSession(token) {
       session.permissions = perms
       session.canCreate = !!canCreate
       session.canCreateSubCat = !!canCreateSubCat
-      cachePut('sess_' + token, session, SESSION_TTL)
+      cachePut('at_' + token, session, SESSION_TTL)
     }
 
     return session

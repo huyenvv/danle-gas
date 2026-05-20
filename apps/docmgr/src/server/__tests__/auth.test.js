@@ -13,7 +13,7 @@ describe('ssoCreateSession', () => {
     var appRole = { 'Quyền': 'admin', 'Phân quyền chi tiết': '' }
     var token = ssoCreateSession(user, appRole)
     expect(token).toBeTruthy()
-    var session = validateSession(token)
+    var session = validateAccessToken(token)
     expect(session.username).toBe('admin')
     expect(session.role).toBe('admin')
   })
@@ -22,7 +22,7 @@ describe('ssoCreateSession', () => {
     var user = { ID: 2, 'Tên đăng nhập': 'user2', 'Email': 'u2@test.com', 'Phòng ban': '["Kỹ thuật","Kinh doanh"]' }
     var appRole = { 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '' }
     var token = ssoCreateSession(user, appRole)
-    var session = validateSession(token)
+    var session = validateAccessToken(token)
     expect(session.departments).toEqual(['Kỹ thuật', 'Kinh doanh'])
   })
 })

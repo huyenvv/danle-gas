@@ -7,20 +7,6 @@ function _verifyPassword(username, password, storedHash) {
   return _hashPassword(username, password) === storedHash
 }
 
-function logout(token) {
-  cacheRemove('sess_' + token)
-  return { success: true }
-}
-
-function validateSession(token) {
-  if (!token) return null
-  var session = cacheGet('sess_' + token)
-  if (!session) return null
-  // Sliding window: refresh cache TTL on every validate to keep session alive
-  cachePut('sess_' + token, session, SESSION_TTL)
-  return session
-}
-
 function requireAuth(accessToken) {
   var session = validateAccessToken(accessToken)
   if (!session) throw new Error('TOKEN_EXPIRED')
