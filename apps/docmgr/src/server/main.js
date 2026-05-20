@@ -1,9 +1,43 @@
 // ===== Main entry point — SSO child app =====
 
+function _mintTokensForUser(userRow, appRole) {
+  var depts = []
+  try {
+    var deptVal = userRow['Phòng ban']
+    if (deptVal && typeof deptVal === 'string' && deptVal.charAt(0) === '[') depts = JSON.parse(deptVal)
+    else if (deptVal) depts = [deptVal]
+  } catch(e) {}
+
+  var perms = getPermissions(appRole)
+  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
+  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
+
+  var sessionData = {
+    userId: userRow['ID'],
+    username: userRow['Tên đăng nhập'],
+    name: userRow['Tên nhân viên'] || userRow['Tên đăng nhập'] || '',
+    email: userRow['Email'],
+    role: appRole['Quyền'],
+    departments: depts,
+    permissions: perms,
+    canCreate: !!canCreate,
+    canCreateSubCat: !!canCreateSubCat,
+  }
+
+  // Find the APP_ROLES row ID for refresh-token storage
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var roleRow = roles.find(function(r) {
+    return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+  })
+  var refreshToken = mintRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], { label: 'Web', ipHash: '' })
+  var accessToken = mintAccessToken(sessionData)
+
+  return { accessToken: accessToken, refreshToken: refreshToken, session: sessionData }
+}
+
 function doGet(e) {
   try {
-    // Warm-up ping từ SSO Portal — chỉ cần khởi động execution container,
-    // không tạo session, không trả full bundle. Lần click thật sau đó tránh cold start.
+    // Warm-up ping — container warm, no session created
     if (e && e.parameter && e.parameter.prefetch === '1') {
       return HtmlService.createHtmlOutput('<!doctype html><title>warm</title>')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -11,109 +45,123 @@ function doGet(e) {
 
     ensureInitialized()
 
-    var ssoEmail = e && e.parameter && e.parameter.sso_email
-    var ssoToken = e && e.parameter && e.parameter.sso_token
+    var handoff = e && e.parameter && e.parameter.handoff
     var parentSheetId = e && e.parameter && e.parameter.parent_sheet_id
 
-    // Store parent sheet ID on first visit from SSO Portal
+    // Store parent sheet ID on first visit
     if (parentSheetId) {
       ssoStoreParentSheetId(parentSheetId)
     }
 
-    var injectedToken = ''
+    var injectedAccess = ''
+    var injectedRefresh = ''
+    var injectedUser = null
 
-    // SSO authentication via URL params from parent portal
-    if (ssoEmail && ssoToken) {
-      Logger.log('SSO params: email=' + ssoEmail + ', token=' + (ssoToken ? 'YES' : 'NO') + ', parentId=' + parentSheetId)
-      // Always read fresh APP_ROLES on SSO login so admin role changes take effect immediately
-      invalidateSheetCache(SHEETS.APP_ROLES)
-      var ssoUser = ssoValidateToken(ssoEmail, ssoToken)
-      Logger.log('SSO validate result: ' + (ssoUser ? 'user found ID=' + ssoUser['ID'] : 'null'))
-      if (!ssoUser) {
-        return _ssoErrorPage('Phiên SSO không hợp lệ', 'Token đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại từ SSO Portal.')
+    if (handoff) {
+      var parentId = ssoGetParentSheetId()
+      if (!parentId) {
+        return _errorPage('Chưa cấu hình SSO_PARENT_SHEET_ID', 'Liên hệ admin.')
       }
 
-      // Check local authorization
+      var consumed
+      try {
+        consumed = consumeHandoffCrossScript(parentId, handoff, APP_ID)
+      } catch(err) {
+        return _errorPage('Handoff không hợp lệ', 'Vui lòng mở lại từ SSO Portal.')
+      }
+
+      // Load user from parent sheet
+      var parentSs = SpreadsheetApp.openById(parentId)
+      var parentUsers = parentSs.getSheetByName('_Người Dùng').getDataRange().getValues()
+      var headers = parentUsers[0]
+      var userRow = null
+      for (var i = 1; i < parentUsers.length; i++) {
+        if (String(parentUsers[i][headers.indexOf('ID')]) === String(consumed.userId)) {
+          userRow = {}
+          headers.forEach(function(h, c) { userRow[h] = parentUsers[i][c] })
+          break
+        }
+      }
+      if (!userRow) return _errorPage('Không tìm thấy user', '')
+
+      // Auto-assign local role if not exists
+      invalidateSheetCache(SHEETS.APP_ROLES)
       var roles = getSheetData(SHEETS.APP_ROLES)
       var appRole = roles.find(function(r) {
-        return String(r['UserID']) === String(ssoUser['ID']) && r['AppID'] === APP_ID
+        return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
       })
-
-      // Auto-assign role if not found
       if (!appRole) {
         var ownerEmail = ''
-        try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(e) {}
-        var autoRole = (ssoUser['Email'] && ownerEmail &&
-          String(ssoUser['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
-
+        try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(oe) {}
+        var autoRole = (userRow['Email'] && ownerEmail &&
+          String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
         addRow(SHEETS.APP_ROLES, {
-          'UserID': ssoUser['ID'],
-          'Tên đăng nhập': ssoUser['Tên đăng nhập'],
+          'UserID': userRow['ID'],
+          'Tên đăng nhập': userRow['Tên đăng nhập'],
           'AppID': APP_ID,
           'Quyền': autoRole,
           'Phân quyền chi tiết': '',
         })
         invalidateSheetCache(SHEETS.APP_ROLES)
-        appRole = { 'Quyền': autoRole, 'Phân quyền chi tiết': '' }
-        Logger.log('Auto-assigned role: ' + autoRole + ' for user ' + ssoUser['Email'])
+        roles = getSheetData(SHEETS.APP_ROLES)
+        appRole = roles.find(function(r) {
+          return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+        })
       }
 
-      injectedToken = ssoCreateSession(ssoUser, appRole)
+      var tokens = _mintTokensForUser(userRow, appRole)
+      injectedAccess = tokens.accessToken
+      injectedRefresh = tokens.refreshToken
+      injectedUser = tokens.session
     }
 
-    // Serve HTML with injected SSO data — eliminates 2 client→server round trips
     var content = HtmlService.createHtmlOutputFromFile('index').getContent()
-    if (injectedToken) {
-      var session = validateAccessToken(injectedToken)
-      var injectParts = ['window.__SSO_TOKEN__="' + injectedToken + '";']
+    if (injectedAccess) {
+      var injectParts = [
+        'window.__ACCESS_TOKEN__=' + JSON.stringify(injectedAccess) + ';',
+        'window.__REFRESH_TOKEN__=' + JSON.stringify(injectedRefresh) + ';',
+        'window.__USER__=' + JSON.stringify(injectedUser) + ';',
+      ]
 
-      // Inject session data → client skips api_validateSession round trip
-      if (session) {
-        injectParts.push('window.__SSO_SESSION__=' + JSON.stringify(session) + ';')
+      // Inject initial data (existing pattern — keep as-is)
+      try {
+        var lookups = getAllData(injectedUser)
+        var docsResult = getDocuments(injectedAccess, {})
+        var docs = docsResult.data || []
+        var byStatus = {}
+        var totalValue = 0
+        docs.forEach(function(d) {
+          var s = d['Tình trạng'] || 'Không rõ'
+          byStatus[s] = (byStatus[s] || 0) + 1
+          totalValue += Number(d['Giá trị HĐ']) || 0
+        })
+        var daDocRows = getSheetData(SHEETS.DA_DOC)
+        var unreadIds = daDocRows
+          .filter(function(r) { return String(r['UserID']) === String(injectedUser.userId) })
+          .map(function(r) { return String(r['DocID']) })
+        var companyName = getConfig('COMPANY_NAME') || ''
 
-        // Inject initial data → client skips api_getInitialData round trip
-        try {
-          var lookups = getAllData(session)
-          var docsResult = getDocuments(injectedToken, {})
-          var docs = docsResult.data || []
-          var byStatus = {}
-          var totalValue = 0
-          docs.forEach(function(d) {
-            var s = d['Tình trạng'] || 'Không rõ'
-            byStatus[s] = (byStatus[s] || 0) + 1
-            totalValue += Number(d['Giá trị HĐ']) || 0
-          })
-          var daDocRows = getSheetData(SHEETS.DA_DOC)
-          var unreadIds = daDocRows
-            .filter(function(r) { return String(r['UserID']) === String(session.userId) })
-            .map(function(r) { return String(r['DocID']) })
-          var companyName = getConfig('COMPANY_NAME') || ''
-
-          var initialData = {
-            lookups: lookups,
-            docs: docs,
-            stats: { total: docs.length, byStatus: byStatus, totalValue: totalValue },
-            unreadIds: unreadIds,
-            companyName: companyName,
-          }
-
-          // Inject settings configs for admin — skips 5x api_getConfig on SettingsPage
-          var isAdmin = session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Giám đốc'
-          if (isAdmin) {
-            initialData.configs = {
-              ROOT_FOLDER_ID:   getConfig('ROOT_FOLDER_ID') || null,
-              ROOT_FOLDER_NAME: getConfig('ROOT_FOLDER_NAME') || null,
-              COMPANY_NAME:     companyName || null,
-              MAIL_TEMPLATES:   getConfig('MAIL_TEMPLATES') || null,
-              APP_URL:          getConfig('APP_URL') || null,
-            }
-          }
-
-          injectParts.push('window.__INITIAL_DATA__=' + JSON.stringify(initialData) + ';')
-        } catch(dataErr) {
-          Logger.log('doGet inject initial data error: ' + dataErr.message)
-          // Client will fall back to api_getInitialData
+        var initialData = {
+          lookups: lookups,
+          docs: docs,
+          stats: { total: docs.length, byStatus: byStatus, totalValue: totalValue },
+          unreadIds: unreadIds,
+          companyName: companyName,
         }
+
+        var isAdmin = injectedUser.role === 'admin' || injectedUser.role === 'Quản trị viên' || injectedUser.role === 'Giám đốc'
+        if (isAdmin) {
+          initialData.configs = {
+            ROOT_FOLDER_ID: getConfig('ROOT_FOLDER_ID') || null,
+            ROOT_FOLDER_NAME: getConfig('ROOT_FOLDER_NAME') || null,
+            COMPANY_NAME: companyName || null,
+            MAIL_TEMPLATES: getConfig('MAIL_TEMPLATES') || null,
+            APP_URL: getConfig('APP_URL') || null,
+          }
+        }
+        injectParts.push('window.__INITIAL_DATA__=' + JSON.stringify(initialData) + ';')
+      } catch(dataErr) {
+        Logger.log('doGet inject initial data error: ' + dataErr.message)
       }
 
       content = content.replace('</head>', '<script>' + injectParts.join('') + '</script></head>')
@@ -129,7 +177,7 @@ function doGet(e) {
   }
 }
 
-function _ssoErrorPage(title, message) {
+function _errorPage(title, message) {
   return HtmlService.createHtmlOutput(
     '<html><head><meta charset="UTF-8"><style>'
     + 'body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5}'
