@@ -5,7 +5,7 @@ function doGet() {
   var content = HtmlService.createHtmlOutputFromFile('index').getContent()
 
   // Inject initial data — bỏ 1 round trip api_getApps khi vào Dashboard lần đầu.
-  // Apps URLs không bí mật (child apps tự auth qua ssoValidateToken).
+  // Apps URLs không bí mật (child apps tự auth qua handoff token).
   try {
     var apps = getSheetData(SHEETS.APPS)
     var companyName = getConfig('COMPANY_NAME') || ''

@@ -1,6 +1,6 @@
 // ===== App-specific auth — SSO session + local authorization =====
 // Core auth (validateSession, requireAuth, requireAdmin, etc.) provided by gas-core/auth-core.js
-// SSO validation (ssoValidateToken, ssoStoreParentSheetId) provided by gas-core/sso.js
+// Handoff consumption (consumeHandoffCrossScript) provided by gas-core/handoff.js
 // Authentication (login, password, lock/unlock) is managed by SSO Portal (parent app).
 // This app only handles authorization (roles, permissions).
 
@@ -81,40 +81,4 @@ function getPermissions(appRole) {
   }
 
   return DEFAULT_PERMS[role] || DEFAULT_PERMS['Xem']
-}
-
-/**
- * Create a local session from SSO-validated user + local app role.
- * Called by doGet after SSO token validation.
- */
-function ssoCreateSession(user, appRole) {
-  var depts = []
-  try {
-    var deptVal = user['Phòng ban']
-    if (deptVal && typeof deptVal === 'string' && deptVal.charAt(0) === '[') {
-      depts = JSON.parse(deptVal)
-    } else if (deptVal) {
-      depts = [deptVal]
-    }
-  } catch(e) {}
-
-  var perms = getPermissions(appRole)
-  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
-  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
-
-  var token = generateUuid()
-  var sessionData = {
-    userId: user['ID'],
-    username: user['Tên đăng nhập'],
-    name: user['Tên nhân viên'] || user['Tên đăng nhập'] || '',
-    email: user['Email'],
-    role: appRole['Quyền'],
-    mustChangePass: false,
-    departments: depts,
-    permissions: perms,
-    canCreate: !!canCreate,
-    canCreateSubCat: !!canCreateSubCat,
-  }
-  cachePut('at_' + token, sessionData, SESSION_TTL)
-  return token
 }

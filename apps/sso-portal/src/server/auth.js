@@ -187,8 +187,6 @@ function addUser(token, data) {
     'Đăng nhập cuối': '',
     'Phòng ban': data['Phòng ban'] || '',
     'Quyền': data['Quyền'] || '',
-    'SSO_Token': '',
-    'SSO_Expiry': '',
   }
   var added = addRow(SHEETS.USERS, userData)
 
