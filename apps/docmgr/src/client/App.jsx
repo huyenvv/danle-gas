@@ -1,4 +1,3 @@
-import { HashRouter } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { ConfirmProvider } from './context/ConfirmContext.jsx'
@@ -45,14 +44,12 @@ function AppInner() {
 
 export default function App() {
   return (
-    <HashRouter>
-      <AuthProvider>
-        <ToastProvider>
-          <ConfirmProvider>
-            <AppInner />
-          </ConfirmProvider>
-        </ToastProvider>
-      </AuthProvider>
-    </HashRouter>
+    <AuthProvider>
+      <ToastProvider>
+        <ConfirmProvider>
+          <AppInner />
+        </ConfirmProvider>
+      </ToastProvider>
+    </AuthProvider>
   )
 }

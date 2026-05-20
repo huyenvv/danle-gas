@@ -1,12 +1,33 @@
-export default function AppCard({ app, onClick }) {
+import { useRef } from 'react'
+
+export default function AppCard({ app, onClick, onPrefetch }) {
   const icon = app['Icon'] || 'apps'
   const name = app['Tên App'] || 'Untitled'
   const desc = app['Mô tả'] || ''
   const hasUrl = !!app['Webapp URL']
+  const hoverTimerRef = useRef(null)
+
+  function handleEnter() {
+    if (!hasUrl || !onPrefetch) return
+    if (hoverTimerRef.current) return
+    // Debounce: chỉ prefetch khi user thực sự dừng ở card ~300ms
+    hoverTimerRef.current = setTimeout(() => { onPrefetch() }, 300)
+  }
+
+  function handleLeave() {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }
 
   return (
     <button
       onClick={onClick}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      onFocus={handleEnter}
+      onBlur={handleLeave}
       disabled={!hasUrl}
       className={`group relative text-left w-full bg-surface-container-lowest rounded-2xl border border-outline-variant/30 p-5 transition-all duration-200
         ${hasUrl

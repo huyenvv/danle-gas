@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import logoUrl from '../assets/logo.png'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -32,7 +33,7 @@ export default function LoginPage() {
 
           {/* Logo */}
           <div className="text-center mb-6">
-            <img src="https://sbm.com.vn/wp-content/uploads/2022/03/logo.png" alt="SBM" className="h-14 mx-auto mb-3" />
+            <img src={logoUrl} alt="SBM" className="h-14 mx-auto mb-3" />
             <h1 className="text-lg font-bold text-primary">Cổng Đăng Nhập</h1>
             <p className="text-sm text-on-surface-variant mt-1">Đăng nhập để truy cập hệ thống</p>
           </div>

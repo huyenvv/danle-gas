@@ -3,13 +3,32 @@ export function formatCurrency(amount) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(amount)
 }
 
+function _parseDateParts(dateStr) {
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return null
+  return {
+    dd:   String(d.getDate()).padStart(2, '0'),
+    mm:   String(d.getMonth() + 1).padStart(2, '0'),
+    yyyy: d.getFullYear(),
+    HH:   String(d.getHours()).padStart(2, '0'),
+    MM:   String(d.getMinutes()).padStart(2, '0'),
+  }
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return '—'
   try {
-    return new Date(dateStr).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  } catch {
-    return dateStr
-  }
+    const p = _parseDateParts(dateStr)
+    return p ? `${p.dd}/${p.mm}/${p.yyyy}` : dateStr
+  } catch { return dateStr }
+}
+
+export function formatDateTime(dateStr) {
+  if (!dateStr) return '—'
+  try {
+    const p = _parseDateParts(dateStr)
+    return p ? `${p.dd}/${p.mm}/${p.yyyy} ${p.HH}:${p.MM}` : dateStr
+  } catch { return dateStr }
 }
 
 export function statusColor(status) {

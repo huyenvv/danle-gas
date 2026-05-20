@@ -37,6 +37,7 @@ function login(email, password) {
     mustChangePass: mustChange,
     ssoToken: ssoToken,
     expiresAt: new Date().getTime() + SSO_TOKEN_TTL * 1000,
+    lastRotatedAt: new Date().getTime(),
   }
   cachePut('sess_' + token, sessionData, SESSION_TTL)
 
@@ -93,6 +94,24 @@ function portalAdminResetPassword(token, targetUserId) {
   var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
   updateRow(SHEETS.USERS, targetUserId, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
   return { success: true }
+}
+
+function portalBulkResetPassword(token, userIds) {
+  requireAdmin(token)
+  if (!userIds || !userIds.length) throw new Error('Chưa chọn người dùng')
+
+  var users = getSheetData(SHEETS.USERS)
+  var count = 0
+  var skipped = 0
+  userIds.forEach(function(id) {
+    var user = users.find(function(u) { return String(u['ID']) === String(id) })
+    if (!user) { skipped++; return }
+    if (_isOwnerUser(user)) { skipped++; return }
+    var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
+    updateRow(SHEETS.USERS, id, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
+    count++
+  })
+  return { count: count, skipped: skipped }
 }
 
 function portalLockUser(token, targetUserId) {

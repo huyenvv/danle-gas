@@ -2,6 +2,13 @@
 
 function doGet(e) {
   try {
+    // Warm-up ping từ SSO Portal — chỉ cần khởi động execution container,
+    // không tạo session, không trả full bundle. Lần click thật sau đó tránh cold start.
+    if (e && e.parameter && e.parameter.prefetch === '1') {
+      return HtmlService.createHtmlOutput('<!doctype html><title>warm</title>')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    }
+
     ensureInitialized()
 
     var ssoEmail = e && e.parameter && e.parameter.sso_email
@@ -54,10 +61,62 @@ function doGet(e) {
       injectedToken = ssoCreateSession(ssoUser, appRole)
     }
 
-    // Serve HTML with optional SSO token injection
+    // Serve HTML with injected SSO data — eliminates 2 client→server round trips
     var content = HtmlService.createHtmlOutputFromFile('index').getContent()
     if (injectedToken) {
-      content = content.replace('</head>', '<script>window.__SSO_TOKEN__="' + injectedToken + '";</script></head>')
+      var session = validateSession(injectedToken)
+      var injectParts = ['window.__SSO_TOKEN__="' + injectedToken + '";']
+
+      // Inject session data → client skips api_validateSession round trip
+      if (session) {
+        injectParts.push('window.__SSO_SESSION__=' + JSON.stringify(session) + ';')
+
+        // Inject initial data → client skips api_getInitialData round trip
+        try {
+          var lookups = getAllData(session)
+          var docsResult = getDocuments(injectedToken, {})
+          var docs = docsResult.data || []
+          var byStatus = {}
+          var totalValue = 0
+          docs.forEach(function(d) {
+            var s = d['Tình trạng'] || 'Không rõ'
+            byStatus[s] = (byStatus[s] || 0) + 1
+            totalValue += Number(d['Giá trị HĐ']) || 0
+          })
+          var daDocRows = getSheetData(SHEETS.DA_DOC)
+          var unreadIds = daDocRows
+            .filter(function(r) { return String(r['UserID']) === String(session.userId) })
+            .map(function(r) { return String(r['DocID']) })
+          var companyName = getConfig('COMPANY_NAME') || ''
+
+          var initialData = {
+            lookups: lookups,
+            docs: docs,
+            stats: { total: docs.length, byStatus: byStatus, totalValue: totalValue },
+            unreadIds: unreadIds,
+            companyName: companyName,
+          }
+
+          // Inject settings configs for admin — skips 5x api_getConfig on SettingsPage
+          var isAdmin = session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Giám đốc'
+          if (isAdmin) {
+            initialData.configs = {
+              ROOT_FOLDER_ID:   getConfig('ROOT_FOLDER_ID') || null,
+              ROOT_FOLDER_NAME: getConfig('ROOT_FOLDER_NAME') || null,
+              COMPANY_NAME:     companyName || null,
+              MAIL_TEMPLATES:   getConfig('MAIL_TEMPLATES') || null,
+              APP_URL:          getConfig('APP_URL') || null,
+            }
+          }
+
+          injectParts.push('window.__INITIAL_DATA__=' + JSON.stringify(initialData) + ';')
+        } catch(dataErr) {
+          Logger.log('doGet inject initial data error: ' + dataErr.message)
+          // Client will fall back to api_getInitialData
+        }
+      }
+
+      content = content.replace('</head>', '<script>' + injectParts.join('') + '</script></head>')
     }
     return HtmlService.createHtmlOutput(content)
       .setTitle('Quản Lý Tài Liệu')
@@ -159,13 +218,27 @@ function api_getInitialData(token) {
     // 5. Company name
     var companyName = getConfig('COMPANY_NAME') || ''
 
-    return {
+    var result = {
       lookups: lookups,
       docs: docs,
       stats: stats,
       unreadIds: unreadIds,
       companyName: companyName,
     }
+
+    // 6. Settings configs for admin — skips 5x api_getConfig on SettingsPage
+    var isAdminRole = session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Giám đốc'
+    if (isAdminRole) {
+      result.configs = {
+        ROOT_FOLDER_ID:   getConfig('ROOT_FOLDER_ID') || null,
+        ROOT_FOLDER_NAME: getConfig('ROOT_FOLDER_NAME') || null,
+        COMPANY_NAME:     companyName || null,
+        MAIL_TEMPLATES:   getConfig('MAIL_TEMPLATES') || null,
+        APP_URL:          getConfig('APP_URL') || null,
+      }
+    }
+
+    return result
   })
 }
 
@@ -193,7 +266,7 @@ function api_pollUpdates(token, opts) {
 
     // Optionally refresh lookups
     if (opts.includeLookups) {
-      result.lookups = getAllData()
+      result.lookups = getAllData(session)
     }
 
     return result
@@ -492,10 +565,28 @@ function api_getConfig(token, key) {
   })
 }
 
+// Lấy nhiều config key trong 1 lần gọi
+function api_getConfigs(token, keys) {
+  return _wrap(function() {
+    requireAdmin(token)
+    var result = {}
+    ;(keys || []).forEach(function(k) { result[k] = getConfig(k) || null })
+    return result
+  })
+}
+
 function api_setConfig(token, key, value) {
   return _wrap(function() {
     requireAdmin(token)
     setConfig(key, value)
+    return { success: true }
+  })
+}
+
+function api_clearCache(token) {
+  return _wrap(function() {
+    requireAdmin(token)
+    Object.values(SHEETS).forEach(function(name) { invalidateSheetCache(name) })
     return { success: true }
   })
 }

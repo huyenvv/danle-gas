@@ -12,8 +12,19 @@ export function AuthProvider({ children }) {
   const [accessError, setAccessError]   = useState('')
 
   useEffect(() => {
-    // Priority 1: SSO token injected by doGet
+    // Priority 1: SSO token + session injected by doGet (no round trip needed)
     const ssoToken = window.__SSO_TOKEN__
+    const ssoSession = window.__SSO_SESSION__
+    if (ssoToken && ssoSession) {
+      window.__SSO_TOKEN__ = ''
+      window.__SSO_SESSION__ = null
+      localStorage.setItem(TOKEN_KEY, ssoToken)
+      setSession({ ...ssoSession, token: ssoToken })
+      setLoading(false)
+      return
+    }
+
+    // Priority 2: SSO token without session (fallback — validate via API)
     if (ssoToken) {
       window.__SSO_TOKEN__ = ''
       gasCall('api_validateSession', ssoToken)
@@ -30,7 +41,7 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // Priority 2: Saved session from localStorage
+    // Priority 3: Saved session from localStorage
     const saved = localStorage.getItem(TOKEN_KEY)
     if (saved) {
       gasCall('api_validateSession', saved)
@@ -62,6 +73,16 @@ export function AuthProvider({ children }) {
     setAccessDenied(true)
     setAccessError('Đã đăng xuất. Vui lòng mở lại từ SSO Portal.')
   }, [session])
+
+  // Heartbeat: ping api_validateSession mỗi 30 phút để slide cache TTL (6h max).
+  // Tránh session chết do user idle trong iframe.
+  useEffect(() => {
+    if (!session?.token) return
+    const id = setInterval(() => {
+      gasCall('api_validateSession', session.token).catch(() => {})
+    }, 30 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [session?.token])
 
   useEffect(() => {
     function handleExpired() {

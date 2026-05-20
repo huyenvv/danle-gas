@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack }) {
   const [collapsed, setCollapsed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [iframeLoading, setIframeLoading] = useState(true)
   const otherApps = apps.filter(a => a.ID !== activeApp.ID)
+
+  // Reset loading state khi url đổi (do session-expired reload hoặc switch app)
+  useEffect(() => { setIframeLoading(true) }, [url])
 
   return (
     <div className="fixed inset-0 z-40 bg-background">

@@ -47,6 +47,7 @@ export default function MainApp() {
   const [hasNewUnread, setHasNewUnread] = useState(false)
   const prevUnreadRef = useRef(0)
   const [companyName, setCompanyName] = useState('')
+  const [initialConfigs, setInitialConfigs] = useState(null)
 
   // Filters
   const [filters, setFilters]         = useState({})
@@ -132,22 +133,38 @@ export default function MainApp() {
   }, [])
 
   useEffect(() => {
-    // Single GAS call for all initial data (replaces 4+ parallel calls)
-    gasCall('api_getInitialData', session.token).then(r => {
-      if (r.lookups) { setLookups(r.lookups); dataCache.set('lookups', r.lookups) }
-      const nextDocs = r.docs || []
+    // Use server-injected initial data if available (no round trip)
+    const injected = window.__INITIAL_DATA__
+    if (injected) {
+      window.__INITIAL_DATA__ = null
+      if (injected.lookups) { setLookups(injected.lookups); dataCache.set('lookups', injected.lookups) }
+      const nextDocs = injected.docs || []
       setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
-      if (r.stats) setStats(r.stats)
-      if (r.unreadIds) setUnreadDocIds(new Set(r.unreadIds.map(String)))
-      if (r.companyName) setCompanyName(r.companyName)
+      if (injected.stats) setStats(injected.stats)
+      if (injected.unreadIds) setUnreadDocIds(new Set(injected.unreadIds.map(String)))
+      if (injected.companyName) setCompanyName(injected.companyName)
+      if (injected.configs) setInitialConfigs(injected.configs)
       failCountRef.current = 0
       setLoading(false)
-    }).catch(() => {
-      // Fallback: try individual calls if combined API fails
-      prefetchLookups(session.token).then(setLookups).catch(() => {})
-      loadDocs()
-      gasCall('api_getUnreadDocIds', session.token).then(r2 => setUnreadDocIds(new Set((r2.unreadIds || []).map(String)))).catch(() => {})
-    })
+    } else {
+      // Fallback: fetch via API (returning user with localStorage token)
+      gasCall('api_getInitialData', session.token).then(r => {
+        if (r.lookups) { setLookups(r.lookups); dataCache.set('lookups', r.lookups) }
+        const nextDocs = r.docs || []
+        setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
+        if (r.stats) setStats(r.stats)
+        if (r.unreadIds) setUnreadDocIds(new Set(r.unreadIds.map(String)))
+        if (r.companyName) setCompanyName(r.companyName)
+        if (r.configs) setInitialConfigs(r.configs)
+        failCountRef.current = 0
+        setLoading(false)
+      }).catch(() => {
+        // Fallback: try individual calls if combined API fails
+        prefetchLookups(session.token).then(setLookups).catch(() => {})
+        loadDocs()
+        gasCall('api_getUnreadDocIds', session.token).then(r2 => setUnreadDocIds(new Set((r2.unreadIds || []).map(String)))).catch(() => {})
+      })
+    }
 
     // Background polling via dataCache (60s interval)
     startPolling(session.token)
@@ -511,7 +528,7 @@ export default function MainApp() {
 
           {isSuperAdmin && (
             <div className={page === 'settings' ? '' : 'hidden'}>
-              <SettingsPage token={session.token} onCompanyNameChange={setCompanyName} />
+              <SettingsPage token={session.token} onCompanyNameChange={setCompanyName} initialConfigs={initialConfigs} />
             </div>
           )}
 

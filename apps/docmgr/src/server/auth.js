@@ -106,6 +106,7 @@ function ssoCreateSession(user, appRole) {
   var sessionData = {
     userId: user['ID'],
     username: user['Tên đăng nhập'],
+    name: user['Tên nhân viên'] || user['Tên đăng nhập'] || '',
     email: user['Email'],
     role: appRole['Quyền'],
     mustChangePass: false,

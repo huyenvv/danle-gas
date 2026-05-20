@@ -113,18 +113,36 @@ function _buildFileLinks(doc) {
   try { files = JSON.parse(doc['File ID']) } catch(e) { return '' }
   if (!Array.isArray(files) || files.length === 0) return ''
   return files.map(function(f) {
-    return '• ' + (f.fileName || 'File') + ': https://drive.google.com/file/d/' + f.fileId + '/view'
+    return 'https://drive.google.com/file/d/' + f.fileId + '/view'
   }).join('\n')
 }
 
-function _sendNotificationEmails(recipients, doc, mailType, session) {
-  if (!recipients || recipients.length === 0) return
+function _formatDateDMY(val) {
+  if (!val) return ''
+  var s = String(val)
+  // yyyy-mm-dd — đổi trực tiếp, tránh timezone shift
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return m[3] + '/' + m[2] + '/' + m[1]
+  try {
+    var d = new Date(val)
+    if (isNaN(d.getTime())) return s
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear()
+  } catch(e) { return s }
+}
+
+// toRecipients — danh sách nhận chính (TO)
+// ccRecipients — danh sách CC (optional)
+function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipients) {
+  if (!toRecipients || toRecipients.length === 0) return
+  ccRecipients = ccRecipients || []
   var docName = (typeof doc === 'string') ? doc : (doc['Tên hồ sơ'] || '')
   // Dev override: redirect all emails to test address for huyenvv90 owner
   try {
     var ownerEmail = getCentralSheet().getOwner().getEmail()
     if (ownerEmail === 'huyenvv90@gmail.com') {
-      recipients = recipients.map(function(r) { return { email: 'huyenvv.it@gmail.com', name: r.name, role: r.role } })
+      var _redir = function(r) { return { email: 'huyenvv.it@gmail.com', name: r.name, role: r.role } }
+      toRecipients = toRecipients.map(_redir)
+      ccRecipients = ccRecipients.map(_redir)
     }
   } catch(e) {}
   try {
@@ -132,21 +150,24 @@ function _sendNotificationEmails(recipients, doc, mailType, session) {
     var tpl = templates[mailType] || _DEFAULT_MAIL_TEMPLATES[mailType] || { subject: 'Thông báo: ' + docName, body: 'Hồ sơ "' + docName + '" có cập nhật mới.' }
     var appLink = _getAppLink()
 
-    var mailOptions = {}
+    var baseOptions = {}
     var config = _getMailConfigFromSSO()
     if (config) {
-      if (config['MAIL_SENDER_NAME']) mailOptions.name = config['MAIL_SENDER_NAME']
-      if (config['MAIL_SENDER_EMAIL']) mailOptions.from = config['MAIL_SENDER_EMAIL']
+      if (config['MAIL_SENDER_NAME']) baseOptions.name = config['MAIL_SENDER_NAME']
+      if (config['MAIL_SENDER_EMAIL']) baseOptions.from = config['MAIL_SENDER_EMAIL']
     }
 
-    var fileLinks = (typeof doc === 'object') ? _buildFileLinks(doc) : ''
-    var ngayBanHanh = (typeof doc === 'object') ? (doc['Ngày ban hành'] || '') : ''
-    var ngayKetThuc = (typeof doc === 'object') ? (doc['Ngày kết thúc'] || '') : ''
+    var ccEmails = ccRecipients.filter(function(r) { return r.email }).map(function(r) { return r.email }).join(',')
 
-    recipients.forEach(function(r) {
+    var fileLinks = (typeof doc === 'object') ? _buildFileLinks(doc) : ''
+    var ngayBanHanh = _formatDateDMY(typeof doc === 'object' ? doc['Ngày ban hành'] : '')
+    var ngayKetThuc = _formatDateDMY(typeof doc === 'object' ? doc['Ngày kết thúc'] : '')
+
+    toRecipients.forEach(function(r) {
       if (!r.email) return
       var vars = {
         '{tênHồSơ}': docName,
+        '{tênNgườiGửi}': session ? (session.name || session.username || '') : 'Hệ thống',
         '{ngườiGửi}': session ? session.username : 'Hệ thống',
         '{emailNgườiGửi}': session ? (session.email || '') : '',
         '{tênNgườiNhận}': r.name || '',
@@ -158,7 +179,9 @@ function _sendNotificationEmails(recipients, doc, mailType, session) {
       }
       var subject = _applyTemplate(tpl.subject, vars)
       var body = _applyTemplate(tpl.body, vars)
-      Logger.log('_sendNotificationEmails: sending to ' + r.email)
+      var mailOptions = Object.assign({}, baseOptions)
+      if (ccEmails) mailOptions.cc = ccEmails
+      Logger.log('_sendNotificationEmails: sending to=' + r.email + ' cc=' + (ccEmails || ''))
       MailApp.sendEmail(r.email, subject, body, mailOptions)
       Logger.log('_sendNotificationEmails: sent OK to ' + r.email)
     })
@@ -708,27 +731,24 @@ function transitionDocument(token, id, action, data) {
   updateRow(SHEETS.HO_SO, id, updates)
   var updated = Object.assign({}, doc, updates)
 
-  // giaoViec: mark unread + send email to Phụ trách + Phối hợp
+  // giaoViec: TO = Phụ trách, CC = Người phối hợp
   if (action === 'giaoViec') {
-    var notifyUsers = _parseAssignees(updates['Phụ trách'])
-    var phoiHopUsers = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
-    notifyUsers = notifyUsers.concat(phoiHopUsers)
-    Logger.log('[giaoViec] raw notifyUsers=' + JSON.stringify(notifyUsers) + ' session.userId=' + session.userId + ' session.username=' + session.username)
-    // Exclude self
-    notifyUsers = notifyUsers.filter(function(uid) { return String(uid) !== String(session.userId) && uid !== session.username })
-    Logger.log('[giaoViec] after exclude self=' + JSON.stringify(notifyUsers))
-    _markUnreadForUsers(notifyUsers, id)
-    var recipientList = _getRecipientsByUsernames(notifyUsers)
-    _sendNotificationEmails(recipientList, updated, 'giaoViec', session)
+    var phuTrachUsers = _parseAssignees(updates['Phụ trách'])
+    var phoiHopUsers  = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
+    var _excludeSelf = function(uid) { return String(uid) !== String(session.userId) && uid !== session.username }
+    phuTrachUsers = phuTrachUsers.filter(_excludeSelf)
+    phoiHopUsers  = phoiHopUsers.filter(_excludeSelf)
+    _markUnreadForUsers(phuTrachUsers.concat(phoiHopUsers), id)
+    var toList = _getRecipientsByUsernames(phuTrachUsers)
+    var ccList = _getRecipientsByUsernames(phoiHopUsers)
+    _sendNotificationEmails(toList, updated, 'giaoViec', session, ccList)
   } else if (action === 'nhanViec' && updates['Người phối hợp']) {
-    // nhanViec: notify only NEW collaborators
+    // nhanViec: chỉ đánh dấu unread cho người phối hợp mới, không gửi email
     var oldPhoiHop = _parseAssignees(doc['Người phối hợp'])
     var newPhoiHop = _parseAssignees(updates['Người phối hợp'])
     var addedUsers = newPhoiHop.filter(function(u) { return oldPhoiHop.indexOf(u) === -1 })
     if (addedUsers.length > 0) {
       _markUnreadForUsers(addedUsers, id)
-      var newRecipients = _getRecipientsByUsernames(addedUsers)
-      _sendNotificationEmails(newRecipients, updated, 'giaoViec', session)
     }
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import gasCall from '../../gasClient.js'
-import { formatCurrency, formatDate, statusColor } from '../../utils/format.js'
+import { formatCurrency, formatDate, formatDateTime, statusColor } from '../../utils/format.js'
 import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -27,18 +27,6 @@ function formatFileSize(size) {
   return (value / (1024 * 1024 * 1024)).toFixed(1).replace(/\.0$/, '') + ' GB'
 }
 
-function formatDateTime(dateStr) {
-  if (!dateStr) return '—'
-  try {
-    var d = new Date(dateStr)
-    if (isNaN(d.getTime())) return dateStr
-    var date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    var time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-    return time + ' ' + date
-  } catch (_) {
-    return dateStr
-  }
-}
 
 export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, canDelete, token, session, onClose, onEdit, onDelete, onDocUpdated }) {
   const confirm = useConfirm()

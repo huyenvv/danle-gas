@@ -4,6 +4,7 @@ import Icon from './common/Icon.jsx'
 import FolderPicker from './settings/FolderPicker.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useConfirm } from '../context/ConfirmContext.jsx'
 
 const DEFAULT_TEMPLATES = {
   trinhDuyet: {
@@ -18,14 +19,15 @@ const DEFAULT_TEMPLATES = {
 
 const TEMPLATE_VARS = [
   { key: '{tênHồSơ}', desc: 'Tên hồ sơ' },
-  { key: '{ngườiGửi}', desc: 'Người thực hiện' },
-  { key: '{emailNgườiGửi}', desc: 'Email người thực hiện' },
+  { key: '{tênNgườiGửi}', desc: 'Tên người gửi' },
+  { key: '{ngườiGửi}', desc: 'Tên đăng nhập người gửi' },
+  { key: '{emailNgườiGửi}', desc: 'Email người gửi' },
   { key: '{tênNgườiNhận}', desc: 'Tên người nhận' },
   { key: '{vaiTròNgườiNhận}', desc: 'Vai trò người nhận' },
   { key: '{linkHệThống}', desc: 'Link đăng nhập hệ thống' },
   { key: '{linkTàiLiệu}', desc: 'Link file đính kèm (nhiều file = nhiều link)' },
-  { key: '{ngàyBanHành}', desc: 'Ngày ban hành' },
-  { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc' },
+  { key: '{ngàyBanHành}', desc: 'Ngày ban hành (dd/mm/yyyy)' },
+  { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc (dd/mm/yyyy)' },
 ]
 
 const TOP_TABS = [
@@ -33,7 +35,7 @@ const TOP_TABS = [
   { key: 'email', label: 'Email thông báo', icon: 'mail' },
 ]
 
-export default function SettingsPage({ token, onCompanyNameChange }) {
+export default function SettingsPage({ token, onCompanyNameChange, initialConfigs }) {
   const [activeTab, setActiveTab]           = useState('general')
   const [rootFolderId, setRootFolderId]     = useState('')
   const [rootFolderName, setRootFolderName] = useState('')
@@ -42,26 +44,37 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
   const [templates, setTemplates]           = useState(DEFAULT_TEMPLATES)
   const [saving, setSaving]                 = useState(false)
   const [savingMail, setSavingMail]         = useState(false)
+  const [clearingCache, setClearingCache]   = useState(false)
   const [loading, setLoading]               = useState(true)
   const [showPicker, setShowPicker]         = useState(false)
   const { showToast } = useToast()
+  const confirm = useConfirm()
 
   useEffect(() => {
+    // Dùng configs đã inject sẵn — không cần round trip
+    if (initialConfigs) {
+      if (initialConfigs.ROOT_FOLDER_ID)   setRootFolderId(initialConfigs.ROOT_FOLDER_ID)
+      if (initialConfigs.ROOT_FOLDER_NAME) setRootFolderName(initialConfigs.ROOT_FOLDER_NAME)
+      if (initialConfigs.COMPANY_NAME)     setCompanyName(initialConfigs.COMPANY_NAME)
+      if (initialConfigs.APP_URL)          setAppUrl(initialConfigs.APP_URL)
+      if (initialConfigs.MAIL_TEMPLATES) {
+        try { setTemplates({ ...DEFAULT_TEMPLATES, ...JSON.parse(initialConfigs.MAIL_TEMPLATES) }) } catch (_) {}
+      }
+      setLoading(false)
+      return
+    }
+    // Fallback: 1 lần gọi thay vì 5
     async function load() {
       try {
-        const [idRes, nameRes, companyRes, tplRes, urlRes] = await Promise.all([
-          gasCall('api_getConfig', token, 'ROOT_FOLDER_ID'),
-          gasCall('api_getConfig', token, 'ROOT_FOLDER_NAME'),
-          gasCall('api_getConfig', token, 'COMPANY_NAME'),
-          gasCall('api_getConfig', token, 'MAIL_TEMPLATES'),
-          gasCall('api_getConfig', token, 'APP_URL'),
+        const configs = await gasCall('api_getConfigs', token, [
+          'ROOT_FOLDER_ID', 'ROOT_FOLDER_NAME', 'COMPANY_NAME', 'MAIL_TEMPLATES', 'APP_URL',
         ])
-        if (idRes && idRes.value) setRootFolderId(idRes.value)
-        if (nameRes && nameRes.value) setRootFolderName(nameRes.value)
-        if (companyRes && companyRes.value) setCompanyName(companyRes.value)
-        if (urlRes && urlRes.value) setAppUrl(urlRes.value)
-        if (tplRes && tplRes.value) {
-          try { setTemplates({ ...DEFAULT_TEMPLATES, ...JSON.parse(tplRes.value) }) } catch (_) {}
+        if (configs.ROOT_FOLDER_ID)   setRootFolderId(configs.ROOT_FOLDER_ID)
+        if (configs.ROOT_FOLDER_NAME) setRootFolderName(configs.ROOT_FOLDER_NAME)
+        if (configs.COMPANY_NAME)     setCompanyName(configs.COMPANY_NAME)
+        if (configs.APP_URL)          setAppUrl(configs.APP_URL)
+        if (configs.MAIL_TEMPLATES) {
+          try { setTemplates({ ...DEFAULT_TEMPLATES, ...JSON.parse(configs.MAIL_TEMPLATES) }) } catch (_) {}
         }
       } catch (_) { /* ignore */ }
       setLoading(false)
@@ -88,6 +101,19 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
 
   function setTpl(type, field, value) {
     setTemplates(t => ({ ...t, [type]: { ...t[type], [field]: value } }))
+  }
+
+  async function handleClearCache() {
+    if (!await confirm('Xóa toàn bộ cache? Server sẽ đọc lại dữ liệu từ sheet ngay lập tức.')) return
+    setClearingCache(true)
+    try {
+      await gasCall('api_clearCache', token)
+      showToast('Đã xóa toàn bộ cache', 'success')
+    } catch (err) {
+      showToast('Lỗi: ' + err.message, 'error')
+    } finally {
+      setClearingCache(false)
+    }
   }
 
   async function handleSaveMail() {
@@ -191,6 +217,18 @@ export default function SettingsPage({ token, onCompanyNameChange }) {
               {saving ? 'Đang lưu…' : 'Lưu cài đặt'}
             </button>
           </form>
+        </div>
+      )}
+
+      {activeTab === 'general' && (
+        <div className="bg-white rounded-2xl shadow-card p-6">
+          <h3 className="text-sm font-medium text-on-surface mb-1">Xóa cache dữ liệu</h3>
+          <p className="text-xs text-on-surface-variant mb-4">Buộc server đọc lại dữ liệu trực tiếp từ sheet, bỏ qua cache 10 phút. Dùng khi bạn sửa dữ liệu thẳng trong Google Sheets.</p>
+          <button type="button" onClick={handleClearCache} disabled={clearingCache}
+            className="flex items-center gap-2 bg-error text-white px-5 py-2 rounded-full text-sm font-medium hover:bg-error/90 transition-colors shadow-md3-1 disabled:opacity-60">
+            <Icon name="delete_sweep" size={16} />
+            {clearingCache ? 'Đang xóa…' : 'Xóa cache'}
+          </button>
         </div>
       )}
 

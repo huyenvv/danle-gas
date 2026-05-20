@@ -333,6 +333,8 @@ async function mockCall(fn, ...args) {
     case 'api_setConfig':
       _mockConfig[args[1]] = args[2]
       return { success: true }
+    case 'api_clearCache':
+      return { success: true }
     case 'api_getComments': {
       const docId = String(args[1])
       return { data: _mockComments.filter(c => String(c.DocID) === docId) }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import Icon from '../common/Icon.jsx'
+import logoUrl from '../../assets/logo.png'
 
 const ROLE_LABELS = {
   'admin':          'Quản trị hệ thống',
@@ -57,7 +58,7 @@ export default function TopHeader({ username, email, role, onToggleSidebar, onBe
 
       {/* Company name — centered with SBM logo */}
       <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none flex items-center gap-2">
-        <img src="https://sbm.com.vn/wp-content/uploads/2022/03/logo.png" alt="SBM" className="h-6 shrink-0" />
+        <img src={logoUrl} alt="SBM" className="h-6 shrink-0" />
         {companyName && (
           <span className="text-sm font-semibold text-on-surface tracking-wide truncate max-w-[240px]">{companyName}</span>
         )}

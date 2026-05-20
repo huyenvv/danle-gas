@@ -52,6 +52,8 @@ export default function UserManager() {
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState(null)
   const [search, setSearch] = useState('')
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [bulkResetting, setBulkResetting] = useState(false)
 
   const isOwner = session.isOwner === true
 
@@ -118,6 +120,40 @@ export default function UserManager() {
     }
   }
 
+  async function handleBulkResetPassword() {
+    if (selectedIds.size === 0) return
+    if (!await confirm(`Reset mật khẩu về mặc định (Admin@@123) cho ${selectedIds.size} người dùng?`)) return
+    setBulkResetting(true)
+    try {
+      const res = await gasCall('api_bulkResetPassword', session.token, Array.from(selectedIds))
+      const skippedMsg = res.skipped > 0 ? ` (bỏ qua ${res.skipped})` : ''
+      addToast(`Đã reset mật khẩu cho ${res.count} người dùng${skippedMsg}`, 'success')
+      setSelectedIds(new Set())
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setBulkResetting(false)
+    }
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(visibleIds) {
+    setSelectedIds(prev => {
+      const allSelected = visibleIds.length > 0 && visibleIds.every(id => prev.has(id))
+      const next = new Set(prev)
+      if (allSelected) visibleIds.forEach(id => next.delete(id))
+      else visibleIds.forEach(id => next.add(id))
+      return next
+    })
+  }
+
   async function handleToggleAdmin(userId, currentQuyen) {
     const newQuyen = currentQuyen === 'Quản trị' ? '' : 'Quản trị'
     const action = newQuyen ? 'cấp quyền Quản trị cho' : 'thu hồi quyền Quản trị của'
@@ -163,6 +199,17 @@ export default function UserManager() {
 
   return (
     <div className="space-y-5">
+      {/* Full-screen loading overlay khi bulk reset */}
+      {bulkResetting && (
+        <div className="fixed inset-0 z-[250] bg-black/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.18)] px-8 py-6 flex flex-col items-center gap-3 min-w-[220px]">
+            <Icon name="sync" size={32} className="text-primary animate-spin" />
+            <p className="text-sm font-medium text-on-surface">Đang reset mật khẩu...</p>
+            <p className="text-xs text-on-surface-variant">Vui lòng đợi</p>
+          </div>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <StatCard icon="group" label="Tổng người dùng" value={users.length} color="primary" />
@@ -189,12 +236,40 @@ export default function UserManager() {
         </button>
       </div>
 
+      {/* Bulk action bar — floating, không đẩy layout */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-on-surface text-white rounded-full shadow-[0_8px_24px_rgba(0,0,0,0.18)] px-3 py-2 flex items-center gap-2 animate-[fadeIn_0.15s_ease-out]">
+          <span className="inline-flex items-center gap-1.5 px-2 text-sm font-medium">
+            <Icon name="check_circle" size={18} />
+            Đã chọn {selectedIds.size}
+          </span>
+          <button onClick={handleBulkResetPassword}
+            disabled={bulkResetting}
+            className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded-full text-xs font-medium transition-colors">
+            <Icon name="lock_reset" size={16} />
+            Reset mật khẩu
+          </button>
+          <button onClick={() => setSelectedIds(new Set())}
+            title="Bỏ chọn"
+            className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/15 transition-colors">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant">
+                <th className="pl-4 pr-2 py-3 w-10">
+                  <input type="checkbox"
+                    className="rounded border-outline-variant"
+                    checked={filtered.length > 0 && filtered.every(u => selectedIds.has(u.ID))}
+                    ref={el => { if (el) el.indeterminate = filtered.some(u => selectedIds.has(u.ID)) && !filtered.every(u => selectedIds.has(u.ID)) }}
+                    onChange={() => toggleSelectAll(filtered.map(u => u.ID))} />
+                </th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban</th>
                 {isOwner && <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quản trị</th>}
@@ -205,10 +280,16 @@ export default function UserManager() {
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {filtered.length === 0 && (
-                <tr><td colSpan={isOwner ? 6 : 5} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+                <tr><td colSpan={isOwner ? 7 : 6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
               )}
               {filtered.map(u => (
-                <tr key={u.ID} className="hover:bg-surface-container-low transition-colors">
+                <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
+                  <td className="pl-4 pr-2 py-3">
+                    <input type="checkbox"
+                      className="rounded border-outline-variant"
+                      checked={selectedIds.has(u.ID)}
+                      onChange={() => toggleSelect(u.ID)} />
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">

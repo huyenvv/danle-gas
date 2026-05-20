@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import gasCall from '../gasClient.js'
 import Icon from './common/Icon.jsx'
-import { formatDate } from '../utils/format.js'
+import { formatDateTime } from '../utils/format.js'
 
 const ACTION_COLORS = {
   'Tạo':        'text-emerald-700',
@@ -142,7 +142,7 @@ export default function AuditLogPage({ token }) {
                 <tr key={i} onClick={() => setSelected(log)}
                   className="hover:bg-surface-container-low transition-colors cursor-pointer">
                   <td className="px-4 py-3 text-on-surface-variant text-xs whitespace-nowrap">
-                    {log['Thời gian'] ? formatDate(log['Thời gian']) : '—'}
+                    {log['Thời gian'] ? formatDateTime(log['Thời gian']) : '—'}
                   </td>
                   <td className="px-4 py-3">
                     {log['Người dùng'] ? (
@@ -234,7 +234,7 @@ export default function AuditLogPage({ token }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Thời gian</span>
-                  <p className="text-sm text-on-surface mt-0.5">{selected['Thời gian'] ? formatDate(selected['Thời gian']) : '—'}</p>
+                  <p className="text-sm text-on-surface mt-0.5">{selected['Thời gian'] ? formatDateTime(selected['Thời gian']) : '—'}</p>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Người dùng</span>

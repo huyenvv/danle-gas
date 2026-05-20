@@ -1,14 +1,31 @@
 // ===== SSO cross-app token validation =====
 
 var SSO_TOKEN_TTL = 86400 // 24 hours in seconds
+var SSO_VALIDATE_CACHE_TTL = 600 // 10 minutes — cross-script openById is expensive
+
+/**
+ * Cache key for a validated (email, token) pair. Includes parent sheet ID
+ * to scope cache per portal in case multiple portals exist.
+ */
+function _ssoValidateCacheKey(parentId, email, token) {
+  return 'ssoval_' + parentId + '_' + String(email).toLowerCase() + '_' + token
+}
 
 /**
  * Validate SSO token against parent sheet's _Người Dùng.
  * Returns user object if valid, null otherwise.
+ *
+ * Cached for SSO_VALIDATE_CACHE_TTL seconds to avoid repeated openById
+ * + getDataRange on the parent sheet. Cache window is short enough that
+ * a logout/expiry on the portal side propagates within ~10 minutes.
  */
 function ssoValidateToken(email, token) {
   var parentId = ssoGetParentSheetId()
   if (!parentId) return null
+
+  var cacheKey = _ssoValidateCacheKey(parentId, email, token)
+  var cached = cacheGet(cacheKey)
+  if (cached) return cached
 
   var ss = SpreadsheetApp.openById(parentId)
   var sheet = ss.getSheetByName('_Người Dùng')
@@ -31,6 +48,10 @@ function ssoValidateToken(email, token) {
     if (rowEmail === email.toLowerCase() && rowToken === token && rowExpiry > nowMs) {
       var user = {}
       headers.forEach(function(h, col) { user[h] = data[i][col] })
+      // Only cache up to min(remaining lifetime, configured TTL) — never serve a stale-expired token
+      var remainingSec = Math.floor((rowExpiry - nowMs) / 1000)
+      var ttl = Math.max(60, Math.min(SSO_VALIDATE_CACHE_TTL, remainingSec))
+      cachePut(cacheKey, user, ttl)
       return user
     }
   }
