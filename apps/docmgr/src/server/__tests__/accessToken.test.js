@@ -25,10 +25,13 @@ describe('access token primitives', () => {
     expect(validateAccessToken(token)).toBeNull()
   })
 
-  test('validateAccessToken slides cache TTL', () => {
+  test('validateAccessToken slides cache TTL on read', () => {
     loadGAS()
     const token = mintAccessToken({ userId: 'u1' })
-    expect(validateAccessToken(token).userId).toBe('u1')
-    expect(validateAccessToken(token).userId).toBe('u1')
+    const cache = CacheService.getScriptCache()
+    const putSpy = jest.spyOn(cache, 'put')
+    validateAccessToken(token)
+    expect(putSpy).toHaveBeenCalledWith('at_' + token, expect.anything(), ACCESS_TOKEN_TTL)
+    putSpy.mockRestore()
   })
 })

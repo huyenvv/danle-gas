@@ -3,6 +3,7 @@
 var ACCESS_TOKEN_TTL = 1800 // 30 min
 
 function mintAccessToken(sessionData) {
+  if (!sessionData) throw new Error('mintAccessToken: sessionData required')
   var token = generateUuid()
   cachePut('at_' + token, sessionData, ACCESS_TOKEN_TTL)
   return token
