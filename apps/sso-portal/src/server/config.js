@@ -4,6 +4,7 @@ var SHEETS = {
   USERS: '_Người Dùng',
   APPS: '_Ứng Dụng',
   SYS: '_Hệ Thống',
+  HANDOFFS: '_Handoffs',
 }
 
 var APP_ID = 'sso-portal'
@@ -24,9 +25,10 @@ function ensureInitialized() {
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry'] },
+    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt'] },
     { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
+    { name: SHEETS.HANDOFFS, headers: ['ID', 'Token', 'UserID', 'AppID', 'CreatedAt', 'ExpiresAt', 'Consumed'] },
   ]
 
   tabDefs.forEach(function(def) {
