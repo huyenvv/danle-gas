@@ -89,7 +89,7 @@ const MAX_CONCURRENT = 3
 function _processQueue() {
   if (_queue.length === 0 || _activeCount >= MAX_CONCURRENT) return
   _activeCount++
-  const { fnName, args, resolve, reject, retries, totalRetries, baseDelayMs } = _queue.shift()
+  const { fnName, args, resolve, reject, retries, totalRetries, baseDelayMs, refreshAttempted } = _queue.shift()
 
   function requeue() {
     setTimeout(() => {
@@ -109,16 +109,17 @@ function _processQueue() {
 
       const errMsg = res ? res.error : 'Lỗi không xác định'
 
-      if (errMsg === 'TOKEN_EXPIRED') {
+      if (errMsg === 'TOKEN_EXPIRED' && !refreshAttempted) {
         // Don't decrement _activeCount yet — async refresh in flight
         _doRefresh()
           .then(newAccess => {
             _activeCount--
             const newArgs = [...args]
+            // First arg is the access token for all authenticated calls
             if (newArgs.length > 0 && typeof newArgs[0] === 'string' && newArgs[0].length > 10) {
               newArgs[0] = newAccess
             }
-            _queue.unshift({ fnName, args: newArgs, resolve, reject, retries: 0, totalRetries: 0, baseDelayMs })
+            _queue.unshift({ fnName, args: newArgs, resolve, reject, retries, totalRetries, baseDelayMs, refreshAttempted: true })
             _processQueue()
           })
           .catch(refreshErr => {
@@ -132,7 +133,7 @@ function _processQueue() {
 
       _activeCount--
 
-      if (_isSessionExpired(errMsg) || errMsg === 'TOKEN_REVOKED' || errMsg === 'USER_LOCKED') {
+      if (_isSessionExpired(errMsg) || errMsg === 'TOKEN_EXPIRED' || errMsg === 'TOKEN_REVOKED' || errMsg === 'USER_LOCKED') {
         window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
         reject(new Error(errMsg))
         _processQueue()
