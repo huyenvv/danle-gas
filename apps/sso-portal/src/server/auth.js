@@ -6,21 +6,11 @@ function login(email, password) {
 
   if (!user) throw new Error('Email hoặc mật khẩu không đúng')
   if (user['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
-  if (!_verifyPassword(user['Tên đăng nhập'], password, user['Mật khẩu'])) throw new Error('Email hoặc mật khẩu không đúng')
+  if (!_verifyPassword(user['Tên đăng nhập'], password, user['Mật khẩu'])) {
+    throw new Error('Email hoặc mật khẩu không đúng')
+  }
 
-  // Generate SSO token
-  var ssoToken = generateUuid()
-  var ssoExpiry = new Date().getTime() + (SSO_TOKEN_TTL * 1000)
-
-  updateRow(SHEETS.USERS, user['ID'], {
-    'SSO_Token': ssoToken,
-    'SSO_Expiry': ssoExpiry,
-    'Đăng nhập cuối': now(),
-  })
-
-  // Create portal session
-  var token = generateUuid()
-  var mustChange = user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true
+  updateRow(SHEETS.USERS, user['ID'], { 'Đăng nhập cuối': now() })
 
   var ownerEmail = ''
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
@@ -34,18 +24,17 @@ function login(email, password) {
     displayName: user['Tên nhân viên'] || user['Email'],
     role: isAdmin ? 'admin' : 'user',
     isOwner: isOwner,
-    mustChangePass: mustChange,
-    ssoToken: ssoToken,
-    expiresAt: new Date().getTime() + SSO_TOKEN_TTL * 1000,
-    lastRotatedAt: new Date().getTime(),
+    mustChangePass: user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true,
   }
-  cachePut('sess_' + token, sessionData, SESSION_TTL)
+
+  var refreshToken = mintRefreshToken(SHEETS.USERS, user['ID'], { label: 'Web' })
+  var accessToken = mintAccessToken(sessionData)
 
   return {
-    token: token,
-    ssoToken: ssoToken,
-    parentSheetId: getAppSheet().getId(),
+    accessToken: accessToken,
+    refreshToken: refreshToken,
     user: sessionData,
+    parentSheetId: getAppSheet().getId(),
   }
 }
 
@@ -121,12 +110,20 @@ function portalLockUser(token, targetUserId) {
   var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
   if (user && _isOwnerUser(user)) throw new Error('Không thể khóa tài khoản chủ sở hữu')
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Locked' })
+  revokeAllRefreshTokens(SHEETS.USERS, targetUserId)
+  bumpEpoch(SHEETS.USERS, targetUserId)
   return { success: true }
 }
 
 function portalUnlockUser(token, targetUserId) {
   requireAdmin(token)
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Active' })
+  return { success: true }
+}
+
+function portalLogoutAllDevices(userId) {
+  revokeAllRefreshTokens(SHEETS.USERS, userId)
+  bumpEpoch(SHEETS.USERS, userId)
   return { success: true }
 }
 
