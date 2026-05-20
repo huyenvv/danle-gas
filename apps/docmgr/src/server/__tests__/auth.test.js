@@ -27,24 +27,24 @@ describe('ssoCreateSession', () => {
   })
 })
 
-describe('validateSession', () => {
-  test('returns session for valid token', () => {
+describe('validateAccessToken', () => {
+  test('returns session for valid access token', () => {
     var token = createSession(1, 'admin', 'admin@test.com', 'admin')
-    var session = validateSession(token)
+    var session = validateAccessToken(token)
     expect(session).not.toBeNull()
     expect(session.username).toBe('admin')
   })
 
   test('returns null for invalid token', () => {
-    expect(validateSession('bad-token')).toBeNull()
+    expect(validateAccessToken('bad-token')).toBeNull()
   })
 })
 
-describe('logout', () => {
-  test('invalidates session', () => {
+describe('revokeAccessToken', () => {
+  test('invalidates access token', () => {
     var token = createSession(1, 'admin', 'admin@test.com', 'admin')
-    logout(token)
-    expect(validateSession(token)).toBeNull()
+    revokeAccessToken(token)
+    expect(validateAccessToken(token)).toBeNull()
   })
 })
 

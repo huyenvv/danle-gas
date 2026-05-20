@@ -45,7 +45,6 @@ function seedUser(id, username, email, role) {
 // ── Create a session directly (SSO session creation) ────────────────────────
 function createSession(userId, username, email, role) {
   var appRole = { 'Quyền': role, 'Phân quyền chi tiết': '' }
-  var token = generateUuid()
   var sessionData = {
     userId: userId,
     username: username,
@@ -55,8 +54,7 @@ function createSession(userId, username, email, role) {
     departments: [],
     permissions: getPermissions(appRole),
   }
-  cachePut('sess_' + token, sessionData, SESSION_TTL)
-  return token
+  return mintAccessToken(sessionData)
 }
 
 module.exports = {
