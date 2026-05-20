@@ -89,8 +89,8 @@ export default function MainApp() {
     try {
       const filters = keyword ? { keyword } : {}
       const [docsRes, statsRes] = await Promise.all([
-        gasCall('api_getDocuments', session.token, filters),
-        gasCall('api_getDocumentStats', session.token),
+        gasCall('api_getDocuments', session.accessToken, filters),
+        gasCall('api_getDocumentStats', session.accessToken),
       ])
       const nextDocs = (docsRes && docsRes.data) ? docsRes.data : []
       setAllDocs(nextDocs)
@@ -148,7 +148,7 @@ export default function MainApp() {
       setLoading(false)
     } else {
       // Fallback: fetch via API (returning user with localStorage token)
-      gasCall('api_getInitialData', session.token).then(r => {
+      gasCall('api_getInitialData', session.accessToken).then(r => {
         if (r.lookups) { setLookups(r.lookups); dataCache.set('lookups', r.lookups) }
         const nextDocs = r.docs || []
         setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
@@ -160,14 +160,14 @@ export default function MainApp() {
         setLoading(false)
       }).catch(() => {
         // Fallback: try individual calls if combined API fails
-        prefetchLookups(session.token).then(setLookups).catch(() => {})
+        prefetchLookups(session.accessToken).then(setLookups).catch(() => {})
         loadDocs()
-        gasCall('api_getUnreadDocIds', session.token).then(r2 => setUnreadDocIds(new Set((r2.unreadIds || []).map(String)))).catch(() => {})
+        gasCall('api_getUnreadDocIds', session.accessToken).then(r2 => setUnreadDocIds(new Set((r2.unreadIds || []).map(String)))).catch(() => {})
       })
     }
 
     // Background polling via dataCache (60s interval)
-    startPolling(session.token)
+    startPolling(session.accessToken)
 
     // Subscribe to polling updates
     const unsubDocs = dataCache.subscribe('docs', data => {
@@ -197,7 +197,7 @@ export default function MainApp() {
     if (!await confirm('Xóa hồ sơ này?')) return false
     setGlobalLoading(true)
     try {
-      await gasCall('api_deleteDocument', session.token, id)
+      await gasCall('api_deleteDocument', session.accessToken, id)
       removeDocFromCache(id)
       showToast('Đã xóa hồ sơ', 'success')
       return true
@@ -256,7 +256,7 @@ export default function MainApp() {
     setGlobalLoading(true)
     try {
       const ids = [...selectedIds]
-      await gasCall('api_markMultipleAsRead', session.token, ids)
+      await gasCall('api_markMultipleAsRead', session.accessToken, ids)
       setUnreadDocIds(prev => {
         const next = new Set(prev)
         ids.forEach(id => next.delete(String(id)))
@@ -428,7 +428,7 @@ export default function MainApp() {
                     onClick={async () => {
                       dataCache.invalidate('docs')
                       dataCache.invalidate('lookups')
-                      await Promise.all([loadDocs(), refreshLookups(session.token).then(setLookups)])
+                      await Promise.all([loadDocs(), refreshLookups(session.accessToken).then(setLookups)])
                     }}
                     title="Làm mới dữ liệu"
                     className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container border border-outline-variant transition-colors"
@@ -505,35 +505,35 @@ export default function MainApp() {
           )}
 
           {page === 'categories' && (
-            <CategoryManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} session={session} />
+            <CategoryManager token={session.accessToken} lookups={lookups} onUpdate={() => refreshLookups(session.accessToken).then(setLookups)} session={session} />
           )}
 
           {page === 'groups' && isAdmin && (
-            <GroupManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} />
+            <GroupManager token={session.accessToken} lookups={lookups} onUpdate={() => refreshLookups(session.accessToken).then(setLookups)} />
           )}
 
           {page === 'suppliers' && (
-            <SupplierManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} />
+            <SupplierManager token={session.accessToken} lookups={lookups} onUpdate={() => refreshLookups(session.accessToken).then(setLookups)} />
           )}
 
           {page === 'projects' && (
-            <ProjectManager token={session.token} lookups={lookups} onUpdate={() => refreshLookups(session.token).then(setLookups)} />
+            <ProjectManager token={session.accessToken} lookups={lookups} onUpdate={() => refreshLookups(session.accessToken).then(setLookups)} />
           )}
 
           {isAdmin && (
             <div className={page === 'users' ? '' : 'hidden'}>
-              <UserManager token={session.token} lookups={lookups} session={session} />
+              <UserManager token={session.accessToken} lookups={lookups} session={session} />
             </div>
           )}
 
           {isSuperAdmin && (
             <div className={page === 'settings' ? '' : 'hidden'}>
-              <SettingsPage token={session.token} onCompanyNameChange={setCompanyName} initialConfigs={initialConfigs} />
+              <SettingsPage token={session.accessToken} onCompanyNameChange={setCompanyName} initialConfigs={initialConfigs} />
             </div>
           )}
 
           {page === 'auditlogs' && isAdmin && (
-            <AuditLogPage token={session.token} />
+            <AuditLogPage token={session.accessToken} />
           )}
           </div>
         </main>
@@ -544,7 +544,7 @@ export default function MainApp() {
           mode={docModal.mode}
           doc={docModal.doc}
           lookups={lookups}
-          token={session.token}
+          token={session.accessToken}
           session={session}
           docs={docs}
           onClose={() => {
@@ -570,7 +570,7 @@ export default function MainApp() {
           lookups={lookups}
           isAdmin={isAdmin}
           canDelete={isSuperAdmin}
-          token={session.token}
+          token={session.accessToken}
           session={session}
           onClose={() => {
             setUnreadDocIds(prev => { const next = new Set(prev); next.delete(String(previewDoc.ID)); return next })

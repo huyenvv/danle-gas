@@ -3,91 +3,81 @@ import gasCall from '../gasClient.js'
 
 const AuthContext = createContext(null)
 
-const TOKEN_KEY = 'docmgr_token'
+const ACCESS_KEY = 'docmgr_access_token'
+const REFRESH_KEY = 'docmgr_refresh_token'
+const USER_KEY = 'docmgr_user'
+
+function _clearAuth() {
+  localStorage.removeItem(ACCESS_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+  localStorage.removeItem(USER_KEY)
+}
 
 export function AuthProvider({ children }) {
-  const [session, setSession]         = useState(null)
-  const [loading, setLoading]         = useState(true)
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
-  const [accessError, setAccessError]   = useState('')
+  const [accessError, setAccessError] = useState('')
 
   useEffect(() => {
-    // Priority 1: SSO token + session injected by doGet (no round trip needed)
-    const ssoToken = window.__SSO_TOKEN__
-    const ssoSession = window.__SSO_SESSION__
-    if (ssoToken && ssoSession) {
-      window.__SSO_TOKEN__ = ''
-      window.__SSO_SESSION__ = null
-      localStorage.setItem(TOKEN_KEY, ssoToken)
-      setSession({ ...ssoSession, token: ssoToken })
+    // Priority 1: tokens injected by doGet (fresh handoff)
+    const injectedAccess = window.__ACCESS_TOKEN__
+    const injectedRefresh = window.__REFRESH_TOKEN__
+    const injectedUser = window.__USER__
+    if (injectedAccess && injectedRefresh && injectedUser) {
+      window.__ACCESS_TOKEN__ = ''
+      window.__REFRESH_TOKEN__ = ''
+      window.__USER__ = null
+      localStorage.setItem(ACCESS_KEY, injectedAccess)
+      localStorage.setItem(REFRESH_KEY, injectedRefresh)
+      localStorage.setItem(USER_KEY, JSON.stringify(injectedUser))
+      setSession({ ...injectedUser, accessToken: injectedAccess })
       setLoading(false)
       return
     }
 
-    // Priority 2: SSO token without session (fallback — validate via API)
-    if (ssoToken) {
-      window.__SSO_TOKEN__ = ''
-      gasCall('api_validateSession', ssoToken)
-        .then(sess => {
-          localStorage.setItem(TOKEN_KEY, ssoToken)
-          setSession({ ...sess, token: ssoToken })
+    // Priority 2: saved refresh_token → auto-resume
+    const rt = localStorage.getItem(REFRESH_KEY)
+    if (rt) {
+      gasCall('api_resume', rt)
+        .then(res => {
+          localStorage.setItem(ACCESS_KEY, res.accessToken)
+          localStorage.setItem(REFRESH_KEY, res.refreshToken)
+          localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+          setSession({ ...res.user, accessToken: res.accessToken })
           setLoading(false)
         })
         .catch(err => {
+          _clearAuth()
           setAccessDenied(true)
-          setAccessError(err.message || 'Phiên SSO không hợp lệ')
+          if (err.message === 'USER_LOCKED') {
+            setAccessError('Tài khoản đã bị khóa. Liên hệ admin.')
+          } else {
+            setAccessError('Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.')
+          }
           setLoading(false)
         })
       return
     }
 
-    // Priority 3: Saved session from localStorage
-    const saved = localStorage.getItem(TOKEN_KEY)
-    if (saved) {
-      gasCall('api_validateSession', saved)
-        .then(sess => {
-          if (!sess) throw new Error('expired')
-          setSession({ ...sess, token: saved })
-          setLoading(false)
-        })
-        .catch(() => {
-          localStorage.removeItem(TOKEN_KEY)
-          setAccessDenied(true)
-          setAccessError('Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.')
-          setLoading(false)
-        })
-      return
-    }
-
-    // No SSO token, no saved session
     setAccessDenied(true)
     setAccessError('Vui lòng truy cập qua SSO Portal.')
     setLoading(false)
   }, [])
 
   const logout = useCallback(async () => {
-    const token = session?.token
+    const rt = localStorage.getItem(REFRESH_KEY)
     setSession(null)
-    localStorage.removeItem(TOKEN_KEY)
-    if (token) await gasCall('api_logout', token).catch(() => {})
+    _clearAuth()
+    if (rt) await gasCall('api_logout', rt).catch(() => {})
     setAccessDenied(true)
-    setAccessError('Đã đăng xuất. Vui lòng mở lại từ SSO Portal.')
-  }, [session])
-
-  // Heartbeat: ping api_validateSession mỗi 30 phút để slide cache TTL (6h max).
-  // Tránh session chết do user idle trong iframe.
-  useEffect(() => {
-    if (!session?.token) return
-    const id = setInterval(() => {
-      gasCall('api_validateSession', session.token).catch(() => {})
-    }, 30 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [session?.token])
+    setAccessError('Đã đăng xuất.')
+  }, [])
 
   useEffect(() => {
     function handleExpired() {
       setSession(null)
-      localStorage.removeItem(TOKEN_KEY)
+      _clearAuth()
       setAccessDenied(true)
       setAccessError('Phiên đăng nhập đã hết hạn. Vui lòng mở lại từ SSO Portal.')
     }
