@@ -3,88 +3,47 @@ import gasCall from '../gasClient.js'
 
 const AuthContext = createContext(null)
 
-const TOKEN_KEY = 'sso_portal_token'
-const SSO_TOKEN_KEY = 'sso_portal_sso_token'
-const PARENT_SHEET_KEY = 'sso_portal_sheet_id'
-const SESSION_CACHE_KEY = 'sso_portal_session'
-const VALIDATED_AT_KEY = 'sso_portal_validated_at'
-const BG_VALIDATE_INTERVAL = 10 * 60 * 1000 // 10 phút
+const ACCESS_KEY = 'sso_access_token'
+const REFRESH_KEY = 'sso_refresh_token'
+const USER_KEY = 'sso_user'
+const PARENT_SHEET_KEY = 'sso_parent_sheet_id'
+
+function _clearAuthStorage() {
+  localStorage.removeItem(ACCESS_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+  localStorage.removeItem(USER_KEY)
+  localStorage.removeItem(PARENT_SHEET_KEY)
+}
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [ssoToken, setSsoToken] = useState('')
-  const [parentSheetId, setParentSheetId] = useState('')
   const [sessionExpired, setSessionExpired] = useState(false)
   const expiredFiredRef = useRef(false)
 
+  // Auto-resume on mount
   useEffect(() => {
-    const saved = localStorage.getItem(TOKEN_KEY)
-    if (!saved) { setLoading(false); return }
+    const rt = localStorage.getItem(REFRESH_KEY)
+    if (!rt) { setLoading(false); return }
 
-    // Optimistic load: hiển thị ngay từ cache nếu có
-    const cachedSession = localStorage.getItem(SESSION_CACHE_KEY)
-    if (cachedSession) {
-      try {
-        const sess = JSON.parse(cachedSession)
-        setSession({ ...sess, token: saved })
-        setSsoToken(localStorage.getItem(SSO_TOKEN_KEY) || '')
-        setParentSheetId(localStorage.getItem(PARENT_SHEET_KEY) || '')
-        setLoading(false)
-
-        // Validate ngầm — chỉ khi đã quá 10 phút kể từ lần validate cuối
-        const lastValidated = Number(localStorage.getItem(VALIDATED_AT_KEY) || 0)
-        if (Date.now() - lastValidated < BG_VALIDATE_INTERVAL) return
-
-        gasCall('api_validateSession', saved)
-          .then(fresh => {
-            if (!fresh) throw new Error('expired')
-            localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(fresh))
-            localStorage.setItem(VALIDATED_AT_KEY, String(Date.now()))
-            setSession({ ...fresh, token: saved })
-            // Server rotate SSO_Token mỗi 5h — đồng bộ về client
-            if (fresh.ssoToken && fresh.ssoToken !== localStorage.getItem(SSO_TOKEN_KEY)) {
-              localStorage.setItem(SSO_TOKEN_KEY, fresh.ssoToken)
-              setSsoToken(fresh.ssoToken)
-            }
-          })
-          .catch(() => {
-            // Token hết hạn — clear và force logout
-            localStorage.removeItem(TOKEN_KEY)
-            localStorage.removeItem(SSO_TOKEN_KEY)
-            localStorage.removeItem(PARENT_SHEET_KEY)
-            localStorage.removeItem(SESSION_CACHE_KEY)
-            localStorage.removeItem(VALIDATED_AT_KEY)
-            expiredFiredRef.current = true
-            setSessionExpired(true)
-          })
-        return
-      } catch (_) { /* cache lỗi, validate bình thường */ }
+    // Optimistic: render from cached user immediately
+    const cachedUser = localStorage.getItem(USER_KEY)
+    if (cachedUser) {
+      try { setUser(JSON.parse(cachedUser)) } catch(_) {}
     }
 
-    // Chưa có cache — validate bình thường (lần đầu sau login)
-    gasCall('api_validateSession', saved)
-      .then(sess => {
-        if (!sess) throw new Error('expired')
-        localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(sess))
-        localStorage.setItem(VALIDATED_AT_KEY, String(Date.now()))
-        setSession({ ...sess, token: saved })
-        // Ưu tiên ssoToken vừa rotate từ server (nếu có), fallback về localStorage
-        const ssoFromServer = sess.ssoToken
-        const ssoCurrent = localStorage.getItem(SSO_TOKEN_KEY) || ''
-        if (ssoFromServer && ssoFromServer !== ssoCurrent) {
-          localStorage.setItem(SSO_TOKEN_KEY, ssoFromServer)
-        }
-        setSsoToken(ssoFromServer || ssoCurrent)
-        setParentSheetId(localStorage.getItem(PARENT_SHEET_KEY) || '')
+    gasCall('api_resume', rt)
+      .then(res => {
+        localStorage.setItem(ACCESS_KEY, res.accessToken)
+        localStorage.setItem(REFRESH_KEY, res.refreshToken)
+        localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+        if (res.parentSheetId) localStorage.setItem(PARENT_SHEET_KEY, res.parentSheetId)
+        setUser(res.user)
         setLoading(false)
       })
       .catch(() => {
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(SSO_TOKEN_KEY)
-        localStorage.removeItem(PARENT_SHEET_KEY)
-        localStorage.removeItem(SESSION_CACHE_KEY)
-        localStorage.removeItem(VALIDATED_AT_KEY)
+        _clearAuthStorage()
+        setUser(null)
         setLoading(false)
       })
   }, [])
@@ -92,75 +51,69 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     expiredFiredRef.current = false
     const res = await gasCall('api_login', email, password)
-    localStorage.setItem(TOKEN_KEY, res.token)
-    localStorage.setItem(SSO_TOKEN_KEY, res.ssoToken)
+    localStorage.setItem(ACCESS_KEY, res.accessToken)
+    localStorage.setItem(REFRESH_KEY, res.refreshToken)
+    localStorage.setItem(USER_KEY, JSON.stringify(res.user))
     localStorage.setItem(PARENT_SHEET_KEY, res.parentSheetId)
-    localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(res.user))
-    localStorage.setItem(VALIDATED_AT_KEY, String(Date.now()))
-    setSession({ ...res.user, token: res.token })
-    setSsoToken(res.ssoToken)
-    setParentSheetId(res.parentSheetId)
+    setUser(res.user)
     return res
   }, [])
 
   const logout = useCallback(async () => {
-    const token = session?.token
-    setSession(null)
-    setSsoToken('')
-    setParentSheetId('')
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(SSO_TOKEN_KEY)
-    localStorage.removeItem(PARENT_SHEET_KEY)
-    localStorage.removeItem(SESSION_CACHE_KEY)
-    localStorage.removeItem(VALIDATED_AT_KEY)
-    if (token) await gasCall('api_logout', token).catch(() => {})
-  }, [session])
-
-  const updateSession = useCallback((updates) => {
-    setSession(prev => prev ? { ...prev, ...updates } : prev)
+    const rt = localStorage.getItem(REFRESH_KEY)
+    _clearAuthStorage()
+    setUser(null)
+    if (rt) await gasCall('api_logout', rt).catch(() => {})
   }, [])
 
-  const expireSession = useCallback(() => {
-    if (expiredFiredRef.current) return
-    expiredFiredRef.current = true
-    setSessionExpired(true)
+  const logoutAllDevices = useCallback(async () => {
+    const at = localStorage.getItem(ACCESS_KEY)
+    if (at) await gasCall('api_logoutAllDevices', at).catch(() => {})
+    _clearAuthStorage()
+    setUser(null)
+  }, [])
+
+  const updateSession = useCallback((updates) => {
+    setUser(prev => prev ? { ...prev, ...updates } : prev)
+  }, [])
+
+  // Session-expired event (from gasClient interceptor or server)
+  useEffect(() => {
+    function handleExpired() {
+      if (expiredFiredRef.current) return
+      expiredFiredRef.current = true
+      setSessionExpired(true)
+    }
+    window.addEventListener('auth:sessionExpired', handleExpired)
+    return () => window.removeEventListener('auth:sessionExpired', handleExpired)
+  }, [])
+
+  // Multi-tab sync — when another tab changes REFRESH_KEY, reload
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key !== REFRESH_KEY) return
+      if (e.newValue !== e.oldValue) window.location.reload()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const acknowledgeExpiry = useCallback(async () => {
     setSessionExpired(false)
-    await logout()
-  }, [logout])
+    _clearAuthStorage()
+    setUser(null)
+  }, [])
 
-  // Server is source of truth — sliding window in validateSession() keeps session alive
-  // during active use. Modal only fires when an actual API call returns session expired.
-  useEffect(() => {
-    window.__onSessionExpired = expireSession
-    return () => { window.__onSessionExpired = null }
-  }, [expireSession])
-
-  // Heartbeat: ping api_validateSession mỗi 30 phút.
-  // Server sẽ rotate SSO_Token nếu đã 5h kể từ lần rotate gần nhất.
-  // Khi token rotate, đồng bộ về localStorage + state → Dashboard sẽ phát hiện thay đổi
-  // và reload iframe app con với URL chứa token mới.
-  useEffect(() => {
-    if (!session?.token) return
-    const id = setInterval(() => {
-      gasCall('api_validateSession', session.token)
-        .then(fresh => {
-          if (!fresh) return
-          localStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(fresh))
-          localStorage.setItem(VALIDATED_AT_KEY, String(Date.now()))
-          if (fresh.ssoToken && fresh.ssoToken !== localStorage.getItem(SSO_TOKEN_KEY)) {
-            localStorage.setItem(SSO_TOKEN_KEY, fresh.ssoToken)
-            setSsoToken(fresh.ssoToken)
-          }
-        })
-        .catch(() => { /* lỗi mạng tạm thời — bỏ qua, lần API call tiếp theo sẽ trigger expire nếu thực sự hết */ })
-    }, 30 * 60 * 1000)
-    return () => clearInterval(id)
-  }, [session?.token])
-
-  const value = { session, loading, ssoToken, parentSheetId, login, logout, updateSession, sessionExpired, acknowledgeExpiry }
+  const value = {
+    session: user,
+    loading,
+    login,
+    logout,
+    logoutAllDevices,
+    updateSession,
+    sessionExpired,
+    acknowledgeExpiry,
+  }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
