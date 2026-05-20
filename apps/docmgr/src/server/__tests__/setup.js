@@ -15,6 +15,10 @@ const GAS_CORE_FILES = [
   'utils.js',
   'sheets-crud.js',
   'auth-core.js',
+  'access-token.js',
+  'refresh-token.js',
+  'session-epoch.js',
+  'handoff.js',
   'sso.js',
   'drive-io.js',
   'license.js',
@@ -45,3 +49,42 @@ APP_FILES.forEach(f => {
   const code = fs.readFileSync(path.join(SERVER_DIR, f), 'utf8')
   vm.runInContext(code, ctx)
 })
+
+function resetGAS() {
+  SpreadsheetApp._reset()
+  CacheService.getScriptCache()._reset()
+  if (typeof PropertiesService !== 'undefined') PropertiesService._reset()
+}
+
+function loadGAS() {
+  // gas-core already loaded at module init — no-op, kept for API compatibility
+}
+
+function setSheetData(sheetName, rows) {
+  // Creates mock sheet from array of plain objects.
+  // Keys of first row become headers. Rows get auto-incremented ID if ID not set.
+  if (!rows || rows.length === 0) {
+    SpreadsheetApp._addSheet(sheetName, [[]])
+    return
+  }
+  const headers = Object.keys(rows[0])
+  const matrix = [headers]
+  rows.forEach((row) => {
+    const r = headers.map(h => row[h] !== undefined ? row[h] : '')
+    matrix.push(r)
+  })
+  if (SpreadsheetApp._sheets[sheetName]) delete SpreadsheetApp._sheets[sheetName]
+  SpreadsheetApp._addSheet(sheetName, matrix)
+  if (typeof invalidateSheetCache === 'function') invalidateSheetCache(sheetName)
+}
+
+function getTestSheetData(sheetName) {
+  return getSheetData(sheetName)
+}
+
+module.exports = {
+  loadGAS,
+  resetGAS,
+  setSheetData,
+  getSheetData: getTestSheetData,
+}
