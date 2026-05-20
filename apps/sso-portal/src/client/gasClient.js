@@ -2,30 +2,83 @@
 
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run
 
-function _isSessionExpired(msg) {
-  return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
+const ACCESS_KEY = 'sso_access_token'
+const REFRESH_KEY = 'sso_refresh_token'
+const USER_KEY = 'sso_user'
+const PARENT_SHEET_KEY = 'sso_parent_sheet_id'
+
+let _refreshInFlight = null
+
+function _doRefresh() {
+  if (_refreshInFlight) return _refreshInFlight
+  const rt = localStorage.getItem(REFRESH_KEY)
+  if (!rt) return Promise.reject(new Error('TOKEN_REVOKED'))
+  _refreshInFlight = new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(res => {
+        _refreshInFlight = null
+        if (res && res.success) {
+          const p = res.payload
+          localStorage.setItem(ACCESS_KEY, p.accessToken)
+          localStorage.setItem(REFRESH_KEY, p.refreshToken)
+          localStorage.setItem(USER_KEY, JSON.stringify(p.user))
+          if (p.parentSheetId) localStorage.setItem(PARENT_SHEET_KEY, p.parentSheetId)
+          resolve(p.accessToken)
+        } else {
+          localStorage.removeItem(ACCESS_KEY)
+          localStorage.removeItem(REFRESH_KEY)
+          localStorage.removeItem(USER_KEY)
+          reject(new Error((res && res.error) || 'TOKEN_REVOKED'))
+        }
+      })
+      .withFailureHandler(err => {
+        _refreshInFlight = null
+        reject(err)
+      })
+      .api_resume(rt)
+  })
+  return _refreshInFlight
 }
 
 function gasCall(fnName, ...args) {
   if (IS_GAS) {
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(res => {
-          if (res && res.success) {
-            resolve(res.payload)
-          } else {
-            const errMsg = res ? res.error : 'Lỗi không xác định'
-            if (_isSessionExpired(errMsg) && typeof window.__onSessionExpired === 'function') {
-              window.__onSessionExpired()
-            }
-            reject(new Error(errMsg))
+    return _gasCallOnce(fnName, args).catch(err => {
+      if (err.message === 'TOKEN_EXPIRED') {
+        return _doRefresh().then(newAccess => {
+          // Replace first arg if it was the (now-stale) access token
+          const newArgs = [...args]
+          if (newArgs.length > 0 && typeof newArgs[0] === 'string' && newArgs[0].length > 10) {
+            newArgs[0] = newAccess
           }
+          return _gasCallOnce(fnName, newArgs)
+        }).catch(refreshErr => {
+          window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: refreshErr.message } }))
+          throw refreshErr
         })
-        .withFailureHandler(err => reject(new Error(err.message || String(err))))
-        [fnName](...args)
+      }
+      if (err.message === 'TOKEN_REVOKED' || err.message === 'USER_LOCKED') {
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: err.message } }))
+      }
+      throw err
     })
   }
   return mockCall(fnName, ...args)
+}
+
+function _gasCallOnce(fnName, args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(res => {
+        if (res && res.success) {
+          resolve(res.payload)
+        } else {
+          const errMsg = res ? res.error : 'Lỗi không xác định'
+          reject(new Error(errMsg))
+        }
+      })
+      .withFailureHandler(err => reject(new Error(err.message || String(err))))
+      [fnName](...args)
+  })
 }
 
 export default gasCall
@@ -55,24 +108,33 @@ async function mockCall(fn, ...args) {
       const loginEmail = (email || '').toLowerCase()
       if (loginEmail === 'admin@test.com' && password === 'Admin@@123') {
         _mockSession = { userId: 1, username: 'admin@test.com', email: 'admin@test.com', displayName: 'admin@test.com', role: 'admin', isOwner: true, mustChangePass: false, ssoToken: 'mock-sso-token' }
-        return { token: 'mock-token', ssoToken: 'mock-sso-token', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
+        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
       }
       if (loginEmail === 'huyenvv.it@gmail.com' && password === 'Admin@@123') {
         _mockSession = { userId: 2, username: 'huyenvv', email: 'huyenvv.it@gmail.com', displayName: 'Vũ Văn Huyên', role: 'user', isOwner: false, mustChangePass: true, ssoToken: 'mock-sso-token-2' }
-        return { token: 'mock-token-2', ssoToken: 'mock-sso-token-2', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
+        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
       }
       if (loginEmail === 'nv1@test.com' && password === 'Admin@@123') {
         _mockSession = { userId: 3, username: 'nhanvien1', email: 'nv1@test.com', displayName: 'Nguyễn Văn A', role: 'user', isOwner: false, mustChangePass: false, ssoToken: 'mock-sso-token-3' }
-        return { token: 'mock-token-3', ssoToken: 'mock-sso-token-3', parentSheetId: 'mock-sheet-id', user: { ..._mockSession } }
+        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
       }
       throw new Error('Email hoặc mật khẩu không đúng')
     }
     case 'api_logout':
       _mockSession = null
       return { success: true }
-    case 'api_validateSession':
-      if (_mockSession) return { ..._mockSession }
-      throw new Error('Phiên đăng nhập hết hạn')
+    case 'api_resume': {
+      // args[0] is refreshToken (string), ignored in mock
+      if (_mockSession) {
+        return {
+          accessToken: 'mock-access-token-' + Date.now(),
+          refreshToken: 'mock-refresh-token-' + Date.now(),
+          user: { ..._mockSession },
+          parentSheetId: 'mock-sheet-id',
+        }
+      }
+      throw new Error('TOKEN_REVOKED')
+    }
     case 'api_changePassword':
       if (_mockSession) _mockSession.mustChangePass = false
       return { success: true }
@@ -106,6 +168,13 @@ async function mockCall(fn, ...args) {
     case 'api_getMailConfig':
       return { MAIL_ENABLED: 'FALSE' }
     case 'api_saveMailConfig':
+      return { success: true }
+    case 'api_createHandoff': {
+      // args[0] = accessToken, args[1] = appId (app ID number)
+      return { handoffToken: 'mock-handoff-' + Date.now() }
+    }
+    case 'api_logoutAllDevices':
+      _mockSession = null
       return { success: true }
     default:
       throw new Error('Mock không hỗ trợ: ' + fn)
