@@ -19,7 +19,7 @@ const TABS = [
 ]
 
 export default function Dashboard() {
-  const { session, logout } = useAuth()
+  const { session, logout, logoutAllDevices } = useAuth()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [apps, setApps] = useState([])
@@ -164,6 +164,15 @@ export default function Dashboard() {
                     className="w-full px-4 py-2 text-left text-sm text-on-surface hover:bg-surface-container flex items-center gap-2 transition">
                     <span className="material-symbols-outlined text-lg">key</span>
                     Đổi mật khẩu
+                  </button>
+                  <button onClick={async () => {
+                    if (await confirm('Đăng xuất khỏi tất cả thiết bị? Bạn sẽ phải đăng nhập lại trên mọi nơi.')) {
+                      await logoutAllDevices()
+                    }
+                  }}
+                    className="w-full px-4 py-2 text-left text-sm text-on-surface hover:bg-surface-container flex items-center gap-2 transition">
+                    <span className="material-symbols-outlined text-lg">devices_off</span>
+                    Đăng xuất tất cả thiết bị
                   </button>
                   <button onClick={async () => { if (await confirm('Bạn có chắc muốn đăng xuất?')) logout() }}
                     className="w-full px-4 py-2 text-left text-sm text-error hover:bg-error-container/40 flex items-center gap-2 transition">
