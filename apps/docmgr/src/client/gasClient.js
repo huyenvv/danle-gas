@@ -262,12 +262,7 @@ async function mockCall(fn, ...args) {
         user: { ..._mockSession },
       }
     }
-    case 'api_validateSession':
-      // In dev mode, auto-create session for testing
-      if (!_mockSession) {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true }
-      }
-      return { ..._mockSession }
+
     case 'api_getAllData': {
       const _lookups = {
         danhMuc:     _mockData.danhMuc.map(i => ({ ...i })),
