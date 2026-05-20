@@ -192,34 +192,86 @@ function _errorPage(title, message) {
 
 // ===== Session API =====
 
-function api_logout(token) {
-  return _wrap(function() { return revokeAccessToken(token) })
-}
-
-function api_validateSession(token) {
+function api_resume(refreshToken) {
   return _wrap(function() {
-    var session = validateAccessToken(token)
-    if (!session) return null
+    var found = lookupRefreshToken(SHEETS.APP_ROLES, refreshToken)
+    if (!found) throw new Error('TOKEN_REVOKED')
+    var roleRow = found.user
 
-    // Re-read APP_ROLES to pick up any role changes made by admin since login
-    var roles = getSheetData(SHEETS.APP_ROLES)
-    var appRole = roles.find(function(r) {
-      return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID
-    })
-
-    if (appRole) {
-      // Re-sync role, permissions, and flags from sheet on every validate
-      var perms = getPermissions(appRole)
-      var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
-      var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
-      session.role = appRole['Quyền']
-      session.permissions = perms
-      session.canCreate = !!canCreate
-      session.canCreateSubCat = !!canCreateSubCat
-      cachePut('at_' + token, session, SESSION_TTL)
+    // Cross-script epoch check: has the portal user logged out?
+    var parentId = ssoGetParentSheetId()
+    if (parentId) {
+      try {
+        if (isBeforeEpochCrossScript(parentId, '_Người Dùng', roleRow['UserID'], found.entry.createdAt)) {
+          revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+          throw new Error('TOKEN_REVOKED')
+        }
+      } catch(epochErr) {
+        if (epochErr.message === 'TOKEN_REVOKED') throw epochErr
+        // Cross-script glitch — fail open
+        Logger.log('Epoch check error: ' + epochErr.message)
+      }
     }
 
-    return session
+    // Reload user info from parent sheet for fresh email/dept
+    var userInfo = null
+    if (parentId) {
+      try {
+        var parentSs = SpreadsheetApp.openById(parentId)
+        var parentSheetObj = parentSs.getSheetByName('_Người Dùng')
+        if (parentSheetObj) {
+          var parentData = parentSheetObj.getDataRange().getValues()
+          var parentHeaders = parentData[0]
+          for (var i = 1; i < parentData.length; i++) {
+            if (String(parentData[i][parentHeaders.indexOf('ID')]) === String(roleRow['UserID'])) {
+              userInfo = {}
+              parentHeaders.forEach(function(h, c) { userInfo[h] = parentData[i][c] })
+              break
+            }
+          }
+        }
+      } catch(e) { Logger.log('Parent lookup error: ' + e.message) }
+    }
+    if (!userInfo) throw new Error('TOKEN_REVOKED')
+    if (userInfo['Trạng thái'] === 'Locked') {
+      revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+      throw new Error('USER_LOCKED')
+    }
+
+    var depts = []
+    try {
+      var dv = userInfo['Phòng ban']
+      if (dv && typeof dv === 'string' && dv.charAt(0) === '[') depts = JSON.parse(dv)
+      else if (dv) depts = [dv]
+    } catch(e) {}
+
+    var perms = getPermissions(roleRow)
+    var canCreate = (perms && perms.hoSo && perms.hoSo.c) || roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
+    var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
+
+    var sessionData = {
+      userId: userInfo['ID'],
+      username: userInfo['Tên đăng nhập'],
+      name: userInfo['Tên nhân viên'] || userInfo['Tên đăng nhập'] || '',
+      email: userInfo['Email'],
+      role: roleRow['Quyền'],
+      departments: depts,
+      permissions: perms,
+      canCreate: !!canCreate,
+      canCreateSubCat: !!canCreateSubCat,
+    }
+
+    var newRefreshToken = rotateRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+    var newAccessToken = mintAccessToken(sessionData)
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken, user: sessionData }
+  })
+}
+
+function api_logout(refreshToken) {
+  return _wrap(function() {
+    var found = lookupRefreshToken(SHEETS.APP_ROLES, refreshToken)
+    if (found) revokeRefreshToken(SHEETS.APP_ROLES, found.user['ID'], refreshToken)
+    return { success: true }
   })
 }
 
