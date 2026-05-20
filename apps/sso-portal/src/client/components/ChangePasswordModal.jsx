@@ -30,7 +30,8 @@ export default function ChangePasswordModal({ forced = false, onClose }) {
     setLoading(true)
     setError('')
     try {
-      await gasCall('api_changePassword', session.token, oldPass, newPass)
+      const accessToken = localStorage.getItem('sso_access_token')
+      await gasCall('api_changePassword', accessToken, oldPass, newPass)
       updateSession({ mustChangePass: false })
       addToast('Đổi mật khẩu thành công', 'success')
       if (onClose) onClose()

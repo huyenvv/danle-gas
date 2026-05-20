@@ -19,18 +19,19 @@ const TABS = [
 ]
 
 export default function Dashboard() {
-  const { session, ssoToken, parentSheetId, logout } = useAuth()
+  const { session, logout } = useAuth()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [apps, setApps] = useState([])
   const [activeApp, setActiveApp] = useState(null)
+  const [iframeUrl, setIframeUrl] = useState('')
+  const [openingApp, setOpeningApp] = useState(false)
   const [tab, setTab] = useState('apps')
   const [loadingApps, setLoadingApps] = useState(true)
   const [showChangePass, setShowChangePass] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const autoOpenDoneRef = useRef(false)
   const prefetchedRef = useRef(new Set())
-  const [iframeReloadKey, setIframeReloadKey] = useState(0)
 
   const LAST_APP_KEY = 'sso_last_app_id'
   const APPS_CACHE_KEY = 'sso_apps_cache'
@@ -38,14 +39,15 @@ export default function Dashboard() {
   // Fetch từ server, cập nhật cache + state
   const refreshApps = useCallback((silent = false) => {
     if (!silent) setLoadingApps(true)
-    return gasCall('api_getApps', session.token)
+    const accessToken = localStorage.getItem('sso_access_token')
+    return gasCall('api_getApps', accessToken)
       .then(data => {
         localStorage.setItem(APPS_CACHE_KEY, JSON.stringify(data))
         setApps(data)
       })
       .catch(err => { if (!silent) addToast(err.message, 'error') })
       .finally(() => { if (!silent) setLoadingApps(false) })
-  }, [session.token])
+  }, [])
 
   useEffect(() => {
     // Server-injected data từ doGet — nhanh nhất, không cần round trip
@@ -55,14 +57,7 @@ export default function Dashboard() {
       try { localStorage.setItem(APPS_CACHE_KEY, JSON.stringify(data)) } catch (_) {}
       setApps(data)
       setLoadingApps(false)
-      if (!autoOpenDoneRef.current) {
-        autoOpenDoneRef.current = true
-        const lastId = localStorage.getItem(LAST_APP_KEY)
-        if (lastId) {
-          const found = data.find(a => String(a.ID) === lastId && a['Trạng thái'] === 'Active' && a['Webapp URL'])
-          if (found) setActiveApp(found)
-        }
-      }
+      autoOpenDoneRef.current = true
       return
     }
 
@@ -73,70 +68,37 @@ export default function Dashboard() {
         const data = JSON.parse(cached)
         setApps(data)
         setLoadingApps(false)
-        // Auto-open last app từ cache
-        if (!autoOpenDoneRef.current) {
-          autoOpenDoneRef.current = true
-          const lastId = localStorage.getItem(LAST_APP_KEY)
-          if (lastId) {
-            const found = data.find(a => String(a.ID) === lastId && a['Trạng thái'] === 'Active' && a['Webapp URL'])
-            if (found) setActiveApp(found)
-          }
-        }
+        autoOpenDoneRef.current = true
         return // không fetch server, chờ user bấm refresh
       } catch (_) { /* cache lỗi, fetch lại */ }
     }
     // Chưa có cache → fetch lần đầu
     refreshApps(false).then(() => {
-      if (!autoOpenDoneRef.current) {
-        autoOpenDoneRef.current = true
-        const lastId = localStorage.getItem(LAST_APP_KEY)
-        setApps(prev => {
-          if (lastId) {
-            const found = prev.find(a => String(a.ID) === lastId && a['Trạng thái'] === 'Active' && a['Webapp URL'])
-            if (found) setActiveApp(found)
-          }
-          return prev
-        })
-      }
+      autoOpenDoneRef.current = true
     })
   }, [refreshApps])
 
-  function openApp(app) {
+  async function openApp(app) {
     if (!app['Webapp URL']) {
       addToast('App chưa có URL', 'error')
       return
     }
-    if (!ssoToken || !parentSheetId) {
-      addToast('Phiên SSO không hợp lệ. Vui lòng đăng nhập lại.', 'error')
-      return
+    setOpeningApp(true)
+    try {
+      const accessToken = localStorage.getItem('sso_access_token')
+      const { handoffToken } = await gasCall('api_createHandoff', accessToken, app['ID'])
+      const base = app['Webapp URL']
+      const sep = base.includes('?') ? '&' : '?'
+      const url = base + sep + 'handoff=' + encodeURIComponent(handoffToken)
+      localStorage.setItem(LAST_APP_KEY, String(app.ID))
+      setIframeUrl(url)
+      setActiveApp(app)
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setOpeningApp(false)
     }
-    localStorage.setItem(LAST_APP_KEY, String(app.ID))
-    setActiveApp(app)
   }
-
-  function buildIframeUrl(app) {
-    const base = app['Webapp URL']
-    const sep = base.includes('?') ? '&' : '?'
-    let url = base + sep
-      + 'sso_email=' + encodeURIComponent(session.email)
-      + '&sso_token=' + encodeURIComponent(ssoToken)
-      + '&parent_sheet_id=' + encodeURIComponent(parentSheetId)
-    if (iframeReloadKey) url += '&_r=' + iframeReloadKey
-    return url
-  }
-
-  // Reload iframe khi server rotate SSO_Token (mỗi 5h). Lúc đó ssoToken state đổi,
-  // ta force iframe.src đổi (qua iframeReloadKey + cache-buster) → doGet docmgr chạy
-  // lại với sso_token mới → tạo session mới. Ko reload nếu token chưa đổi (tránh
-  // mất state UI của app con).
-  const prevSsoTokenRef = useRef(ssoToken)
-  useEffect(() => {
-    if (!ssoToken) return
-    if (prevSsoTokenRef.current && prevSsoTokenRef.current !== ssoToken && activeApp) {
-      setIframeReloadKey(Date.now())
-    }
-    prevSsoTokenRef.current = ssoToken
-  }, [ssoToken, activeApp])
 
   // Prefetch URL — ping ?prefetch=1 để GAS warm up execution container.
   // Server trả HTML rỗng, không tạo session. Khi user click thật sau đó,
@@ -162,11 +124,11 @@ export default function Dashboard() {
   if (activeApp) {
     return (
       <IframeOverlay
-        url={buildIframeUrl(activeApp)}
+        url={iframeUrl}
         apps={apps.filter(a => a['Webapp URL'])}
         activeApp={activeApp}
         onSwitch={openApp}
-        onBack={() => { localStorage.removeItem(LAST_APP_KEY); setActiveApp(null) }}
+        onBack={() => { localStorage.removeItem(LAST_APP_KEY); setActiveApp(null); setIframeUrl('') }}
       />
     )
   }

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
@@ -15,7 +14,6 @@ const POPULAR_ICONS = [
 ]
 
 export default function AppManager({ apps, setApps }) {
-  const { session } = useAuth()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
@@ -28,13 +26,14 @@ export default function AppManager({ apps, setApps }) {
     e.preventDefault()
     if (!formData['Tên App']?.trim()) return
     setSaving(true)
+    const accessToken = localStorage.getItem('sso_access_token')
     try {
       if (editId) {
-        await gasCall('api_updateApp', session.token, editId, formData)
+        await gasCall('api_updateApp', accessToken, editId, formData)
         setApps(prev => prev.map(a => a.ID === editId ? { ...a, ...formData } : a))
         addToast('Cập nhật thành công', 'success')
       } else {
-        const added = await gasCall('api_addApp', session.token, formData)
+        const added = await gasCall('api_addApp', accessToken, formData)
         setApps(prev => [...prev, added])
         addToast('Thêm ứng dụng thành công', 'success')
       }
@@ -48,8 +47,9 @@ export default function AppManager({ apps, setApps }) {
 
   async function handleDelete(id) {
     if (!await confirm('Bạn có chắc muốn xóa ứng dụng này?')) return
+    const accessToken = localStorage.getItem('sso_access_token')
     try {
-      await gasCall('api_deleteApp', session.token, id)
+      await gasCall('api_deleteApp', accessToken, id)
       setApps(prev => prev.filter(a => a.ID !== id))
       addToast('Đã xóa ứng dụng', 'success')
     } catch (err) {
@@ -59,8 +59,9 @@ export default function AppManager({ apps, setApps }) {
 
   async function handleToggleStatus(app) {
     const newStatus = app['Trạng thái'] === 'Active' ? 'Inactive' : 'Active'
+    const accessToken = localStorage.getItem('sso_access_token')
     try {
-      await gasCall('api_updateApp', session.token, app.ID, { 'Trạng thái': newStatus })
+      await gasCall('api_updateApp', accessToken, app.ID, { 'Trạng thái': newStatus })
       setApps(prev => prev.map(a => a.ID === app.ID ? { ...a, 'Trạng thái': newStatus } : a))
       addToast(`App đã ${newStatus === 'Active' ? 'bật' : 'tắt'}`, 'success')
     } catch (err) {

@@ -61,7 +61,7 @@ export default function UserManager() {
 
   async function loadUsers() {
     try {
-      const data = await gasCall('api_getUsers', session.token)
+      const data = await gasCall('api_getUsers', localStorage.getItem('sso_access_token'))
       setUsers(data)
     } catch (err) {
       addToast(err.message, 'error')
@@ -76,10 +76,10 @@ export default function UserManager() {
     setSaving(true)
     try {
       if (editId) {
-        await gasCall('api_updateUser', session.token, editId, formData)
+        await gasCall('api_updateUser', localStorage.getItem('sso_access_token'), editId, formData)
         addToast('Cập nhật thành công', 'success')
       } else {
-        await gasCall('api_addUser', session.token, formData)
+        await gasCall('api_addUser', localStorage.getItem('sso_access_token'), formData)
         addToast('Thêm người dùng thành công. Mật khẩu mặc định: Admin@@123', 'success')
       }
       setShowForm(false)
@@ -98,10 +98,10 @@ export default function UserManager() {
     if (!await confirm(`Bạn có chắc muốn ${action} tài khoản này?`)) return
     try {
       if (locked) {
-        await gasCall('api_unlockUser', session.token, userId)
+        await gasCall('api_unlockUser', localStorage.getItem('sso_access_token'), userId)
         addToast('Đã mở khóa tài khoản', 'success')
       } else {
-        await gasCall('api_lockUser', session.token, userId)
+        await gasCall('api_lockUser', localStorage.getItem('sso_access_token'), userId)
         addToast('Đã khóa tài khoản', 'success')
       }
       await loadUsers()
@@ -113,7 +113,7 @@ export default function UserManager() {
   async function handleResetPassword(userId) {
     if (!await confirm('Reset mật khẩu về mặc định (Admin@@123)?')) return
     try {
-      await gasCall('api_adminResetPassword', session.token, userId)
+      await gasCall('api_adminResetPassword', localStorage.getItem('sso_access_token'), userId)
       addToast('Đã reset mật khẩu về mặc định', 'success')
     } catch (err) {
       addToast(err.message, 'error')
@@ -125,7 +125,7 @@ export default function UserManager() {
     if (!await confirm(`Reset mật khẩu về mặc định (Admin@@123) cho ${selectedIds.size} người dùng?`)) return
     setBulkResetting(true)
     try {
-      const res = await gasCall('api_bulkResetPassword', session.token, Array.from(selectedIds))
+      const res = await gasCall('api_bulkResetPassword', localStorage.getItem('sso_access_token'), Array.from(selectedIds))
       const skippedMsg = res.skipped > 0 ? ` (bỏ qua ${res.skipped})` : ''
       addToast(`Đã reset mật khẩu cho ${res.count} người dùng${skippedMsg}`, 'success')
       setSelectedIds(new Set())
@@ -159,7 +159,7 @@ export default function UserManager() {
     const action = newQuyen ? 'cấp quyền Quản trị cho' : 'thu hồi quyền Quản trị của'
     if (!await confirm(`${action} tài khoản này?`)) return
     try {
-      await gasCall('api_updateUser', session.token, userId, { 'Quyền': newQuyen })
+      await gasCall('api_updateUser', localStorage.getItem('sso_access_token'), userId, { 'Quyền': newQuyen })
       addToast(newQuyen ? 'Đã cấp quyền Quản trị' : 'Đã thu hồi quyền Quản trị', 'success')
       await loadUsers()
     } catch (err) {

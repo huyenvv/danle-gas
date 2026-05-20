@@ -1,25 +1,25 @@
 import { useState, useEffect } from 'react'
-import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import gasCall from '../gasClient.js'
 
 export default function SettingsPage() {
-  const { session } = useAuth()
   const { addToast } = useToast()
   const [config, setConfig] = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    gasCall('api_getMailConfig', session.token)
+    const accessToken = localStorage.getItem('sso_access_token')
+    gasCall('api_getMailConfig', accessToken)
       .then(data => { setConfig(data || {}); setLoading(false) })
       .catch(err => { addToast(err.message, 'error'); setLoading(false) })
   }, [])
 
   async function handleSave() {
     setSaving(true)
+    const accessToken = localStorage.getItem('sso_access_token')
     try {
-      await gasCall('api_saveMailConfig', session.token, config)
+      await gasCall('api_saveMailConfig', accessToken, config)
       addToast('Đã lưu cấu hình', 'success')
     } catch (err) {
       addToast(err.message, 'error')
