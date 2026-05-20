@@ -3,6 +3,10 @@
 
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run
 
+const ACCESS_KEY = 'docmgr_access_token'
+const REFRESH_KEY = 'docmgr_refresh_token'
+const USER_KEY = 'docmgr_user'
+
 // ── Wrapper ──────────────────────────────────────────────────────────────────
 function _isSessionExpired(msg) {
   return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
@@ -45,6 +49,38 @@ function _getRetryDelay(baseDelayMs, retriesLeft, totalRetries) {
   return backoff + jitter
 }
 
+let _refreshInFlight = null
+
+function _doRefresh() {
+  if (_refreshInFlight) return _refreshInFlight
+  const rt = localStorage.getItem(REFRESH_KEY)
+  if (!rt) return Promise.reject(new Error('TOKEN_REVOKED'))
+  _refreshInFlight = new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(res => {
+        _refreshInFlight = null
+        if (res && res.success) {
+          const p = res.payload
+          localStorage.setItem(ACCESS_KEY, p.accessToken)
+          localStorage.setItem(REFRESH_KEY, p.refreshToken)
+          localStorage.setItem(USER_KEY, JSON.stringify(p.user))
+          resolve(p.accessToken)
+        } else {
+          localStorage.removeItem(ACCESS_KEY)
+          localStorage.removeItem(REFRESH_KEY)
+          localStorage.removeItem(USER_KEY)
+          reject(new Error((res && res.error) || 'TOKEN_REVOKED'))
+        }
+      })
+      .withFailureHandler(err => {
+        _refreshInFlight = null
+        reject(err)
+      })
+      .api_resume(rt)
+  })
+  return _refreshInFlight
+}
+
 // GAS Call Queue to prevent concurrent request limits and auto-retry
 const _queue = []
 let _activeCount = 0
@@ -64,19 +100,49 @@ function _processQueue() {
 
   google.script.run
     .withSuccessHandler(res => {
-      _activeCount--
       if (res && res.success) {
+        _activeCount--
         resolve(res.payload)
+        _processQueue()
+        return
+      }
+
+      const errMsg = res ? res.error : 'Lỗi không xác định'
+
+      if (errMsg === 'TOKEN_EXPIRED') {
+        // Don't decrement _activeCount yet — async refresh in flight
+        _doRefresh()
+          .then(newAccess => {
+            _activeCount--
+            const newArgs = [...args]
+            if (newArgs.length > 0 && typeof newArgs[0] === 'string' && newArgs[0].length > 10) {
+              newArgs[0] = newAccess
+            }
+            _queue.unshift({ fnName, args: newArgs, resolve, reject, retries: 0, totalRetries: 0, baseDelayMs })
+            _processQueue()
+          })
+          .catch(refreshErr => {
+            _activeCount--
+            window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: refreshErr.message } }))
+            reject(new Error(refreshErr.message))
+            _processQueue()
+          })
+        return
+      }
+
+      _activeCount--
+
+      if (_isSessionExpired(errMsg) || errMsg === 'TOKEN_REVOKED' || errMsg === 'USER_LOCKED') {
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
+        reject(new Error(errMsg))
+        _processQueue()
+        return
+      }
+
+      if (retries > 0 && _isRetryableError(errMsg)) {
+        requeue()
       } else {
-        const errMsg = res ? res.error : 'Lỗi không xác định'
-        if (_isSessionExpired(errMsg)) {
-          window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
-        }
-        if (retries > 0 && !_isSessionExpired(errMsg) && _isRetryableError(errMsg)) {
-          requeue()
-        } else {
-          reject(new Error(errMsg))
-        }
+        reject(new Error(errMsg))
       }
       _processQueue()
     })
@@ -185,6 +251,16 @@ async function mockCall(fn, ...args) {
     case 'api_logout':
       _mockSession = null
       return { success: true }
+    case 'api_resume': {
+      if (!_mockSession) {
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true, canCreateSubCat: true }
+      }
+      return {
+        accessToken: 'mock-access-' + Date.now(),
+        refreshToken: 'mock-refresh-' + Date.now(),
+        user: { ..._mockSession },
+      }
+    }
     case 'api_validateSession':
       // In dev mode, auto-create session for testing
       if (!_mockSession) {
