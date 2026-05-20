@@ -31,7 +31,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem(ACCESS_KEY, injectedAccess)
       localStorage.setItem(REFRESH_KEY, injectedRefresh)
       localStorage.setItem(USER_KEY, JSON.stringify(injectedUser))
-      setSession({ ...injectedUser, accessToken: injectedAccess })
+      setSession({ ...injectedUser })
       setLoading(false)
       return
     }
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
           localStorage.setItem(ACCESS_KEY, res.accessToken)
           localStorage.setItem(REFRESH_KEY, res.refreshToken)
           localStorage.setItem(USER_KEY, JSON.stringify(res.user))
-          setSession({ ...res.user, accessToken: res.accessToken })
+          setSession({ ...res.user })
           setLoading(false)
         })
         .catch(err => {
