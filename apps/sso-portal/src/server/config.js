@@ -10,22 +10,27 @@ var SHEETS = {
 var APP_ID = 'sso-portal'
 var DEFAULT_PASSWORD = 'Admin@@123'
 
+var _initDone = false
 function ensureInitialized() {
+  if (_initDone) return
+  var props = PropertiesService.getScriptProperties()
+  if (props.getProperty('SCHEMA_V') === '4') { _initDone = true; return }
   var ss = getAppSheet()
   _ensureAllTabsExist(ss)
 
   var usersSheet = ss.getSheetByName(SHEETS.USERS)
   if (!usersSheet || usersSheet.getLastRow() <= 1) {
     _seedAdminUser(ss)
-    return
+  } else {
+    _ensureOwnerUser(ss)
   }
-
-  _ensureOwnerUser(ss)
+  props.setProperty('SCHEMA_V', '4')
+  _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt'] },
+    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt', 'LogoutEpochs', 'AccessToken', 'AccessTokenExpiry'] },
     { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
     { name: SHEETS.HANDOFFS, headers: ['ID', 'Token', 'UserID', 'AppID', 'CreatedAt', 'ExpiresAt', 'Consumed'] },

@@ -135,22 +135,39 @@ function canMoveTaskStatus(session, dept, task, fromStatus, toStatus) {
   return isLeaderOrPGD
 }
 
-/**
- * Create a local session from SSO-validated user + local app role.
- * Called by doGet after SSO token validation.
- */
-function ssoCreateSession(user, appRole) {
-  var perms = getPermissions(appRole)
-
-  var token = generateUuid()
-  var sessionData = {
-    userId: user['ID'],
-    username: user['Tên đăng nhập'],
-    email: user['Email'],
-    role: appRole['Quyền'],
-    mustChangePass: false,
-    permissions: perms,
+function _buildSessionFromRows(userRow, roleRow) {
+  return {
+    userId: userRow['ID'],
+    username: userRow['Tên đăng nhập'],
+    name: userRow['Tên nhân viên'] || userRow['Tên đăng nhập'] || '',
+    email: userRow['Email'],
+    role: roleRow['Quyền'],
+    permissions: getPermissions(roleRow),
   }
-  cachePut('sess_' + token, sessionData, SESSION_TTL)
-  return token
+}
+
+/**
+ * Build session data and mint access + refresh tokens for a user.
+ * Called by api_ssoLogin and api_resume.
+ */
+function _mintTokensForUser(userRow, appRole, deviceType) {
+  var sessionData = _buildSessionFromRows(userRow, appRole)
+
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var roleRow = roles.find(function(r) {
+    return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+  })
+  var label = (deviceType === 'mobile') ? 'mobile' : 'desktop'
+
+  // Revoke old access token for same device type
+  var deviceAtKey = 'device_at_' + userRow['ID'] + '_' + label
+  var oldAt = cacheGet(deviceAtKey)
+  if (oldAt) revokeAccessToken(oldAt)
+
+  var refreshToken = mintRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], { label: label })
+  var accessToken = mintAccessToken(sessionData)
+
+  cachePut(deviceAtKey, accessToken, ACCESS_TOKEN_TTL)
+
+  return { accessToken: accessToken, refreshToken: refreshToken, session: sessionData }
 }

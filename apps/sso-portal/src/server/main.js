@@ -23,8 +23,8 @@ function doGet() {
 
 // ===== Auth API =====
 
-function api_login(email, password) {
-  return _wrap(function() { return login(email, password) })
+function api_login(email, password, deviceType) {
+  return _wrap(function() { return login(email, password, deviceType) })
 }
 
 function api_resume(refreshToken) {
@@ -33,7 +33,7 @@ function api_resume(refreshToken) {
     if (!found) throw new Error('TOKEN_REVOKED')
     var user = found.user
     if (user['Trạng thái'] === 'Locked') throw new Error('USER_LOCKED')
-    if (isBeforeEpoch(SHEETS.USERS, found.userId, found.entry.createdAt)) {
+    if (isBeforeEpoch(SHEETS.USERS, found.userId, found.entry.createdAt, found.entry.label)) {
       revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
       throw new Error('TOKEN_REVOKED')
     }
@@ -53,8 +53,15 @@ function api_resume(refreshToken) {
       mustChangePass: user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true,
     }
 
-    var newRefreshToken = rotateRefreshToken(SHEETS.USERS, found.userId, refreshToken)
-    var newAccessToken = mintAccessToken(sessionData)
+    var newRefreshToken = touchRefreshToken(SHEETS.USERS, found.userId, refreshToken)
+    var newAccessToken = mintAccessToken(sessionData, SHEETS.USERS)
+
+    // Update device access token tracking — revoke stale AT first so it can't be replayed
+    var resumeLabel = found.entry.label || 'desktop'
+    var deviceAtKey = 'device_at_' + sessionData.userId + '_' + resumeLabel
+    var staleAt = cacheGet(deviceAtKey)
+    if (staleAt) revokeAccessToken(staleAt)
+    cachePut(deviceAtKey, newAccessToken, ACCESS_TOKEN_TTL)
 
     return {
       accessToken: newAccessToken,
@@ -69,27 +76,17 @@ function api_logout(refreshToken) {
   return _wrap(function() {
     var found = lookupRefreshToken(SHEETS.USERS, refreshToken)
     if (found) {
+      var label = found.entry.label || 'desktop'
+      var deviceAtKey = 'device_at_' + found.userId + '_' + label
+      var oldAt = cacheGet(deviceAtKey)
+      if (oldAt) revokeAccessToken(oldAt)
+      cacheRemove(deviceAtKey)
+      // Per-device epoch — invalidates child-app refresh tokens of the same device-type.
+      // Other device (e.g. mobile) keeps working.
+      bumpEpochDevice(SHEETS.USERS, found.userId, label)
       revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
     }
     return { success: true }
-  })
-}
-
-function api_logoutAllDevices(accessToken) {
-  return _wrap(function() {
-    var session = validateAccessToken(accessToken)
-    if (!session) throw new Error('TOKEN_EXPIRED')
-    return portalLogoutAllDevices(session.userId)
-  })
-}
-
-function api_createHandoff(accessToken, appId) {
-  return _wrap(function() {
-    var session = validateAccessToken(accessToken)
-    if (!session) throw new Error('TOKEN_EXPIRED')
-    if (!appId) throw new Error('Missing appId')
-    var handoffToken = mintHandoff(session.userId, appId)
-    return { handoffToken: handoffToken }
   })
 }
 
@@ -149,6 +146,10 @@ function api_deleteApp(token, id) {
 
 function api_getSsoParams(token) {
   return _wrap(function() { return getSsoParams(token) })
+}
+
+function api_portalSync(token) {
+  return _wrap(function() { return portalSync(token) })
 }
 
 // ===== Mail config API =====

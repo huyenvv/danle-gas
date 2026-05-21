@@ -1,180 +1,117 @@
 // ===== Main entry point — SSO child app =====
 
-function _mintTokensForUser(userRow, appRole) {
+function _buildSessionFromRows(userRow, roleRow) {
   var depts = []
   try {
-    var deptVal = userRow['Phòng ban']
-    if (deptVal && typeof deptVal === 'string' && deptVal.charAt(0) === '[') depts = JSON.parse(deptVal)
-    else if (deptVal) depts = [deptVal]
+    var dv = userRow['Phòng ban']
+    if (dv && typeof dv === 'string' && dv.charAt(0) === '[') depts = JSON.parse(dv)
+    else if (dv) depts = [dv]
   } catch(e) {}
 
-  var perms = getPermissions(appRole)
-  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true
-  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true
+  var perms = getPermissions(roleRow)
+  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
+  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
 
-  var sessionData = {
+  return {
     userId: userRow['ID'],
     username: userRow['Tên đăng nhập'],
     name: userRow['Tên nhân viên'] || userRow['Tên đăng nhập'] || '',
     email: userRow['Email'],
-    role: appRole['Quyền'],
+    role: roleRow['Quyền'],
     departments: depts,
     permissions: perms,
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
   }
+}
+
+function _mintTokensForUser(userRow, appRole, deviceType) {
+  var sessionData = _buildSessionFromRows(userRow, appRole)
 
   // Find the APP_ROLES row ID for refresh-token storage
   var roles = getSheetData(SHEETS.APP_ROLES)
   var roleRow = roles.find(function(r) {
     return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
   })
-  var refreshToken = mintRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], { label: 'Web', ipHash: '' })
+  var label = (deviceType === 'mobile') ? 'mobile' : 'desktop'
+
+  // Revoke old access token for same device type
+  var deviceAtKey = 'device_at_' + userRow['ID'] + '_' + label
+  var oldAt = cacheGet(deviceAtKey)
+  if (oldAt) revokeAccessToken(oldAt)
+
+  var refreshToken = mintRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], { label: label })
   var accessToken = mintAccessToken(sessionData)
+
+  cachePut(deviceAtKey, accessToken, ACCESS_TOKEN_TTL)
 
   return { accessToken: accessToken, refreshToken: refreshToken, session: sessionData }
 }
 
 function doGet(e) {
-  try {
-    // Warm-up ping — container warm, no session created
-    if (e && e.parameter && e.parameter.prefetch === '1') {
-      return HtmlService.createHtmlOutput('<!doctype html><title>warm</title>')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+  if (e && e.parameter && e.parameter.prefetch === '1') {
+    return HtmlService.createHtmlOutput('<!doctype html><title>warm</title>')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+  }
+
+  ensureInitialized()
+
+  var ssoToken = e && e.parameter && e.parameter.token
+  var parentSheetId = e && e.parameter && e.parameter.parent
+  if (parentSheetId) ssoStoreParentSheetId(parentSheetId)
+
+  var content = HtmlService.createHtmlOutputFromFile('index').getContent()
+  if (ssoToken) {
+    var inject = 'window.__SSO_TOKEN__=' + JSON.stringify(ssoToken) + ';'
+      + 'window.__SSO_PARENT__=' + JSON.stringify(parentSheetId || ssoGetParentSheetId() || '') + ';'
+    content = content.replace('</head>', '<script>' + inject + '</script></head>')
+  }
+  return HtmlService.createHtmlOutput(content)
+    .setTitle('Quản Lý Tài Liệu')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+}
+
+function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
+  return _wrap(function() {
+    if (!parentSheetId || !ssoToken) throw new Error('INVALID_SSO')
+    var ssoUser = validateAccessTokenCrossScript(parentSheetId, ssoToken)
+    if (!ssoUser) throw new Error('SSO_TOKEN_EXPIRED')
+
+    var userRow = {
+      'ID': ssoUser.userId,
+      'Tên đăng nhập': ssoUser.username,
+      'Email': ssoUser.email,
+      'Tên nhân viên': ssoUser.name,
+      'Phòng ban': ssoUser.department,
     }
 
-    ensureInitialized()
-
-    var handoff = e && e.parameter && e.parameter.handoff
-    var parentSheetId = e && e.parameter && e.parameter.parent_sheet_id
-
-    // Store parent sheet ID on first visit
-    if (parentSheetId) {
-      ssoStoreParentSheetId(parentSheetId)
-    }
-
-    var injectedAccess = ''
-    var injectedRefresh = ''
-    var injectedUser = null
-
-    if (handoff) {
-      var parentId = ssoGetParentSheetId()
-      if (!parentId) {
-        return _errorPage('Chưa cấu hình SSO_PARENT_SHEET_ID', 'Liên hệ admin.')
-      }
-
-      var consumed
-      try {
-        consumed = consumeHandoffCrossScript(parentId, handoff)
-      } catch(err) {
-        return _errorPage('Handoff không hợp lệ', 'Vui lòng mở lại từ SSO Portal.')
-      }
-
-      // Load user from parent sheet
-      var parentSs = SpreadsheetApp.openById(parentId)
-      var parentUsers = parentSs.getSheetByName('_Người Dùng').getDataRange().getValues()
-      var headers = parentUsers[0]
-      var userRow = null
-      for (var i = 1; i < parentUsers.length; i++) {
-        if (String(parentUsers[i][headers.indexOf('ID')]) === String(consumed.userId)) {
-          userRow = {}
-          headers.forEach(function(h, c) { userRow[h] = parentUsers[i][c] })
-          break
-        }
-      }
-      if (!userRow) return _errorPage('Không tìm thấy user', '')
-
-      // Auto-assign local role if not exists
+    invalidateSheetCache(SHEETS.APP_ROLES)
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var appRole = roles.find(function(r) {
+      return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+    })
+    if (!appRole) {
+      var ownerEmail = ''
+      try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(oe) {}
+      var autoRole = (userRow['Email'] && ownerEmail &&
+        String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
+      addRow(SHEETS.APP_ROLES, {
+        'UserID': userRow['ID'],
+        'Tên đăng nhập': userRow['Tên đăng nhập'],
+        'AppID': APP_ID,
+        'Quyền': autoRole,
+        'Phân quyền chi tiết': '',
+      })
       invalidateSheetCache(SHEETS.APP_ROLES)
-      var roles = getSheetData(SHEETS.APP_ROLES)
-      var appRole = roles.find(function(r) {
+      roles = getSheetData(SHEETS.APP_ROLES)
+      appRole = roles.find(function(r) {
         return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
       })
-      if (!appRole) {
-        var ownerEmail = ''
-        try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(oe) {}
-        var autoRole = (userRow['Email'] && ownerEmail &&
-          String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
-        addRow(SHEETS.APP_ROLES, {
-          'UserID': userRow['ID'],
-          'Tên đăng nhập': userRow['Tên đăng nhập'],
-          'AppID': APP_ID,
-          'Quyền': autoRole,
-          'Phân quyền chi tiết': '',
-        })
-        invalidateSheetCache(SHEETS.APP_ROLES)
-        roles = getSheetData(SHEETS.APP_ROLES)
-        appRole = roles.find(function(r) {
-          return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
-        })
-      }
-
-      var tokens = _mintTokensForUser(userRow, appRole)
-      injectedAccess = tokens.accessToken
-      injectedRefresh = tokens.refreshToken
-      injectedUser = tokens.session
     }
 
-    var content = HtmlService.createHtmlOutputFromFile('index').getContent()
-    if (injectedAccess) {
-      var injectParts = [
-        'window.__ACCESS_TOKEN__=' + JSON.stringify(injectedAccess) + ';',
-        'window.__REFRESH_TOKEN__=' + JSON.stringify(injectedRefresh) + ';',
-        'window.__USER__=' + JSON.stringify(injectedUser) + ';',
-      ]
-
-      // Inject initial data (existing pattern — keep as-is)
-      try {
-        var lookups = getAllData(injectedUser)
-        var docsResult = getDocuments(injectedAccess, {})
-        var docs = docsResult.data || []
-        var byStatus = {}
-        var totalValue = 0
-        docs.forEach(function(d) {
-          var s = d['Tình trạng'] || 'Không rõ'
-          byStatus[s] = (byStatus[s] || 0) + 1
-          totalValue += Number(d['Giá trị HĐ']) || 0
-        })
-        var daDocRows = getSheetData(SHEETS.DA_DOC)
-        var unreadIds = daDocRows
-          .filter(function(r) { return String(r['UserID']) === String(injectedUser.userId) })
-          .map(function(r) { return String(r['DocID']) })
-        var companyName = getConfig('COMPANY_NAME') || ''
-
-        var initialData = {
-          lookups: lookups,
-          docs: docs,
-          stats: { total: docs.length, byStatus: byStatus, totalValue: totalValue },
-          unreadIds: unreadIds,
-          companyName: companyName,
-        }
-
-        var isAdmin = injectedUser.role === 'admin' || injectedUser.role === 'Quản trị viên' || injectedUser.role === 'Giám đốc'
-        if (isAdmin) {
-          initialData.configs = {
-            ROOT_FOLDER_ID: getConfig('ROOT_FOLDER_ID') || null,
-            ROOT_FOLDER_NAME: getConfig('ROOT_FOLDER_NAME') || null,
-            COMPANY_NAME: companyName || null,
-            MAIL_TEMPLATES: getConfig('MAIL_TEMPLATES') || null,
-            APP_URL: getConfig('APP_URL') || null,
-          }
-        }
-        injectParts.push('window.__INITIAL_DATA__=' + JSON.stringify(initialData) + ';')
-      } catch(dataErr) {
-        Logger.log('doGet inject initial data error: ' + dataErr.message)
-      }
-
-      content = content.replace('</head>', '<script>' + injectParts.join('') + '</script></head>')
-    }
-    return HtmlService.createHtmlOutput(content)
-      .setTitle('Quản Lý Tài Liệu')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-
-  } catch(err) {
-    return HtmlService.createHtmlOutput(
-      '<h2>Lỗi</h2><p>' + (err && err.message ? err.message : String(err)) + '</p>'
-    )
-  }
+    var tokens = _mintTokensForUser(userRow, appRole, deviceType)
+    return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user: tokens.session }
+  })
 }
 
 function _errorPage(title, message) {
@@ -202,7 +139,7 @@ function api_resume(refreshToken) {
     var parentId = ssoGetParentSheetId()
     if (parentId) {
       try {
-        if (isBeforeEpochCrossScript(parentId, '_Người Dùng', roleRow['UserID'], found.entry.createdAt)) {
+        if (isBeforeEpochCrossScript(parentId, '_Người Dùng', roleRow['UserID'], found.entry.createdAt, found.entry.label)) {
           revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
           throw new Error('TOKEN_REVOKED')
         }
@@ -238,31 +175,17 @@ function api_resume(refreshToken) {
       throw new Error('USER_LOCKED')
     }
 
-    var depts = []
-    try {
-      var dv = userInfo['Phòng ban']
-      if (dv && typeof dv === 'string' && dv.charAt(0) === '[') depts = JSON.parse(dv)
-      else if (dv) depts = [dv]
-    } catch(e) {}
+    var sessionData = _buildSessionFromRows(userInfo, roleRow)
 
-    var perms = getPermissions(roleRow)
-    var canCreate = (perms && perms.hoSo && perms.hoSo.c) || roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
-    var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
-
-    var sessionData = {
-      userId: userInfo['ID'],
-      username: userInfo['Tên đăng nhập'],
-      name: userInfo['Tên nhân viên'] || userInfo['Tên đăng nhập'] || '',
-      email: userInfo['Email'],
-      role: roleRow['Quyền'],
-      departments: depts,
-      permissions: perms,
-      canCreate: !!canCreate,
-      canCreateSubCat: !!canCreateSubCat,
-    }
-
-    var newRefreshToken = rotateRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+    var newRefreshToken = touchRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
     var newAccessToken = mintAccessToken(sessionData)
+
+    var resumeLabel = found.entry.label || 'desktop'
+    var deviceAtKey = 'device_at_' + sessionData.userId + '_' + resumeLabel
+    var staleAt = cacheGet(deviceAtKey)
+    if (staleAt) revokeAccessToken(staleAt)
+    cachePut(deviceAtKey, newAccessToken, ACCESS_TOKEN_TTL)
+
     return { accessToken: newAccessToken, refreshToken: newRefreshToken, user: sessionData }
   })
 }
@@ -309,11 +232,14 @@ function api_getInitialData(token) {
     })
     var stats = { total: docs.length, byStatus: byStatus, totalValue: totalValue }
 
-    // 4. Unread IDs
+    // 4. Unread IDs — intersect with visible docs (role-based category filter)
+    var visibleDocIds = {}
+    docs.forEach(function(d) { visibleDocIds[String(d.ID)] = true })
     var daDocRows = getSheetData(SHEETS.DA_DOC)
     var unreadIds = daDocRows
       .filter(function(r) { return String(r['UserID']) === String(session.userId) })
       .map(function(r) { return String(r['DocID']) })
+      .filter(function(id) { return visibleDocIds[id] })
 
     // 5. Company name
     var companyName = getConfig('COMPANY_NAME') || ''
@@ -354,10 +280,15 @@ function api_pollUpdates(token, opts) {
     // Always refresh docs
     var docsResult = getDocuments(token, {})
 
-    // Unread IDs
+    // Unread IDs — intersect with visible docs (role-based category filter)
+    var pollDocs = docsResult.data || []
+    var pollVisibleIds = {}
+    pollDocs.forEach(function(d) { pollVisibleIds[String(d.ID)] = true })
     var daDocRows = getSheetData(SHEETS.DA_DOC)
     var userUnreads = daDocRows.filter(function(r) { return String(r['UserID']) === String(session.userId) })
-    var unreadIds = userUnreads.map(function(r) { return String(r['DocID']) })
+    var unreadIds = userUnreads
+      .map(function(r) { return String(r['DocID']) })
+      .filter(function(id) { return pollVisibleIds[id] })
 
     var result = {
       docs: docsResult.data || [],

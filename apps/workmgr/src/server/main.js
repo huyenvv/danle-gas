@@ -1,113 +1,137 @@
-// ===== Main entry point — SSO child app =====
+// ===== Main entry point — SSO child app (deferred auth) =====
 
 function doGet(e) {
-  try {
-    ensureInitialized()
-
-    var ssoEmail = e && e.parameter && e.parameter.sso_email
-    var ssoToken = e && e.parameter && e.parameter.sso_token
-    var parentSheetId = e && e.parameter && e.parameter.parent_sheet_id
-
-    // Store parent sheet ID on first visit from SSO Portal
-    if (parentSheetId) {
-      ssoStoreParentSheetId(parentSheetId)
-    }
-
-    var injectedToken = ''
-
-    // SSO authentication via URL params from parent portal
-    if (ssoEmail && ssoToken) {
-      Logger.log('SSO params: email=' + ssoEmail + ', token=' + (ssoToken ? 'YES' : 'NO') + ', parentId=' + parentSheetId)
-      // Always read fresh APP_ROLES on SSO login so admin role changes take effect immediately
-      invalidateSheetCache(SHEETS.APP_ROLES)
-      var ssoUser = ssoValidateToken(ssoEmail, ssoToken)
-      Logger.log('SSO validate result: ' + (ssoUser ? 'user found ID=' + ssoUser['ID'] : 'null'))
-      if (!ssoUser) {
-        return _ssoErrorPage('Phiên SSO không hợp lệ', 'Token đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại từ SSO Portal.')
-      }
-
-      // Check local authorization
-      var roles = getSheetData(SHEETS.APP_ROLES)
-      var appRole = roles.find(function(r) {
-        return String(r['UserID']) === String(ssoUser['ID']) && r['AppID'] === APP_ID
-      })
-
-      // Auto-assign role if not found
-      if (!appRole) {
-        var ownerEmail = ''
-        try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(e) {}
-        var autoRole = (ssoUser['Email'] && ownerEmail &&
-          String(ssoUser['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
-
-        addRow(SHEETS.APP_ROLES, {
-          'UserID': ssoUser['ID'],
-          'Tên đăng nhập': ssoUser['Tên đăng nhập'],
-          'AppID': APP_ID,
-          'Quyền': autoRole,
-          'Phân quyền chi tiết': '',
-        })
-        invalidateSheetCache(SHEETS.APP_ROLES)
-        appRole = { 'Quyền': autoRole, 'Phân quyền chi tiết': '' }
-        Logger.log('Auto-assigned role: ' + autoRole + ' for user ' + ssoUser['Email'])
-      }
-
-      injectedToken = ssoCreateSession(ssoUser, appRole)
-    }
-
-    // Serve HTML with optional SSO token injection
-    var content = HtmlService.createHtmlOutputFromFile('index').getContent()
-    if (injectedToken) {
-      content = content.replace('</head>', '<script>window.__SSO_TOKEN__="' + injectedToken + '";</script></head>')
-    }
-    return HtmlService.createHtmlOutput(content)
-      .setTitle('Quản Lý Công Việc')
+  if (e && e.parameter && e.parameter.prefetch === '1') {
+    return HtmlService.createHtmlOutput('<!doctype html><title>warm</title>')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-
-  } catch(err) {
-    return HtmlService.createHtmlOutput(
-      '<h2>Lỗi</h2><p>' + (err && err.message ? err.message : String(err)) + '</p>'
-    )
   }
-}
 
-function _ssoErrorPage(title, message) {
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8"><style>'
-    + 'body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5}'
-    + '.box{text-align:center;background:#fff;padding:48px 32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);max-width:400px}'
-    + '</style></head><body><div class="box">'
-    + '<div style="font-size:48px;margin-bottom:16px">&#128274;</div>'
-    + '<h2 style="color:#c62828;margin-bottom:8px">' + title + '</h2>'
-    + '<p style="color:#6b7280">' + message + '</p>'
-    + '</div></body></html>'
-  ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+  ensureInitialized()
+
+  var ssoToken = e && e.parameter && e.parameter.token
+  var parentSheetId = e && e.parameter && e.parameter.parent
+  if (parentSheetId) ssoStoreParentSheetId(parentSheetId)
+
+  var content = HtmlService.createHtmlOutputFromFile('index').getContent()
+  if (ssoToken) {
+    var inject = 'window.__SSO_TOKEN__=' + JSON.stringify(ssoToken) + ';'
+      + 'window.__SSO_PARENT__=' + JSON.stringify(parentSheetId || ssoGetParentSheetId() || '') + ';'
+    content = content.replace('</head>', '<script>' + inject + '</script></head>')
+  }
+  return HtmlService.createHtmlOutput(content)
+    .setTitle('Quản Lý Công Việc')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
 }
 
 // ===== Session API =====
 
-function api_logout(token) {
-  return _wrap(function() { return logout(token) })
-}
-
-function api_validateSession(token) {
+function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
   return _wrap(function() {
-    var session = validateSession(token)
-    if (!session) return null
+    if (!parentSheetId || !ssoToken) throw new Error('INVALID_SSO')
+    var ssoUser = validateAccessTokenCrossScript(parentSheetId, ssoToken)
+    if (!ssoUser) throw new Error('SSO_TOKEN_EXPIRED')
 
-    // Re-read APP_ROLES to pick up any role changes made by admin since login
-    var roles = getSheetData(SHEETS.APP_ROLES)
-    var appRole = roles.find(function(r) {
-      return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID
-    })
-
-    if (appRole && appRole['Quyền'] !== session.role) {
-      var perms = getPermissions(appRole)
-      session.role = appRole['Quyền']
-      session.permissions = perms
-      cachePut('sess_' + token, session, SESSION_TTL)
+    var userRow = {
+      'ID': ssoUser.userId,
+      'Tên đăng nhập': ssoUser.username,
+      'Email': ssoUser.email,
+      'Tên nhân viên': ssoUser.name,
     }
 
-    return session
+    invalidateSheetCache(SHEETS.APP_ROLES)
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var appRole = roles.find(function(r) {
+      return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+    })
+    if (!appRole) {
+      var ownerEmail = ''
+      try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(oe) {}
+      var autoRole = (userRow['Email'] && ownerEmail &&
+        String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
+      addRow(SHEETS.APP_ROLES, {
+        'UserID': userRow['ID'],
+        'Tên đăng nhập': userRow['Tên đăng nhập'],
+        'AppID': APP_ID,
+        'Quyền': autoRole,
+        'Phân quyền chi tiết': '',
+      })
+      invalidateSheetCache(SHEETS.APP_ROLES)
+      roles = getSheetData(SHEETS.APP_ROLES)
+      appRole = roles.find(function(r) {
+        return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
+      })
+    }
+
+    var tokens = _mintTokensForUser(userRow, appRole, deviceType)
+    return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user: tokens.session }
+  })
+}
+
+function api_resume(refreshToken) {
+  return _wrap(function() {
+    var found = lookupRefreshToken(SHEETS.APP_ROLES, refreshToken)
+    if (!found) throw new Error('TOKEN_REVOKED')
+    var roleRow = found.user
+
+    // Cross-script epoch check: has the portal user logged out?
+    var parentId = ssoGetParentSheetId()
+    if (parentId) {
+      try {
+        if (isBeforeEpochCrossScript(parentId, '_Người Dùng', roleRow['UserID'], found.entry.createdAt, found.entry.label)) {
+          revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+          throw new Error('TOKEN_REVOKED')
+        }
+      } catch(epochErr) {
+        if (epochErr.message === 'TOKEN_REVOKED') throw epochErr
+        Logger.log('Epoch check error: ' + epochErr.message)
+      }
+    }
+
+    // Reload user info from parent sheet for fresh name/email
+    var userInfo = null
+    if (parentId) {
+      try {
+        var parentSs = SpreadsheetApp.openById(parentId)
+        var parentSheetObj = parentSs.getSheetByName('_Người Dùng')
+        if (parentSheetObj) {
+          var parentData = parentSheetObj.getDataRange().getValues()
+          var parentHeaders = parentData[0]
+          for (var i = 1; i < parentData.length; i++) {
+            if (String(parentData[i][parentHeaders.indexOf('ID')]) === String(roleRow['UserID'])) {
+              userInfo = {}
+              parentHeaders.forEach(function(h, c) { userInfo[h] = parentData[i][c] })
+              break
+            }
+          }
+        }
+      } catch(e) { Logger.log('Parent lookup error: ' + e.message) }
+    }
+    if (!userInfo) throw new Error('TOKEN_REVOKED')
+    if (userInfo['Trạng thái'] === 'Locked') {
+      revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+      throw new Error('USER_LOCKED')
+    }
+
+    var sessionData = _buildSessionFromRows(userInfo, roleRow)
+
+    var newRefreshToken = touchRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
+    var newAccessToken = mintAccessToken(sessionData)
+
+    var resumeLabel = found.entry.label || 'desktop'
+    var deviceAtKey = 'device_at_' + sessionData.userId + '_' + resumeLabel
+    var staleAt = cacheGet(deviceAtKey)
+    if (staleAt) revokeAccessToken(staleAt)
+    cachePut(deviceAtKey, newAccessToken, ACCESS_TOKEN_TTL)
+
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken, user: sessionData }
+  })
+}
+
+function api_logout(refreshToken) {
+  return _wrap(function() {
+    var found = lookupRefreshToken(SHEETS.APP_ROLES, refreshToken)
+    if (found) revokeRefreshToken(SHEETS.APP_ROLES, found.user['ID'], refreshToken)
+    return { success: true }
   })
 }
 
@@ -470,41 +494,7 @@ function logActivity(session, type, objectType, objectId, description) {
   }
 }
 
-function api_getAuditLogs(token, filters) {
-  return _wrap(function() {
-    requireAdmin(token)
-    filters = filters || {}
-    var limit = Math.max(1, Number(filters.limit || 20))
-    var offset = Math.max(0, Number(filters.offset || 0))
-    var keyword = String(filters.keyword || '').toLowerCase()
-    var logs = getSheetData(SHEETS.NHAT_KY)
-    logs = logs.slice().reverse()
-    var types = []
-    logs.forEach(function(l) {
-      var type = l['Loại'] || ''
-      if (type && types.indexOf(type) === -1) types.push(type)
-    })
-    if (filters.type) {
-      logs = logs.filter(function(l) { return l['Loại'] === filters.type })
-    }
-    if (keyword) {
-      logs = logs.filter(function(l) {
-        return (
-          String(l['Người dùng'] || '').toLowerCase().indexOf(keyword) !== -1 ||
-          String(l['Loại'] || '').toLowerCase().indexOf(keyword) !== -1 ||
-          String(l['Đối tượng'] || '').toLowerCase().indexOf(keyword) !== -1 ||
-          String(l['Chi tiết'] || '').toLowerCase().indexOf(keyword) !== -1
-        )
-      })
-    }
-    return {
-      data: logs.slice(offset, offset + limit),
-      hasMore: offset + limit < logs.length,
-      total: logs.length,
-      types: types,
-    }
-  })
-}
+// (Removed duplicate api_getAuditLogs — using _readLogPage-based version above)
 
 // ===== Error wrapper (license check disabled for SSO) =====
 

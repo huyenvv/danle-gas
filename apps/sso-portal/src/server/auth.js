@@ -1,6 +1,6 @@
 // ===== SSO Portal — authentication & user management =====
 
-function login(email, password) {
+function login(email, password, deviceType) {
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return u['Email'] && u['Email'].toLowerCase() === email.toLowerCase() })
 
@@ -27,8 +27,22 @@ function login(email, password) {
     mustChangePass: user['MustChangePass'] === 'TRUE' || user['MustChangePass'] === true,
   }
 
-  var refreshToken = mintRefreshToken(SHEETS.USERS, user['ID'], { label: 'Web' })
-  var accessToken = mintAccessToken(sessionData)
+  var label = (deviceType === 'mobile') ? 'mobile' : 'desktop'
+
+  // Revoke old access token for same device type → kick out old device immediately
+  var deviceAtKey = 'device_at_' + user['ID'] + '_' + label
+  var oldAt = cacheGet(deviceAtKey)
+  if (oldAt) revokeAccessToken(oldAt)
+
+  // Per-device epoch — also kicks any child-app session of the same device-type.
+  // Bump BEFORE minting so new RT.createdAt >= epoch.
+  bumpEpochDevice(SHEETS.USERS, user['ID'], label)
+
+  var refreshToken = mintRefreshToken(SHEETS.USERS, user['ID'], { label: label })
+  var accessToken = mintAccessToken(sessionData, SHEETS.USERS)
+
+  // Track new access token for this device type
+  cachePut(deviceAtKey, accessToken, ACCESS_TOKEN_TTL)
 
   return {
     accessToken: accessToken,
@@ -118,12 +132,6 @@ function portalLockUser(token, targetUserId) {
 function portalUnlockUser(token, targetUserId) {
   requireAdmin(token)
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Active' })
-  return { success: true }
-}
-
-function portalLogoutAllDevices(userId) {
-  revokeAllRefreshTokens(SHEETS.USERS, userId)
-  bumpEpoch(SHEETS.USERS, userId)
   return { success: true }
 }
 
@@ -256,6 +264,22 @@ function getSsoParams(token) {
     ssoToken: session.ssoToken,
     parentSheetId: getAppSheet().getId(),
   }
+}
+
+// ===== Portal sync — single API for heartbeat + all data =====
+
+function portalSync(token) {
+  var session = requireAuth(token)
+  var isAdmin = session.role === 'admin'
+
+  var result = { apps: getSheetData(SHEETS.APPS) }
+
+  if (isAdmin) {
+    result.users = getUsers(token)
+    result.mailConfig = _getMailConfig()
+  }
+
+  return result
 }
 
 // ===== Email notifications =====
