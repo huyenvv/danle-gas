@@ -9,28 +9,26 @@ const USER_KEY = 'sso_user'
 const PARENT_SHEET_KEY = 'sso_parent_sheet_id'
 
 function _clearAuthStorage() {
-  localStorage.removeItem(ACCESS_KEY)
-  localStorage.removeItem(REFRESH_KEY)
-  localStorage.removeItem(USER_KEY)
-  localStorage.removeItem(PARENT_SHEET_KEY)
+  // Clear ALL localStorage — portal + child apps share script.google.com origin.
+  // Prevents stale child-app tokens when switching users.
+  localStorage.clear()
 }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [tokenFresh, setTokenFresh] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
   const expiredFiredRef = useRef(false)
 
-  // Auto-resume on mount
+  // Auto-resume on mount.
+  // No cached-user optimistic UI: showing Dashboard before tokenFresh lets the user
+  // click an app card while LS still holds the previous session's (now-rotated)
+  // access token, so the iframe URL would carry a stale AT and child-app
+  // validateAccessTokenCrossScript would return SSO_TOKEN_EXPIRED.
   useEffect(() => {
     const rt = localStorage.getItem(REFRESH_KEY)
     if (!rt) { setLoading(false); return }
-
-    // Optimistic: render from cached user immediately
-    const cachedUser = localStorage.getItem(USER_KEY)
-    if (cachedUser) {
-      try { setUser(JSON.parse(cachedUser)) } catch(_) {}
-    }
 
     gasCall('api_resume', rt)
       .then(res => {
@@ -39,6 +37,7 @@ export function AuthProvider({ children }) {
         localStorage.setItem(USER_KEY, JSON.stringify(res.user))
         if (res.parentSheetId) localStorage.setItem(PARENT_SHEET_KEY, res.parentSheetId)
         setUser(res.user)
+        setTokenFresh(true)
         setLoading(false)
       })
       .catch(() => {
@@ -50,12 +49,14 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     expiredFiredRef.current = false
-    const res = await gasCall('api_login', email, password)
+    const deviceType = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
+    const res = await gasCall('api_login', email, password, deviceType)
     localStorage.setItem(ACCESS_KEY, res.accessToken)
     localStorage.setItem(REFRESH_KEY, res.refreshToken)
     localStorage.setItem(USER_KEY, JSON.stringify(res.user))
     localStorage.setItem(PARENT_SHEET_KEY, res.parentSheetId)
     setUser(res.user)
+    setTokenFresh(true)
     return res
   }, [])
 
@@ -63,14 +64,8 @@ export function AuthProvider({ children }) {
     const rt = localStorage.getItem(REFRESH_KEY)
     _clearAuthStorage()
     setUser(null)
+    setTokenFresh(false)
     if (rt) await gasCall('api_logout', rt).catch(() => {})
-  }, [])
-
-  const logoutAllDevices = useCallback(async () => {
-    const at = localStorage.getItem(ACCESS_KEY)
-    if (at) await gasCall('api_logoutAllDevices', at).catch(() => {})
-    _clearAuthStorage()
-    setUser(null)
   }, [])
 
   const updateSession = useCallback((updates) => {
@@ -88,6 +83,8 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('auth:sessionExpired', handleExpired)
   }, [])
 
+  // Heartbeat is handled by PortalDataContext (api_portalSync every 60s + visibilitychange)
+
   // Multi-tab sync — when another tab changes REFRESH_KEY, reload
   useEffect(() => {
     function onStorage(e) {
@@ -102,14 +99,15 @@ export function AuthProvider({ children }) {
     setSessionExpired(false)
     _clearAuthStorage()
     setUser(null)
+    setTokenFresh(false)
   }, [])
 
   const value = {
     session: user,
     loading,
+    tokenFresh,
     login,
     logout,
-    logoutAllDevices,
     updateSession,
     sessionExpired,
     acknowledgeExpiry,

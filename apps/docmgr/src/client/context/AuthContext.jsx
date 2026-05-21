@@ -20,43 +20,51 @@ export function AuthProvider({ children }) {
   const [accessError, setAccessError] = useState('')
 
   useEffect(() => {
-    // Priority 1: tokens injected by doGet (fresh handoff)
-    const injectedAccess = window.__ACCESS_TOKEN__
-    const injectedRefresh = window.__REFRESH_TOKEN__
-    const injectedUser = window.__USER__
-    if (injectedAccess && injectedRefresh && injectedUser) {
-      window.__ACCESS_TOKEN__ = ''
-      window.__REFRESH_TOKEN__ = ''
-      window.__USER__ = null
-      localStorage.setItem(ACCESS_KEY, injectedAccess)
-      localStorage.setItem(REFRESH_KEY, injectedRefresh)
-      localStorage.setItem(USER_KEY, JSON.stringify(injectedUser))
-      setSession({ ...injectedUser })
+    function _storeSession(res) {
+      localStorage.setItem(ACCESS_KEY, res.accessToken)
+      localStorage.setItem(REFRESH_KEY, res.refreshToken)
+      localStorage.setItem(USER_KEY, JSON.stringify(res.user))
+      setSession({ ...res.user })
       setLoading(false)
+    }
+    function _fail(msg) {
+      _clearAuth()
+      setAccessDenied(true)
+      setAccessError(msg)
+      setLoading(false)
+    }
+
+    // Priority 1: SSO token from portal → exchange for local session.
+    // SSO is authoritative: drop any stale local auth so MainApp doesn't render
+    // (from a cached user) and fire API calls with the previous user's AT/RT
+    // while api_ssoLogin is still in flight.
+    const ssoToken = window.__SSO_TOKEN__
+    const ssoParent = window.__SSO_PARENT__
+    if (ssoToken) {
+      window.__SSO_TOKEN__ = ''
+      window.__SSO_PARENT__ = ''
+      _clearAuth()
+      const deviceType = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile' : 'desktop'
+      gasCall('api_ssoLogin', ssoParent, ssoToken, deviceType)
+        .then(_storeSession)
+        .catch(err => _fail(err.message === 'USER_LOCKED'
+          ? 'Tài khoản đã bị khóa. Liên hệ admin.'
+          : 'Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.'))
       return
     }
 
     // Priority 2: saved refresh_token → auto-resume
     const rt = localStorage.getItem(REFRESH_KEY)
     if (rt) {
+      const cached = localStorage.getItem(USER_KEY)
+      if (cached) {
+        try { setSession(JSON.parse(cached)); setLoading(false) } catch (_) {}
+      }
       gasCall('api_resume', rt)
-        .then(res => {
-          localStorage.setItem(ACCESS_KEY, res.accessToken)
-          localStorage.setItem(REFRESH_KEY, res.refreshToken)
-          localStorage.setItem(USER_KEY, JSON.stringify(res.user))
-          setSession({ ...res.user })
-          setLoading(false)
-        })
-        .catch(err => {
-          _clearAuth()
-          setAccessDenied(true)
-          if (err.message === 'USER_LOCKED') {
-            setAccessError('Tài khoản đã bị khóa. Liên hệ admin.')
-          } else {
-            setAccessError('Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.')
-          }
-          setLoading(false)
-        })
+        .then(_storeSession)
+        .catch(err => _fail(err.message === 'USER_LOCKED'
+          ? 'Tài khoản đã bị khóa. Liên hệ admin.'
+          : 'Phiên đăng nhập hết hạn. Vui lòng mở lại từ SSO Portal.'))
       return
     }
 
@@ -80,6 +88,8 @@ export function AuthProvider({ children }) {
       _clearAuth()
       setAccessDenied(true)
       setAccessError('Phiên đăng nhập đã hết hạn. Vui lòng mở lại từ SSO Portal.')
+      // Notify parent portal → triggers immediate session check
+      try { window.parent.postMessage({ type: 'child:sessionExpired' }, '*') } catch (_) {}
     }
     window.addEventListener('auth:sessionExpired', handleExpired)
     return () => window.removeEventListener('auth:sessionExpired', handleExpired)
