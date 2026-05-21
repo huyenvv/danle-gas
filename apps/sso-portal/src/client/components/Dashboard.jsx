@@ -172,7 +172,7 @@ export default function Dashboard() {
                     }
                   }}
                     className="w-full px-4 py-2 text-left text-sm text-on-surface hover:bg-surface-container flex items-center gap-2 transition">
-                    <span className="material-symbols-outlined text-lg">devices_off</span>
+                    <span className="material-symbols-outlined text-lg">phonelink_off</span>
                     Đăng xuất tất cả thiết bị
                   </button>
                   <button onClick={async () => { if (await confirm('Bạn có chắc muốn đăng xuất?')) logout() }}

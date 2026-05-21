@@ -65,7 +65,7 @@ function doGet(e) {
 
       var consumed
       try {
-        consumed = consumeHandoffCrossScript(parentId, handoff, APP_ID)
+        consumed = consumeHandoffCrossScript(parentId, handoff)
       } catch(err) {
         return _errorPage('Handoff không hợp lệ', 'Vui lòng mở lại từ SSO Portal.')
       }

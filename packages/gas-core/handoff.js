@@ -25,7 +25,7 @@ function consumeHandoff(token, expectedAppId) {
   if (!row) throw new Error('HANDOFF_INVALID')
   if (String(row['Consumed']) === 'TRUE') throw new Error('HANDOFF_INVALID')
   if (Number(row['ExpiresAt']) < new Date().getTime()) throw new Error('HANDOFF_INVALID')
-  if (row['AppID'] !== expectedAppId) throw new Error('HANDOFF_INVALID')
+  if (expectedAppId && row['AppID'] !== expectedAppId) throw new Error('HANDOFF_INVALID')
   updateRow(SHEET_HANDOFFS, row['ID'], { 'Consumed': 'TRUE' })
   return { userId: row['UserID'], appId: row['AppID'] }
 }
@@ -52,7 +52,7 @@ function consumeHandoffCrossScript(parentSheetId, token, expectedAppId) {
     if (data[i][col.token] === token) {
       if (String(data[i][col.consumed]) === 'TRUE') throw new Error('HANDOFF_INVALID')
       if (Number(data[i][col.exp]) < new Date().getTime()) throw new Error('HANDOFF_INVALID')
-      if (data[i][col.appId] !== expectedAppId) throw new Error('HANDOFF_INVALID')
+      if (expectedAppId && data[i][col.appId] !== expectedAppId) throw new Error('HANDOFF_INVALID')
       sheet.getRange(i + 1, col.consumed + 1).setValue('TRUE')
       return { userId: data[i][col.userId], appId: data[i][col.appId] }
     }
