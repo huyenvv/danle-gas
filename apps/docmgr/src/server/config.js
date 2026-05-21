@@ -17,9 +17,15 @@ var SHEETS = {
 var APP_ID = 'docmgr'
 
 // ===== First-run initialization =====
+var _initDone = false
 function ensureInitialized() {
+  if (_initDone) return
+  var props = PropertiesService.getScriptProperties()
+  if (props.getProperty('SCHEMA_V') === '2') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
+  props.setProperty('SCHEMA_V', '2')
+  _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {

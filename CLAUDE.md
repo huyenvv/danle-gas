@@ -11,7 +11,7 @@ npm workspaces monorepo chứa các ứng dụng Google Apps Script.
 ## Structure
 
 ```
-packages/gas-core/       # Shared GAS modules (config-base, cache, utils, sheets-crud, auth-core, drive-io, license, sso)
+packages/gas-core/       # Shared GAS modules (config-base, cache, utils, sheets-crud, auth-core, access-token, refresh-token, session-epoch, handoff, sso, drive-io, license)
 apps/sso-portal/         # SSO Portal — centralized login, user management, app launcher (parent app)
 apps/docmgr/             # Quản Lý Tài Liệu — React client + GAS server (SSO child app)
 apps/license-server/     # License activation — standalone GAS Web App + Node dev runner
@@ -22,7 +22,7 @@ scripts/                 # Shared build scripts (bundle-server, obfuscate, conve
 
 - **GAS has no module system.** All files are concatenated into one scope at build time. Order matters.
 - **gas-core** is NOT an npm package — it's plain JS files auto-included by `scripts/bundle-server.js` before app files.
-- **Build concat order:** gas-core (config-base→cache→utils→sheets-crud→auth-core→drive-io→license→sso) → app server files (config→sheets→auth→documents→main).
+- **Build concat order:** gas-core (config-base→cache→utils→sheets-crud→auth-core→access-token→refresh-token→session-epoch→handoff→sso→drive-io→license) → app server files (config→sheets→auth→documents→main).
 - **Override pattern** for extending gas-core at app level:
   ```js
   var _coreDeleteRow = deleteRow
@@ -67,20 +67,23 @@ Every API call → checkLicense():
 
 ```
 SSO Portal (parent app) — container-bound to its own Google Sheet
-  ├── Manages: _Người Dùng, _Ứng Dụng, _Hệ Thống sheets
+  ├── Manages: _Người Dùng, _Ứng Dụng, _Hệ Thống, _Handoffs sheets
   ├── Login by email, password hashed with SHA-256(username + password)
-  ├── SSO token: stored in _Người Dùng (SSO_Token, SSO_Expiry)
-  └── Opens child apps via iframe with URL params: sso_email, sso_token, parent_sheet_id
+  ├── Single-device: mintRefreshToken replaces all tokens (new login revokes old)
+  ├── Access token stored in CacheService + sheet (AccessToken, AccessTokenExpiry)
+  └── Opens child apps via iframe: ?token=ACCESS_TOKEN&parent=PARENT_SHEET_ID
 
 Child app (docmgr) — container-bound to its own Google Sheet
-  ├── doGet() validates SSO token against parent sheet via ssoValidateToken()
+  ├── doGet(): lightweight — only injects __SSO_TOKEN__ + __SSO_PARENT__ as strings
+  ├── Client calls api_ssoLogin() → validateAccessTokenCrossScript(parentSheetId, token)
   ├── Auto-assigns role ('Nhân viên') on first SSO visit
   ├── Manages local authorization only (_Phân Quyền sheet)
   ├── Parent sheet ID stored once in ScriptProperties (SSO_PARENT_SHEET_ID)
   └── License check disabled — SSO Portal manages access
 ```
 
-**Key:** `packages/gas-core/sso.js` provides `ssoValidateToken()`, `ssoStoreParentSheetId()`, `ssoGetParentSheetId()`.
+**Auth modules:** `access-token.js` (mint/validate + cross-script), `refresh-token.js` (single-device), `session-epoch.js` (global revocation), `handoff.js` (legacy).
+**Cross-script:** Child reads parent's `_Người Dùng` sheet to validate access token (CacheService is per-script, Sheets are shared).
 
 ## Commands
 

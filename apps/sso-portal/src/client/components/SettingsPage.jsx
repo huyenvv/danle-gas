@@ -1,25 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import gasCall from '../gasClient.js'
 
 export default function SettingsPage() {
+  const { mailConfig, sync } = usePortalData()
   const { addToast } = useToast()
-  const [config, setConfig] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [config, setConfig] = useState(mailConfig)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    const accessToken = localStorage.getItem('sso_access_token')
-    gasCall('api_getMailConfig', accessToken)
-      .then(data => { setConfig(data || {}); setLoading(false) })
-      .catch(err => { addToast(err.message, 'error'); setLoading(false) })
-  }, [])
 
   async function handleSave() {
     setSaving(true)
     const accessToken = localStorage.getItem('sso_access_token')
     try {
       await gasCall('api_saveMailConfig', accessToken, config)
+      await sync(true)
       addToast('Đã lưu cấu hình', 'success')
     } catch (err) {
       addToast(err.message, 'error')
@@ -30,14 +25,6 @@ export default function SettingsPage() {
 
   function updateConfig(key, value) {
     setConfig(prev => ({ ...prev, [key]: value }))
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <span className="material-symbols-outlined text-4xl text-primary animate-pulse">settings</span>
-      </div>
-    )
   }
 
   return (

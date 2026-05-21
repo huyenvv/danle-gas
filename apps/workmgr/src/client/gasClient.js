@@ -1,25 +1,87 @@
 // GAS client — calls google.script.run (real) or mock (dev)
+// All calls return Promises resolving to payload or rejecting with error message.
+
 const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run
 
+const ACCESS_KEY = 'workmgr_access_token'
+const REFRESH_KEY = 'workmgr_refresh_token'
+const USER_KEY = 'workmgr_user'
+
+// ── Wrapper ──────────────────────────────────────────────────────────────────
 function _isSessionExpired(msg) {
   return msg && (msg.includes('hết hạn') || msg.includes('Phiên đăng nhập'))
 }
+
 function _isRetryableError(msg) {
   if (!msg) return false
   const text = String(msg).toLowerCase()
-  return text.includes('timed out') || text.includes('timeout') || text.includes('rate limit') ||
-    text.includes('quota') || text.includes('too many') || text.includes('service invoked too many times') ||
-    text.includes('try again later') || text.includes('resource has been exhausted')
-}
-function _getRetryPolicy(fnName) {
-  if (fnName === 'api_getDashboardStats' || fnName === 'api_getTasks') return { retries: 5, baseDelayMs: 1500 }
-  return { retries: 2, baseDelayMs: 1000 }
-}
-function _getRetryDelay(baseDelayMs, retriesLeft, totalRetries) {
-  const attempt = Math.max(0, totalRetries - retriesLeft)
-  return baseDelayMs * Math.pow(2, attempt) + Math.floor(Math.random() * 250)
+  return (
+    text.includes('timed out') ||
+    text.includes('timeout') ||
+    text.includes('rate limit') ||
+    text.includes('quota') ||
+    text.includes('too many') ||
+    text.includes('service invoked too many times') ||
+    text.includes('try again later') ||
+    text.includes('resource has been exhausted') ||
+    text.includes('service unavailable') ||
+    text.includes('internal error') ||
+    text.includes('server error') ||
+    text.includes('service error') ||
+    text.includes('backend error') ||
+    text.includes('network') ||
+    text.includes('failed to fetch') ||
+    text.includes("we're sorry, a server error occurred")
+  )
 }
 
+function _getRetryPolicy(fnName) {
+  if (fnName === 'api_getDashboardStats' || fnName === 'api_getTasks') {
+    return { retries: 5, baseDelayMs: 1500 }
+  }
+  return { retries: 2, baseDelayMs: 1000 }
+}
+
+function _getRetryDelay(baseDelayMs, retriesLeft, totalRetries) {
+  const attempt = Math.max(0, totalRetries - retriesLeft)
+  const backoff = baseDelayMs * Math.pow(2, attempt)
+  const jitter = Math.floor(Math.random() * 250)
+  return backoff + jitter
+}
+
+let _refreshInFlight = null
+
+function _doRefresh() {
+  if (_refreshInFlight) return _refreshInFlight
+  const rt = localStorage.getItem(REFRESH_KEY)
+  if (!rt) return Promise.reject(new Error('TOKEN_REVOKED'))
+  _refreshInFlight = new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(res => {
+        _refreshInFlight = null
+        if (res && res.success) {
+          const p = res.payload
+          localStorage.setItem(ACCESS_KEY, p.accessToken)
+          localStorage.setItem(REFRESH_KEY, p.refreshToken)
+          localStorage.setItem(USER_KEY, JSON.stringify(p.user))
+          resolve(p.accessToken)
+        } else {
+          localStorage.removeItem(ACCESS_KEY)
+          localStorage.removeItem(REFRESH_KEY)
+          localStorage.removeItem(USER_KEY)
+          reject(new Error((res && res.error) || 'TOKEN_REVOKED'))
+        }
+      })
+      .withFailureHandler(err => {
+        _refreshInFlight = null
+        reject(err)
+      })
+      .api_resume(rt)
+  })
+  return _refreshInFlight
+}
+
+// GAS Call Queue to prevent concurrent request limits and auto-retry
 const _queue = []
 let _activeCount = 0
 const MAX_CONCURRENT = 3
@@ -27,32 +89,74 @@ const MAX_CONCURRENT = 3
 function _processQueue() {
   if (_queue.length === 0 || _activeCount >= MAX_CONCURRENT) return
   _activeCount++
-  const { fnName, args, resolve, reject, retries, totalRetries, baseDelayMs } = _queue.shift()
+  const { fnName, args, resolve, reject, retries, totalRetries, baseDelayMs, refreshAttempted } = _queue.shift()
+
   function requeue() {
     setTimeout(() => {
       _queue.push({ fnName, args, resolve, reject, retries: retries - 1, totalRetries, baseDelayMs })
       _processQueue()
     }, _getRetryDelay(baseDelayMs, retries, totalRetries))
   }
+
   google.script.run
     .withSuccessHandler(res => {
+      if (res && res.success) {
+        _activeCount--
+        resolve(res.payload)
+        _processQueue()
+        return
+      }
+
+      const errMsg = res ? res.error : 'Lỗi không xác định'
+
+      if (errMsg === 'TOKEN_EXPIRED' && !refreshAttempted) {
+        _doRefresh()
+          .then(newAccess => {
+            _activeCount--
+            const newArgs = [...args]
+            // First arg is the access token for all authenticated calls
+            if (newArgs.length > 0 && typeof newArgs[0] === 'string' && newArgs[0].length > 10) {
+              newArgs[0] = newAccess
+            }
+            _queue.unshift({ fnName, args: newArgs, resolve, reject, retries, totalRetries, baseDelayMs, refreshAttempted: true })
+            _processQueue()
+          })
+          .catch(refreshErr => {
+            _activeCount--
+            window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: refreshErr.message } }))
+            reject(new Error(refreshErr.message))
+            _processQueue()
+          })
+        return
+      }
+
       _activeCount--
-      if (res && res.success) { resolve(res.payload) }
-      else {
-        const errMsg = res ? res.error : 'Lỗi không xác định'
-        if (_isSessionExpired(errMsg)) window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
-        if (retries > 0 && !_isSessionExpired(errMsg) && _isRetryableError(errMsg)) requeue()
-        else reject(new Error(errMsg))
+
+      if (_isSessionExpired(errMsg) || errMsg === 'TOKEN_EXPIRED' || errMsg === 'TOKEN_REVOKED' || errMsg === 'USER_LOCKED') {
+        window.dispatchEvent(new CustomEvent('auth:sessionExpired', { detail: { message: errMsg } }))
+        reject(new Error(errMsg))
+        _processQueue()
+        return
+      }
+
+      if (retries > 0 && _isRetryableError(errMsg)) {
+        requeue()
+      } else {
+        reject(new Error(errMsg))
       }
       _processQueue()
     })
     .withFailureHandler(err => {
       _activeCount--
       const msg = err.message || String(err)
-      if (retries > 0 && !_isSessionExpired(msg) && _isRetryableError(msg)) requeue()
-      else reject(new Error(msg))
+      if (retries > 0 && !_isSessionExpired(msg) && _isRetryableError(msg)) {
+        requeue()
+      } else {
+        reject(new Error(msg))
+      }
       _processQueue()
-    })[fnName](...args)
+    })
+    [fnName](...args)
 }
 
 function gasCall(fnName, ...args) {
@@ -94,20 +198,13 @@ const _mockData = {
     { ID: 5, 'Tên nhãn': 'Urgent', 'Màu sắc': '#c62828' },
   ],
   congViec: [
-    { ID: 1, 'Tiêu đề': 'Thiết kế giao diện trang chủ', 'Mô tả': 'Thiết kế mockup và prototype cho trang chủ mới, bao gồm responsive cho mobile/tablet.', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Hoàn Thành', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-01-20', 'Ngày hết hạn': '2026-02-10', 'Ngày hoàn thành': '2026-02-08', 'Nhãn': 'Design', 'Tiến độ': 100, 'Người phối hợp': '2', 'Subtasks': JSON.stringify([{ id: 1, title: 'Wireframe desktop', done: true }, { id: 2, title: 'Wireframe mobile', done: true }, { id: 3, title: 'Prototype Figma', done: true }]), 'Ghi chú': 'Đã duyệt lần cuối bởi GĐ.', 'Ngày tạo': '2026-01-18' },
-    { ID: 2, 'Tiêu đề': 'Xây dựng API thanh toán', 'Mô tả': 'Tích hợp cổng thanh toán VNPay và Momo, xử lý callback và webhook.', 'Phòng ban ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-15', 'Ngày hết hạn': '2026-03-15', 'Nhãn': 'Backend,API', 'Tiến độ': 60, 'Người phối hợp': '3', 'Subtasks': JSON.stringify([{ id: 1, title: 'API VNPay', done: true }, { id: 2, title: 'API Momo', done: false }, { id: 3, title: 'Webhook handler', done: false }, { id: 4, title: 'Unit tests', done: false }]), 'Ghi chú': 'Cần hoàn thành trước khi deploy v1.0', 'Ngày tạo': '2026-02-10' },
-    { ID: 3, 'Tiêu đề': 'Viết unit test module auth', 'Mô tả': 'Bổ sung test coverage cho module authentication: login, logout, token refresh.', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-03-01', 'Ngày hết hạn': '2026-03-20', 'Nhãn': 'Testing', 'Tiến độ': 0, 'Subtasks': JSON.stringify([{ id: 1, title: 'Test login flow', done: false }, { id: 2, title: 'Test token refresh', done: false }]), 'Ngày tạo': '2026-02-28' },
-    { ID: 4, 'Tiêu đề': 'Fix lỗi responsive mobile', 'Mô tả': 'Menu sidebar bị che content trên màn hình < 768px.', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Chờ Duyệt', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-20', 'Ngày hết hạn': '2026-03-05', 'Nhãn': 'Bug', 'Tiến độ': 90, 'Ngày tạo': '2026-02-18' },
-    { ID: 5, 'Tiêu đề': 'Nghiên cứu UI framework mới', 'Mô tả': 'So sánh Tailwind vs MUI vs Ant Design cho dự án tiếp theo.', 'Phòng ban ID': 2, 'Người thực hiện ID': 3, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-03-10', 'Ngày hết hạn': '2026-04-01', 'Nhãn': 'Feature', 'Tiến độ': 0, 'Ngày tạo': '2026-03-05' },
-    { ID: 6, 'Tiêu đề': 'Tích hợp hệ thống CRM', 'Mô tả': 'Đồng bộ dữ liệu khách hàng từ CRM hiện tại sang hệ thống mới.', 'Phòng ban ID': 3, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-04-01', 'Ngày hết hạn': '2026-05-15', 'Nhãn': 'Backend', 'Tiến độ': 40, 'Người phối hợp': '1,3', 'Subtasks': JSON.stringify([{ id: 1, title: 'Mapping data schema', done: true }, { id: 2, title: 'Import script', done: false }, { id: 3, title: 'Validation', done: false }]), 'Ngày tạo': '2026-03-28' },
-    { ID: 7, 'Tiêu đề': 'Deploy production v1.0', 'Phòng ban ID': 3, 'Người thực hiện ID': 1, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-05-01', 'Ngày hết hạn': '2026-05-10', 'Nhãn': 'Urgent', 'Tiến độ': 0, 'Ngày tạo': '2026-04-25' },
-    { ID: 8, 'Tiêu đề': 'Cập nhật tài liệu API', 'Mô tả': 'Cập nhật Swagger docs cho các endpoint mới.', 'Phòng ban ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Thấp', 'Ngày bắt đầu': '2026-04-20', 'Ngày hết hạn': '2026-04-30', 'Nhãn': '', 'Tiến độ': 0, 'Ngày tạo': '2026-04-15' },
+    { ID: 1, 'Tiêu đề': 'Thiết kế giao diện trang chủ', 'Mô tả': 'Thiết kế mockup và prototype cho trang chủ mới.', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Hoàn Thành', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-01-20', 'Ngày hết hạn': '2026-02-10', 'Ngày hoàn thành': '2026-02-08', 'Nhãn': 'Design', 'Tiến độ': 100, 'Người phối hợp': '2', 'Subtasks': JSON.stringify([{ id: 1, title: 'Wireframe desktop', done: true }, { id: 2, title: 'Wireframe mobile', done: true }]), 'Ghi chú': 'Đã duyệt.', 'Ngày tạo': '2026-01-18' },
+    { ID: 2, 'Tiêu đề': 'Xây dựng API thanh toán', 'Mô tả': 'Tích hợp cổng thanh toán.', 'Phòng ban ID': 1, 'Người thực hiện ID': 2, 'Người giao ID': 1, 'Trạng thái': 'Đang Thực Hiện', 'Mức độ ưu tiên': 'Cao', 'Ngày bắt đầu': '2026-02-15', 'Ngày hết hạn': '2026-03-15', 'Nhãn': 'Backend,API', 'Tiến độ': 60, 'Người phối hợp': '3', 'Subtasks': JSON.stringify([{ id: 1, title: 'API VNPay', done: true }, { id: 2, title: 'API Momo', done: false }]), 'Ngày tạo': '2026-02-10' },
+    { ID: 3, 'Tiêu đề': 'Viết unit test module auth', 'Phòng ban ID': 1, 'Người thực hiện ID': 3, 'Người giao ID': 2, 'Trạng thái': 'Cần Làm', 'Mức độ ưu tiên': 'Trung Bình', 'Ngày bắt đầu': '2026-03-01', 'Ngày hết hạn': '2026-03-20', 'Nhãn': 'Testing', 'Tiến độ': 0, 'Ngày tạo': '2026-02-28' },
   ],
   hoatDong: [
     { ID: 1, 'Loại': 'Tạo phòng ban', 'Mô tả': 'Phòng Công Nghệ', 'Đối tượng': 'Phòng Ban', 'Mã đối tượng': 1, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-01-10T08:00:00Z' },
     { ID: 2, 'Loại': 'Tạo công việc', 'Mô tả': 'Thiết kế giao diện trang chủ', 'Đối tượng': 'Công Việc', 'Mã đối tượng': 1, 'UserID': 2, 'Tên người dùng': 'Nguyễn Văn Hùng', 'Thời gian': '2026-01-18T09:30:00Z' },
-    { ID: 3, 'Loại': 'Chuyển trạng thái', 'Mô tả': 'Hoàn Thành', 'Đối tượng': 'Công Việc', 'Mã đối tượng': 1, 'UserID': 3, 'Tên người dùng': 'Trần Thị Mai', 'Thời gian': '2026-02-08T16:00:00Z' },
-    { ID: 4, 'Loại': 'Cập nhật phòng ban', 'Mô tả': 'Phòng Nhân Sự', 'Đối tượng': 'Phòng Ban', 'Mã đối tượng': 3, 'UserID': 1, 'Tên người dùng': 'Admin', 'Thời gian': '2026-04-20T10:15:00Z' },
   ],
 }
 
@@ -119,10 +216,13 @@ async function mockCall(fn, ...args) {
   await new Promise(r => setTimeout(r, 80))
   console.log('[gasClient mock]', fn, args)
   switch (fn) {
+    case 'api_ssoLogin':
+      _mockSession = { userId: 1, username: 'admin', name: 'Admin Hệ thống', role: 'admin', email: 'admin@test.com', permissions: ADMIN_PERMS }
+      return { accessToken: 'mock_access', refreshToken: 'mock_refresh', user: { ..._mockSession } }
+    case 'api_resume':
+      if (!_mockSession) _mockSession = { userId: 1, username: 'admin', name: 'Admin Hệ thống', role: 'admin', email: 'admin@test.com', permissions: ADMIN_PERMS }
+      return { accessToken: 'mock_access', refreshToken: 'mock_refresh', user: { ..._mockSession } }
     case 'api_logout': _mockSession = null; return { success: true }
-    case 'api_validateSession':
-      if (!_mockSession) _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', mustChangePass: false, permissions: ADMIN_PERMS }
-      return { ..._mockSession }
     case 'api_getAllData':
       return { phongBan: _mockData.phongBan.map(i => ({...i})), nhan: _mockData.nhan.map(i => ({...i})), users: _mockData.users.map(i => ({...i})) }
     case 'api_getDepartments': return _mockData.phongBan.map(i => ({...i}))
@@ -165,7 +265,11 @@ async function mockCall(fn, ...args) {
         overdueTasks: [], upcomingTasks: [], deptDistribution: [],
       }
     }
+    case 'api_getActivities': return { data: _mockData.hoatDong.map(i => ({...i})), hasMore: false, total: _mockData.hoatDong.length, types: [], users: [] }
     case 'api_getAuditLogs': return { data: [], hasMore: false, total: 0, types: [] }
+    case 'api_getSchedules': return []
+    case 'api_runArchive': return { archived: 0 }
+    case 'api_rebuildTaskIndex': return { success: true }
     default: throw new Error('Mock không hỗ trợ: ' + fn)
   }
 }

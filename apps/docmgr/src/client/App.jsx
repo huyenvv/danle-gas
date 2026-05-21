@@ -18,22 +18,19 @@ function AppInner() {
   }
 
   if (accessDenied) {
+    const isExpired = /hết hạn|đăng xuất/i.test(accessError)
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-container-low p-4">
         <div className="bg-white rounded-3xl shadow-card p-10 max-w-md w-full text-center space-y-4">
-          <div className="w-16 h-16 rounded-2xl bg-error-container flex items-center justify-center mx-auto">
-            <span className="material-symbols-outlined text-error text-3xl">lock</span>
+          <div className={`w-16 h-16 rounded-2xl ${isExpired ? 'bg-secondary-container' : 'bg-error-container'} flex items-center justify-center mx-auto`}>
+            <span className={`material-symbols-outlined ${isExpired ? 'text-on-secondary-container' : 'text-error'} text-3xl`}>
+              {isExpired ? 'schedule' : 'lock'}
+            </span>
           </div>
-          <h2 className="text-xl font-bold text-on-surface">Không có quyền truy cập</h2>
+          <h2 className="text-xl font-bold text-on-surface">
+            {isExpired ? 'Phiên đăng nhập đã hết hạn' : 'Không có quyền truy cập'}
+          </h2>
           <p className="text-sm text-on-surface-variant leading-relaxed">{accessError}</p>
-          <p className="text-xs text-on-surface-variant">Nếu quản trị viên vừa cấp quyền cho bạn, hãy tải lại trang để cập nhật.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1"
-          >
-            <span className="material-symbols-outlined text-base">refresh</span>
-            Tải lại trang
-          </button>
         </div>
       </div>
     )

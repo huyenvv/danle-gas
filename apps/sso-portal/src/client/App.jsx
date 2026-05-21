@@ -1,6 +1,7 @@
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { ConfirmProvider } from './context/ConfirmContext.jsx'
+import { PortalDataProvider } from './context/PortalDataContext.jsx'
 import LoginPage from './components/LoginPage.jsx'
 import ChangePasswordModal from './components/ChangePasswordModal.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -23,7 +24,7 @@ function AppInner() {
   } else if (session.mustChangePass) {
     content = <ChangePasswordModal forced />
   } else {
-    content = <Dashboard />
+    content = <PortalDataProvider><Dashboard /></PortalDataProvider>
   }
 
   return (

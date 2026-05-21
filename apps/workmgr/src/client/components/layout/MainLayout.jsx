@@ -30,17 +30,19 @@ export default function MainLayout() {
     })
   }, [])
 
+  const getToken = () => localStorage.getItem('workmgr_access_token')
+
   // masterData rarely changes — cache 10 min in localStorage. Background refresh
   // on mount + when child screens call reloadMaster() after a write.
   const { data: masterData, loading, refresh: loadMasterData } = useCachedFetch(
-    'masterData:' + (session?.token || ''),
-    () => gasCall('api_getAllData', session.token),
-    { ttl: 600_000, persistent: true, enabled: !!session?.token }
+    'masterData:' + (session?.userId || ''),
+    () => gasCall('api_getAllData', getToken()),
+    { ttl: 86_400_000, persistent: true, enabled: !!session }
   )
   const md = masterData || { phongBan: [], nhan: [], users: [] }
 
   const renderView = () => {
-    const props = { masterData: md, reloadMaster: loadMasterData, token: session.token }
+    const props = { masterData: md, reloadMaster: loadMasterData, token: getToken() }
     switch (currentView) {
       case 'dashboard': return <DashboardPage {...props} />
       case 'departments': return <DepartmentListPage {...props} />

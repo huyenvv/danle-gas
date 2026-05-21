@@ -182,7 +182,7 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       var mailOptions = Object.assign({}, baseOptions)
       if (ccEmails) mailOptions.cc = ccEmails
       Logger.log('_sendNotificationEmails: sending to=' + r.email + ' cc=' + (ccEmails || ''))
-      MailApp.sendEmail(r.email, subject, body, mailOptions)
+      GmailApp.sendEmail(r.email, subject, body, mailOptions)
       Logger.log('_sendNotificationEmails: sent OK to ' + r.email)
     })
   } catch(e) {

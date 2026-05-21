@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
@@ -43,10 +44,9 @@ function StatCard({ icon, label, value, color }) {
 
 export default function UserManager() {
   const { session } = useAuth()
+  const { users, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
-  const [users, setUsers] = useState([])
-  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
   const [saving, setSaving] = useState(false)
@@ -56,19 +56,6 @@ export default function UserManager() {
   const [bulkResetting, setBulkResetting] = useState(false)
 
   const isOwner = session.isOwner === true
-
-  useEffect(() => { loadUsers() }, [])
-
-  async function loadUsers() {
-    try {
-      const data = await gasCall('api_getUsers', localStorage.getItem('sso_access_token'))
-      setUsers(data)
-    } catch (err) {
-      addToast(err.message, 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -85,7 +72,7 @@ export default function UserManager() {
       setShowForm(false)
       setEditId(null)
       setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
-      await loadUsers()
+      await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
     } finally {
@@ -104,7 +91,7 @@ export default function UserManager() {
         await gasCall('api_lockUser', localStorage.getItem('sso_access_token'), userId)
         addToast('Đã khóa tài khoản', 'success')
       }
-      await loadUsers()
+      await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
     }
@@ -161,7 +148,7 @@ export default function UserManager() {
     try {
       await gasCall('api_updateUser', localStorage.getItem('sso_access_token'), userId, { 'Quyền': newQuyen })
       addToast(newQuyen ? 'Đã cấp quyền Quản trị' : 'Đã thu hồi quyền Quản trị', 'success')
-      await loadUsers()
+      await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
     }
@@ -185,17 +172,6 @@ export default function UserManager() {
   const activeCount = users.filter(u => u['Trạng thái'] !== 'Locked').length
   const lockedCount = users.filter(u => u['Trạng thái'] === 'Locked').length
   const avatar = (name) => (name || '?')[0].toUpperCase()
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="flex flex-col items-center gap-3 text-on-surface-variant">
-          <Icon name="sync" size={32} className="animate-spin" />
-          <span className="text-sm">Đang tải...</span>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5">

@@ -33,14 +33,20 @@ var TASK_SHEET_PREFIX = 'CV_'
 var TASK_HEADERS = ['ID', 'Tiêu đề', 'Mô tả', 'Phòng ban ID', 'Người thực hiện ID', 'Người giao ID', 'Trạng thái', 'Mức độ ưu tiên', 'Ngày bắt đầu', 'Ngày hết hạn', 'Ngày hoàn thành', 'Nhãn', 'Tiến độ', 'Người phối hợp', 'Subtasks', 'Người tạo', 'Ngày tạo', 'Ghi chú']
 
 // ===== First-run initialization =====
+var _initDone = false
 function ensureInitialized() {
+  if (_initDone) return
+  var props = PropertiesService.getScriptProperties()
+  if (props.getProperty('SCHEMA_V') === '2') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
+  props.setProperty('SCHEMA_V', '2')
+  _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.APP_ROLES,  headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết'] },
+    { name: SHEETS.APP_ROLES,  headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết', 'RefreshTokens'] },
     { name: SHEETS.PHONG_BAN,  headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Trưởng phòng ID', 'Phó phòng ID', 'PGĐ phụ trách ID', 'Thành viên', 'Đơn vị quản lý', 'Sheet Name', 'Người tạo', 'Ngày tạo', 'Ghi chú'] },
     { name: SHEETS.BINH_LUAN,  headers: ['ID', 'Mã đối tượng', 'Loại đối tượng', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },
     { name: SHEETS.HOAT_DONG,  headers: ['ID', 'Loại', 'Mô tả', 'Đối tượng', 'Mã đối tượng', 'UserID', 'Tên người dùng', 'Thời gian'] },

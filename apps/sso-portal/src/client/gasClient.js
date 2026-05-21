@@ -165,16 +165,17 @@ async function mockCall(fn, ...args) {
       return { success: true }
     case 'api_getSsoParams':
       return { email: _mockSession?.email || '', ssoToken: _mockSession?.ssoToken || '', parentSheetId: 'mock-sheet-id' }
+    case 'api_portalSync': {
+      const result = { apps: _mockApps.map(a => ({ ...a })) }
+      if (_mockSession?.role === 'admin') {
+        result.users = _mockUsers.filter(u => u['Email'] !== 'admin@test.com').map(u => ({ ...u }))
+        result.mailConfig = { MAIL_ENABLED: 'FALSE' }
+      }
+      return result
+    }
     case 'api_getMailConfig':
       return { MAIL_ENABLED: 'FALSE' }
     case 'api_saveMailConfig':
-      return { success: true }
-    case 'api_createHandoff': {
-      // args[0] = accessToken, args[1] = appId (app ID number)
-      return { handoffToken: 'mock-handoff-' + Date.now() }
-    }
-    case 'api_logoutAllDevices':
-      _mockSession = null
       return { success: true }
     default:
       throw new Error('Mock không hỗ trợ: ' + fn)

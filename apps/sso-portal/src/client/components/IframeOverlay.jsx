@@ -1,34 +1,37 @@
 import { useState, useEffect } from 'react'
 
-export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack }) {
+export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack, preloaded, preloadReady }) {
   const [collapsed, setCollapsed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [iframeLoading, setIframeLoading] = useState(true)
+  const [iframeLoading, setIframeLoading] = useState(!preloaded)
   const otherApps = apps.filter(a => a.ID !== activeApp.ID)
 
-  // Reset loading state khi url đổi (do session-expired reload hoặc switch app)
-  useEffect(() => { setIframeLoading(true) }, [url])
+  useEffect(() => { if (!preloaded && url) setIframeLoading(true) }, [url, preloaded])
+
+  const showLoading = preloaded ? !preloadReady : iframeLoading
+  const transparent = preloaded && preloadReady
 
   return (
-    <div className="fixed inset-0 z-40 bg-background">
-      {iframeLoading && (
-        <div className="absolute inset-0 flex items-center justify-center z-30 bg-background">
-          <div className="flex flex-col items-center gap-3">
-            <span className="material-symbols-outlined text-4xl text-primary animate-pulse">{activeApp['Icon'] || 'apps'}</span>
-            <p className="text-sm text-on-surface-variant">Đang tải {activeApp['Tên App']}...</p>
-          </div>
+    <div className={`fixed inset-0 z-40 ${transparent ? 'pointer-events-none' : ''}`}>
+      {showLoading && (
+        <div className="absolute top-0 inset-x-0 z-30 h-1 overflow-hidden pointer-events-none">
+          <div className="h-full w-2/5 bg-primary rounded-r"
+            style={{ animation: 'iframeLoadBar 1.2s ease-in-out infinite alternate' }} />
+          <style>{`@keyframes iframeLoadBar{0%{transform:translateX(-10%)}100%{transform:translateX(200%)}}`}</style>
         </div>
       )}
-      <iframe
-        src={url}
-        className="w-full h-full border-none"
-        allow="clipboard-write"
-        onLoad={() => setIframeLoading(false)}
-      />
+      {!preloaded && (
+        <iframe
+          src={url}
+          className="w-full h-full border-none"
+          allow="clipboard-write"
+          onLoad={() => setIframeLoading(false)}
+        />
+      )}
 
       {/* Navbar — top center, collapsible */}
       <div
-        className="fixed top-0 left-1/2 -translate-x-1/2 z-50 transition-transform duration-300 ease-in-out"
+        className="fixed top-0 left-1/2 -translate-x-1/2 z-50 transition-transform duration-300 ease-in-out pointer-events-auto"
         style={{ transform: `translateX(-50%) translateY(${collapsed ? '-100%' : '0'})` }}
       >
         <div className="flex items-center gap-2 px-4 py-2 bg-surface-container-lowest/95 backdrop-blur-sm rounded-b-2xl shadow-md3-2 border border-t-0 border-outline-variant/30 min-w-[340px] max-w-[500px] relative">
@@ -85,7 +88,7 @@ export default function IframeOverlay({ url, apps, activeApp, onSwitch, onBack }
       {/* V-arrow handle when collapsed */}
       {collapsed && (
         <div
-          className="fixed top-0 left-1/2 -translate-x-1/2 z-50 cursor-pointer group"
+          className="fixed top-0 left-1/2 -translate-x-1/2 z-50 cursor-pointer group pointer-events-auto"
           onClick={() => setCollapsed(false)}
           title="Hiện thanh điều hướng"
         >
