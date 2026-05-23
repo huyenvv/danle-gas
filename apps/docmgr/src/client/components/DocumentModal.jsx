@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
+import PublishDialog from './documents/PublishDialog.jsx'
 
 const STATUS_OPTIONS = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
 
@@ -119,6 +120,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const fileRef = useRef()
   const statusOverrideRef = useRef(null)
   const notifyTargetRef = useRef(null)
+  const publishDataRef = useRef(null)
+  const [showPublishDialog, setShowPublishDialog] = useState(false)
   const { showToast } = useToast()
   const confirm = useConfirm()
 
@@ -133,6 +136,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const isPhuTrachOfDoc = isEdit && (() => { const list = parseAssignees(doc?.['Phụ trách']); return list.includes(String(session?.userId)) || list.includes(session?.username) })()
   const canEditPhoiHop = isAdminRole || isPhuTrachOfDoc
   const canEditFields = isAdminRole || isVanThu
+  const canPublish = isAdminRole || isVanThu || session?.canPublish
   const canQuickAddLookup = isAdminRole || isVanThu
 
   function setField(key, val) {
@@ -199,6 +203,14 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     }
   }
 
+  function handlePublishFromDialog(toIds, ccIds) {
+    setShowPublishDialog(false)
+    publishDataRef.current = { to: toIds, cc: ccIds }
+    statusOverrideRef.current = 'Hoàn thành'
+    notifyTargetRef.current = 'publish'
+    document.getElementById('_docModalForm')?.requestSubmit()
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
@@ -221,6 +233,12 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : form['Tình trạng'],
         'Phụ trách': phuTrach || '',
         'Người phối hợp': collaborators.length ? collaborators : [],
+      }
+      // Add publish recipients if publishing
+      if (publishDataRef.current) {
+        submitForm._publishTo = publishDataRef.current.to
+        submitForm._publishCc = publishDataRef.current.cc
+        publishDataRef.current = null
       }
       const notifyTarget = notifyTargetRef.current
       statusOverrideRef.current = null
@@ -627,6 +645,18 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>inventory</span>
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
+                {!isEdit && (isVanThu || isNvTpCreate) && canPublish && (
+                <button type="button" disabled={uploading}
+                  onClick={() => {
+                    if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
+                    if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
+                    setShowPublishDialog(true)
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-full text-sm font-medium hover:bg-amber-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
+                  {uploading ? 'Đang lưu…' : 'Phát hành'}
+                </button>
+                )}
                 {isVanThu && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
@@ -651,6 +681,16 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           </div>
         </form>
       </div>
+
+      {showPublishDialog && (
+        <PublishDialog
+          users={lookups.users || []}
+          phongBan={lookups.phongBan || []}
+          onPublish={handlePublishFromDialog}
+          onClose={() => setShowPublishDialog(false)}
+          loading={uploading}
+        />
+      )}
     </div>
   )
 }
