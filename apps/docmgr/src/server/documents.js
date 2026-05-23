@@ -38,6 +38,10 @@ var _DEFAULT_MAIL_TEMPLATES = {
   giaoViec: {
     subject: '[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
+  },
+  phatHanh: {
+    subject: '[SBM – Phát hành] {tênHồSơ}',
+    body: 'Kính gửi: {tênNgườiNhận}\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}" {linkTàiLiệu}\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
   }
 }
 
@@ -175,7 +179,8 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
         '{linkHệThống}': appLink,
         '{linkTàiLiệu}': fileLinks,
         '{ngàyBanHành}': ngayBanHanh,
-        '{ngàyKếtThúc}': ngayKetThuc
+        '{ngàyKếtThúc}': ngayKetThuc,
+        '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : ''
       }
       var subject = _applyTemplate(tpl.subject, vars)
       var body = _applyTemplate(tpl.body, vars)
@@ -215,6 +220,34 @@ function _getRecipientsByUsernames(usernames) {
     return result
   } catch(e) {
     Logger.log('_getRecipientsByUsernames error: ' + e.message)
+    return []
+  }
+}
+
+function _getRecipientsByIds(userIds) {
+  if (!userIds || userIds.length === 0) return []
+  var parentId = ssoGetParentSheetId()
+  if (!parentId) return []
+  try {
+    var ss = SpreadsheetApp.openById(parentId)
+    var sheet = ss.getSheetByName('_Người Dùng')
+    if (!sheet) return []
+    var data = rowsToObjects(sheet.getDataRange().getValues())
+    var result = []
+    userIds.forEach(function(uid) {
+      var user = data.find(function(u) { return String(u['ID']) === String(uid) })
+      if (user && user['Email']) {
+        result.push({
+          userId: user['ID'],
+          email: user['Email'],
+          name: user['Tên nhân viên'] || user['Email'],
+          role: user['Chức vụ'] || ''
+        })
+      }
+    })
+    return result
+  } catch(e) {
+    Logger.log('_getRecipientsByIds error: ' + e.message)
     return []
   }
 }
@@ -417,6 +450,11 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     _markUnreadForUsers(dirUserIds, added['ID'])
     var dirRecipients = _getRecipientsByUsernames(dirUserIds)
     _sendNotificationEmails(dirRecipients, added, 'trinhDuyet', session)
+  }
+
+  // Publish mode: send to specified recipients
+  if (notifyTarget === 'publish' && data._publishTo) {
+    publishDocument(token, added['ID'], data._publishTo, data._publishCc || [])
   }
 
   return { data: added }
@@ -754,6 +792,55 @@ function transitionDocument(token, id, action, data) {
 
   logAudit(session, action, 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id, from: doc['Tình trạng'], to: rule.to }))
   return { data: updated }
+}
+
+// ── Publish (phát hành) ─────────────────────────────────────────────────────
+
+function publishDocument(token, docId, toUserIds, ccUserIds) {
+  var session = requireAuth(token)
+
+  // Check publish permission
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var appRole = roles.find(function(r) { return r['AppID'] === APP_ID && String(r['UserID']) === String(session.userId) })
+  var role = appRole ? appRole['Quyền'] : ''
+  var isAdminOrVanThu = (role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc' || role === 'Văn thư')
+  if (!isAdminOrVanThu && !(appRole && (appRole['Được phát hành'] === 'TRUE' || appRole['Được phát hành'] === true))) {
+    throw new Error('Bạn không có quyền phát hành')
+  }
+
+  // Load document
+  var docs = getSheetData(SHEETS.HO_SO)
+  var doc = docs.find(function(d) { return String(d['ID']) === String(docId) })
+  if (!doc) throw new Error('Không tìm thấy hồ sơ')
+
+  // Build recipient lists from user IDs (lookup from SSO _Người Dùng)
+  var toRecipients = _getRecipientsByIds(toUserIds)
+  var ccRecipients = ccUserIds ? _getRecipientsByIds(ccUserIds) : []
+
+  if (toRecipients.length === 0) throw new Error('Vui lòng chọn ít nhất một người nhận')
+
+  // Send email
+  _sendNotificationEmails(toRecipients, doc, 'phatHanh', session, ccRecipients)
+
+  // Mark unread for all recipients (bell notification)
+  var allUserIds = toUserIds.concat(ccUserIds || [])
+  _markUnreadForUsers(allUserIds, docId)
+
+  // Append to publish history
+  var history = []
+  if (doc['Lịch sử phát hành']) {
+    try { history = JSON.parse(doc['Lịch sử phát hành']) } catch(e) {}
+  }
+  history.push({
+    lan: history.length + 1,
+    ngay: new Date().toISOString(),
+    nguoiGui: session.name || session.username,
+    to: toRecipients.map(function(r) { return { id: r.userId, name: r.name, email: r.email } }),
+    cc: ccRecipients.map(function(r) { return { id: r.userId, name: r.name, email: r.email } })
+  })
+  updateRow(SHEETS.HO_SO, docId, { 'Lịch sử phát hành': JSON.stringify(history) })
+
+  return { success: true, lan: history.length }
 }
 
 // ── Comment functions ────────────────────────────────────────────────────────

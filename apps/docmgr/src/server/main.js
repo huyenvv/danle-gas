@@ -344,6 +344,10 @@ function api_transitionDocument(token, id, action, data) {
   return _wrap(function() { return transitionDocument(token, id, action, data) })
 }
 
+function api_publishDocument(token, docId, toUserIds, ccUserIds) {
+  return _wrap(function() { return publishDocument(token, docId, toUserIds, ccUserIds) })
+}
+
 // ===== Category API =====
 
 function api_addCategory(token, data) {
