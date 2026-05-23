@@ -31,6 +31,20 @@ function AppInner() {
             {isExpired ? 'Phiên đăng nhập đã hết hạn' : 'Không có quyền truy cập'}
           </h2>
           <p className="text-sm text-on-surface-variant leading-relaxed">{accessError}</p>
+          {isExpired && (
+            <>
+              <button
+                onClick={() => { try { window.top.location.reload() } catch(_) { /* cross-origin blocked by GAS iframe */ } }}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-full text-sm font-medium hover:opacity-90 transition"
+              >
+                <span className="material-symbols-outlined text-lg">refresh</span>
+                Đăng nhập lại
+              </button>
+              <p className="text-xs text-on-surface-variant">
+                Nếu không tự tải lại, hãy quay lại ứng dụng chính và mở lại, hoặc refresh trình duyệt.
+              </p>
+            </>
+          )}
         </div>
       </div>
     )

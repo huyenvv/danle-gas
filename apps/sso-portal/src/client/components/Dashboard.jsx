@@ -20,7 +20,7 @@ const TABS = [
 
 export default function Dashboard() {
   const { session, logout, tokenFresh } = useAuth()
-  const { apps, setApps, loadingApps, sync } = usePortalData()
+  const { apps, setApps, loadingApps, sync, syncing } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [activeApp, setActiveApp] = useState(null)
@@ -62,6 +62,14 @@ export default function Dashboard() {
       })
     }, idx * 2000))
 
+    // Auto-reopen last app after preload starts
+    if (lastId) {
+      const lastApp = activeApps.find(a => String(a.ID) === lastId)
+      if (lastApp) {
+        setTimeout(() => setActiveApp(lastApp), 100)
+      }
+    }
+
     return () => timers.forEach(clearTimeout)
   }, [tokenFresh, apps])
 
@@ -99,6 +107,16 @@ export default function Dashboard() {
     />
   ))
 
+  // Overlay shown while we re-validate session after tab returned from background
+  const syncingOverlay = syncing && (
+    <div className="fixed inset-0 z-[250] bg-black/30 backdrop-blur-sm flex items-center justify-center">
+      <div className="bg-surface rounded-2xl px-6 py-4 shadow-md3-3 flex items-center gap-3">
+        <span className="material-symbols-outlined text-primary animate-spin">progress_activity</span>
+        <span className="text-sm font-medium text-on-surface">Đang xác minh phiên…</span>
+      </div>
+    </div>
+  )
+
   if (activeApp) {
     return (
       <>
@@ -112,6 +130,7 @@ export default function Dashboard() {
           onSwitch={openApp}
           onBack={() => { setActiveApp(null) }}
         />
+        {syncingOverlay}
       </>
     )
   }
@@ -214,6 +233,7 @@ export default function Dashboard() {
 
       {showChangePass && <ChangePasswordModal onClose={() => setShowChangePass(false)} />}
     </div>
+    {syncingOverlay}
     </>
   )
 }

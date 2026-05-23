@@ -41,6 +41,11 @@ function _mintTokensForUser(userRow, appRole, deviceType) {
   if (oldAt) revokeAccessToken(oldAt)
 
   var refreshToken = mintRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], { label: label })
+
+  // Store RT metadata in session so epoch check works during polling
+  sessionData._rtCreatedAt = new Date().getTime()
+  sessionData._rtLabel = label
+
   var accessToken = mintAccessToken(sessionData)
 
   cachePut(deviceAtKey, accessToken, ACCESS_TOKEN_TTL)
@@ -177,6 +182,10 @@ function api_resume(refreshToken) {
 
     var sessionData = _buildSessionFromRows(userInfo, roleRow)
 
+    // Store RT metadata in session so epoch check works during polling
+    sessionData._rtCreatedAt = found.entry.createdAt
+    sessionData._rtLabel = found.entry.label || 'desktop'
+
     var newRefreshToken = touchRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
     var newAccessToken = mintAccessToken(sessionData)
 
@@ -276,6 +285,19 @@ function api_pollUpdates(token, opts) {
   return _wrap(function() {
     var session = requireAuth(token)
     opts = opts || {}
+
+    // Cross-script epoch check: detect parent logout within ~60s
+    var parentId = ssoGetParentSheetId()
+    if (parentId && session._rtCreatedAt) {
+      try {
+        if (isBeforeEpochCrossScript(parentId, '_Người Dùng', session.userId, session._rtCreatedAt, session._rtLabel || 'desktop')) {
+          throw new Error('TOKEN_REVOKED')
+        }
+      } catch(e) {
+        if (e.message === 'TOKEN_REVOKED') throw e
+        // Cross-script glitch — fail open
+      }
+    }
 
     // Always refresh docs
     var docsResult = getDocuments(token, {})

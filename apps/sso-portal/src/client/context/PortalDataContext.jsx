@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import { useAuth } from './AuthContext.jsx'
 import { useToast } from './ToastContext.jsx'
 import gasCall from '../gasClient.js'
@@ -32,6 +32,12 @@ export function PortalDataProvider({ children }) {
   })
 
   const [loadingApps, setLoadingApps] = useState(apps.length === 0)
+  // `syncing` = true while we're re-validating session after the tab was
+  // backgrounded long enough that AT may have gone stale. Blocks user clicks
+  // (via overlay) so they can't open an app with a stale token in its URL.
+  const [syncing, setSyncing] = useState(false)
+  const hiddenAtRef = useRef(0)
+  const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000 // AT lifetime (24h) — only block UI when token likely expired
 
   const sync = useCallback((silent = false) => {
     if (!silent) setLoadingApps(true)
@@ -75,22 +81,36 @@ export function PortalDataProvider({ children }) {
     if (!tokenFresh) return
     sync(true) // always silent — loadingApps state handles initial spinner
     const interval = setInterval(() => sync(true), 60 * 1000)
-    function onVisible() {
-      if (document.visibilityState === 'visible') sync(true)
+    function onVisChange() {
+      if (document.visibilityState === 'hidden') {
+        hiddenAtRef.current = Date.now()
+        return
+      }
+      if (document.visibilityState !== 'visible') return
+      const hiddenFor = hiddenAtRef.current ? Date.now() - hiddenAtRef.current : 0
+      hiddenAtRef.current = 0
+      if (hiddenFor > STALE_THRESHOLD_MS) {
+        // Backgrounded long enough that the heartbeat may have been throttled
+        // and AT may be stale. Block UI while we re-validate.
+        setSyncing(true)
+        sync(true).finally(() => setSyncing(false))
+      } else {
+        sync(true)
+      }
     }
     function onChildMessage(e) {
       if (e.data && e.data.type === 'child:sessionExpired') sync(true)
     }
-    document.addEventListener('visibilitychange', onVisible)
+    document.addEventListener('visibilitychange', onVisChange)
     window.addEventListener('message', onChildMessage)
     return () => {
       clearInterval(interval)
-      document.removeEventListener('visibilitychange', onVisible)
+      document.removeEventListener('visibilitychange', onVisChange)
       window.removeEventListener('message', onChildMessage)
     }
   }, [tokenFresh, sync])
 
-  const value = { apps, setApps, users, setUsers, mailConfig, setMailConfig, loadingApps, sync }
+  const value = { apps, setApps, users, setUsers, mailConfig, setMailConfig, loadingApps, sync, syncing }
   return <PortalDataContext.Provider value={value}>{children}</PortalDataContext.Provider>
 }
 

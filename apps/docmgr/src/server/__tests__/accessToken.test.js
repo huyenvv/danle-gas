@@ -31,7 +31,9 @@ describe('access token primitives', () => {
     const cache = CacheService.getScriptCache()
     const putSpy = jest.spyOn(cache, 'put')
     validateAccessToken(token)
-    expect(putSpy).toHaveBeenCalledWith('at_' + token, expect.anything(), ACCESS_TOKEN_TTL)
+    // cachePut caps TTL at CACHE_MAX_TTL (21600) when ACCESS_TOKEN_TTL exceeds it
+    const expectedTtl = Math.min(ACCESS_TOKEN_TTL, CACHE_MAX_TTL)
+    expect(putSpy).toHaveBeenCalledWith('at_' + token, expect.anything(), expectedTtl)
     putSpy.mockRestore()
   })
 })
