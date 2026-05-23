@@ -25,23 +25,37 @@ function getAllData(session) {
             name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
             email: u['Email'] || '',
             username: u['Tên đăng nhập'] || '',
+            phongBan: u['Phòng ban'] || '',
+            chucVu: u['Chức vụ'] || '',
           }
         })
       }
     }
   } catch(e) { Logger.log('getAllData parentInfoMap error: ' + e.message) }
 
+  var phongBanData = []
+  try {
+    var pbSheet = parentSs.getSheetByName('_Phòng Ban')
+    if (pbSheet) {
+      phongBanData = rowsToObjects(pbSheet.getDataRange().getValues())
+    }
+  } catch(e) { Logger.log('getAllData phongBan error: ' + e.message) }
+
   var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     var info = parentInfoMap[String(r['UserID'])] || {}
     // SSO _Người Dùng is the source of truth for Tên đăng nhập (session.username comes from there).
     // APP_ROLES.Tên đăng nhập is a stale cache — only used as fallback when the SSO row is missing.
+    var role = r['Quyền']
+    var isAdminOrVanThu = (role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc' || role === 'Văn thư')
     return {
       ID: r['UserID'],
       'Tên đăng nhập': info.username || r['Tên đăng nhập'] || '',
       'Tên nhân viên': info.name || r['Tên đăng nhập'] || '',
       'Email': info.email || '',
-      'Phòng ban': '',
-      'Quyền': r['Quyền'],
+      'Phòng ban': info.phongBan || '',
+      'Chức vụ': info.chucVu || '',
+      'Quyền': role,
+      'Được phát hành': isAdminOrVanThu || r['Được phát hành'] === 'TRUE' || r['Được phát hành'] === true,
     }
   })
   var allCats = getSheetData(SHEETS.DANH_MUC)
@@ -77,6 +91,7 @@ function getAllData(session) {
     duAn:        getSheetData(SHEETS.DU_AN),
     nhaCungCap:  getSheetData(SHEETS.NHA_CUNG_CAP),
     users:       users,
+    phongBan:    phongBanData,
   }
 }
 
