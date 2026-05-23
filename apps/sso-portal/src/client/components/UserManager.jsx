@@ -44,7 +44,7 @@ function StatCard({ icon, label, value, color }) {
 
 export default function UserManager() {
   const { session } = useAuth()
-  const { users, sync } = usePortalData()
+  const { users, phongBan, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
@@ -156,7 +156,7 @@ export default function UserManager() {
 
   function startEdit(user) {
     setEditId(user.ID)
-    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] })
+    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] || '' })
     setShowForm(true)
   }
 
@@ -248,6 +248,7 @@ export default function UserManager() {
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Chức vụ</th>
                 {isOwner && <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quản trị</th>}
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Trạng thái</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Đăng nhập cuối</th>
@@ -256,7 +257,7 @@ export default function UserManager() {
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {filtered.length === 0 && (
-                <tr><td colSpan={isOwner ? 7 : 6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+                <tr><td colSpan={isOwner ? 8 : 7} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
               )}
               {filtered.map(u => (
                 <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
@@ -278,6 +279,7 @@ export default function UserManager() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-on-surface-variant">{u['Phòng ban'] || '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant text-xs">{u['Chức vụ'] || '—'}</td>
                   {isOwner && (
                     <td className="px-4 py-3 text-center">
                       <button onClick={() => handleToggleAdmin(u.ID, u['Quyền'])}
@@ -372,10 +374,14 @@ export default function UserManager() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Phòng ban</label>
-                  <input type="text" value={formData['Phòng ban']}
+                  <select value={formData['Phòng ban']}
                     onChange={e => setFormData(f => ({ ...f, 'Phòng ban': e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
-                    placeholder="vd: Kỹ thuật" />
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition">
+                    <option value="">-- Chọn phòng ban --</option>
+                    {(phongBan || []).map(pb => (
+                      <option key={pb.ID} value={pb['Tên phòng ban']}>{pb['Tên phòng ban']}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => { setShowForm(false); setEditId(null) }}
