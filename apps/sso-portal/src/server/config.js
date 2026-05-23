@@ -60,7 +60,7 @@ function _seedAdminUser(ss) {
   if (!owner.email) return
 
   var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
-  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', '', 'Quản trị', '', ''])
   invalidateSheetCache(SHEETS.USERS)
 }
 
@@ -102,6 +102,7 @@ function _ensureOwnerUser(ss) {
     '',
     'Active',
     'TRUE',
+    '',
     '',
     '',
     'Quản trị',
