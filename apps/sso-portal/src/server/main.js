@@ -124,6 +124,24 @@ function api_updateUser(token, id, data) {
   return _wrap(function() { return updateUser(token, id, data) })
 }
 
+// ===== Phòng ban API =====
+
+function api_getPhongBan(token) {
+  return _wrap(function() { return getPhongBan(token) })
+}
+
+function api_addPhongBan(token, data) {
+  return _wrap(function() { return addPhongBan(token, data) })
+}
+
+function api_updatePhongBan(token, id, data) {
+  return _wrap(function() { return updatePhongBan(token, id, data) })
+}
+
+function api_deletePhongBan(token, id) {
+  return _wrap(function() { return deletePhongBan(token, id) })
+}
+
 // ===== App API =====
 
 function api_getApps(token) {
