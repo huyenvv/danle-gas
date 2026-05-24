@@ -175,6 +175,7 @@ function getUsers(token) {
       'MustChangePass': u['MustChangePass'],
       'Đăng nhập cuối': u['Đăng nhập cuối'],
       'Phòng ban': u['Phòng ban'] || '',
+      'Chức vụ': u['Chức vụ'] || '',
       'Quyền': u['Quyền'] || '',
       'Chức vụ': u['Chức vụ'] || 'Nhân viên',
     }
@@ -211,6 +212,7 @@ function addUser(token, data) {
     'MustChangePass': 'TRUE',
     'Đăng nhập cuối': '',
     'Phòng ban': data['Phòng ban'] || '',
+    'Chức vụ': data['Chức vụ'] || '',
     'Quyền': data['Quyền'] || '',
     'Chức vụ': data['Chức vụ'] || 'Nhân viên',
   }
@@ -232,6 +234,7 @@ function updateUser(token, id, data) {
   if (data['Email'] !== undefined) updateData['Email'] = data['Email']
   if (data['Tên nhân viên'] !== undefined) updateData['Tên nhân viên'] = data['Tên nhân viên']
   if (data['Phòng ban'] !== undefined) updateData['Phòng ban'] = data['Phòng ban']
+  if (data['Chức vụ'] !== undefined) updateData['Chức vụ'] = data['Chức vụ']
   if (data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
   if (data['Chức vụ'] !== undefined) updateData['Chức vụ'] = data['Chức vụ']
   if (Object.keys(updateData).length > 0) updateRow(SHEETS.USERS, id, updateData)
@@ -295,10 +298,135 @@ function portalSync(token) {
 
   if (isAdmin) {
     result.users = getUsers(token)
+    result.phongBan = getSheetData(SHEETS.PHONG_BAN)
     result.mailConfig = _getMailConfig()
   }
 
   return result
+}
+
+// ===== Phòng ban (department) management =====
+
+function getPhongBan(token) {
+  requireAdmin(token)
+  var departments = getSheetData(SHEETS.PHONG_BAN)
+  var users = getSheetData(SHEETS.USERS)
+
+  return departments.map(function(dept) {
+    var deptName = dept['Tên phòng ban']
+    var members = users.filter(function(u) { return u['Phòng ban'] === deptName })
+    var truongUser = null
+    var phoNames = []
+
+    if (dept['Trưởng']) {
+      truongUser = users.find(function(u) { return String(u['ID']) === String(dept['Trưởng']) })
+    }
+    if (dept['Phó']) {
+      try {
+        var phoIds = JSON.parse(dept['Phó'])
+        phoIds.forEach(function(pid) {
+          var u = users.find(function(u) { return String(u['ID']) === String(pid) })
+          if (u) phoNames.push(u['Tên nhân viên'] || u['Email'])
+        })
+      } catch(e) {}
+    }
+
+    return {
+      ID: dept['ID'],
+      'Tên phòng ban': deptName,
+      'Trưởng': dept['Trưởng'] || '',
+      'Phó': dept['Phó'] || '',
+      'TrưởngName': truongUser ? (truongUser['Tên nhân viên'] || truongUser['Email']) : '',
+      'PhóNames': phoNames,
+      'memberCount': members.length,
+    }
+  })
+}
+
+function addPhongBan(token, data) {
+  requireAdmin(token)
+  var name = data['Tên phòng ban']
+  if (!name || !name.trim()) throw new Error('Tên phòng ban là bắt buộc')
+  name = name.trim()
+
+  var existing = getSheetData(SHEETS.PHONG_BAN)
+  var dup = existing.find(function(d) { return d['Tên phòng ban'] === name })
+  if (dup) throw new Error('Phòng ban đã tồn tại')
+
+  return addRow(SHEETS.PHONG_BAN, { 'Tên phòng ban': name })
+}
+
+function updatePhongBan(token, id, data) {
+  requireAdmin(token)
+  var departments = getSheetData(SHEETS.PHONG_BAN)
+  var dept = departments.find(function(d) { return String(d['ID']) === String(id) })
+  if (!dept) throw new Error('Không tìm thấy phòng ban')
+
+  var users = getSheetData(SHEETS.USERS)
+  var updateData = {}
+
+  if (data['Tên phòng ban'] !== undefined) updateData['Tên phòng ban'] = data['Tên phòng ban']
+
+  // Handle Trưởng assignment
+  if (data['Trưởng'] !== undefined) {
+    var oldTruong = dept['Trưởng'] ? String(dept['Trưởng']) : ''
+    var newTruong = data['Trưởng'] ? String(data['Trưởng']) : ''
+    updateData['Trưởng'] = newTruong
+
+    // Clear old Trưởng's Chức vụ if changed
+    if (oldTruong && oldTruong !== newTruong) {
+      updateRow(SHEETS.USERS, oldTruong, { 'Chức vụ': '' })
+    }
+    // Set new Trưởng's Chức vụ
+    if (newTruong) {
+      updateRow(SHEETS.USERS, newTruong, { 'Chức vụ': 'Trưởng' })
+    }
+  }
+
+  // Handle Phó assignment
+  if (data['Phó'] !== undefined) {
+    var oldPhoIds = []
+    if (dept['Phó']) {
+      try { oldPhoIds = JSON.parse(dept['Phó']) } catch(e) {}
+    }
+    var newPhoIds = data['Phó'] || []
+    updateData['Phó'] = JSON.stringify(newPhoIds)
+
+    // Clear Chức vụ for removed Phó
+    oldPhoIds.forEach(function(pid) {
+      if (newPhoIds.indexOf(pid) === -1) {
+        updateRow(SHEETS.USERS, pid, { 'Chức vụ': '' })
+      }
+    })
+    // Set Chức vụ for new Phó
+    newPhoIds.forEach(function(pid) {
+      if (oldPhoIds.indexOf(pid) === -1) {
+        updateRow(SHEETS.USERS, pid, { 'Chức vụ': 'Phó' })
+      }
+    })
+  }
+
+  if (Object.keys(updateData).length > 0) updateRow(SHEETS.PHONG_BAN, id, updateData)
+  return { success: true }
+}
+
+function deletePhongBan(token, id) {
+  requireAdmin(token)
+  var departments = getSheetData(SHEETS.PHONG_BAN)
+  var dept = departments.find(function(d) { return String(d['ID']) === String(id) })
+  if (!dept) throw new Error('Không tìm thấy phòng ban')
+
+  // Clear Phòng ban and Chức vụ for all members
+  var users = getSheetData(SHEETS.USERS)
+  users.forEach(function(u) {
+    if (u['Phòng ban'] === dept['Tên phòng ban']) {
+      updateRow(SHEETS.USERS, u['ID'], { 'Phòng ban': '', 'Chức vụ': '' })
+    }
+  })
+
+  deleteRow(SHEETS.PHONG_BAN, id)
+  invalidateSheetCache(SHEETS.USERS)
+  return { success: true }
 }
 
 // ===== Email notifications =====

@@ -44,7 +44,7 @@ function StatCard({ icon, label, value, color }) {
 
 export default function UserManager() {
   const { session } = useAuth()
-  const { users, sync } = usePortalData()
+  const { users, phongBan, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
@@ -160,7 +160,7 @@ export default function UserManager() {
 
   function startEdit(user) {
     setEditId(user.ID)
-    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'], 'Chức vụ': user['Chức vụ'] || 'Nhân viên' })
+    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] || '', 'Chức vụ': user['Chức vụ'] || 'Nhân viên' })
     setShowForm(true)
   }
 
@@ -382,10 +382,14 @@ export default function UserManager() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Phòng ban</label>
-                  <input type="text" value={formData['Phòng ban']}
+                  <select value={formData['Phòng ban']}
                     onChange={e => setFormData(f => ({ ...f, 'Phòng ban': e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
-                    placeholder="vd: Kỹ thuật" />
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition">
+                    <option value="">-- Chọn phòng ban --</option>
+                    {(phongBan || []).map(pb => (
+                      <option key={pb.ID} value={pb['Tên phòng ban']}>{pb['Tên phòng ban']}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Chức vụ</label>

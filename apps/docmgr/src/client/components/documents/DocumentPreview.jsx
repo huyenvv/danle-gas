@@ -6,6 +6,8 @@ import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from '../../lib/workflowPermissions.js'
 import WorkflowButtons from './WorkflowButtons.jsx'
+import PublishDialog from './PublishDialog.jsx'
+import PublishHistory from './PublishHistory.jsx'
 
 function parseFileInfos(fileIdCol) {
   if (!fileIdCol) return []
@@ -44,6 +46,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const [transitioning, setTransitioning] = useState(false)
   const [transitionLabel, setTransitionLabel] = useState('')
   const [giaoViecForm, setGiaoViecForm] = useState(null) // null | { phuTrach, phoiHop[] }
+  const [showPublishDialog, setShowPublishDialog] = useState(false)
+  const [showPublishHistory, setShowPublishHistory] = useState(false)
+  const [publishing, setPublishing] = useState(false)
 
   const currentFile = fileInfos[slideIdx] || null
   const previewUrl = currentFile
@@ -205,7 +210,38 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const workflowActions = primaryGiaoViecAction
     ? availableActions.filter(a => a.key !== primaryGiaoViecAction.key)
     : availableActions
-  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm
+  const isAdminRole = role === 'admin' || role === 'Quản trị viên'
+  const isVanThuRole = role === 'Văn thư'
+  const canPublish = isAdminRole || isVanThuRole || session?.canPublish
+  const isHoanThanh = status === 'Hoàn thành'
+  const publishHistory = (() => {
+    const raw = doc['Lịch sử phát hành']
+    if (!raw) return []
+    try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch (_) { return [] }
+  })()
+
+  async function handlePublishFromDialog(toIds, ccIds) {
+    setPublishing(true)
+    try {
+      await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
+      showToast('Đã phát hành thành công', 'success')
+      setShowPublishDialog(false)
+      // Reload doc to update publish history
+      try {
+        const fresh = await gasCall('api_getDocument', token, doc.ID)
+        if (fresh.data) {
+          setDoc(prev => ({ ...prev, ...fresh.data }))
+          if (onDocUpdated) onDocUpdated(fresh.data)
+        }
+      } catch (_) {}
+    } catch (err) {
+      showToast(err.message || 'Lỗi phát hành', 'error')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm || (isHoanThanh && canPublish)
   const noteText = String(doc['Ghi chú'] || '')
   const noteOverflow = noteText.length > NOTE_PREVIEW_LIMIT
   const notePreview = noteOverflow && !noteExpanded
@@ -331,6 +367,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   {primaryGiaoViecAction.label}
                 </button>
                 )}
+                {isHoanThanh && canPublish && (
+                <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name="send" size={18} />
+                  Phát hành
+                </button>
+                )}
                 {canDelete ? (
                   <button onClick={onDelete} disabled={transitioning}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
@@ -429,9 +472,18 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 </div>
                 <div>
                   <p className="text-xs text-on-surface-variant mb-1">Tình trạng</p>
-                  <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
-                    {doc['Tình trạng'] || '—'}
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
+                      {doc['Tình trạng'] || '—'}
+                    </span>
+                    {publishHistory.length > 0 && (
+                      <button type="button" onClick={() => setShowPublishHistory(true)}
+                        className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 hover:underline transition-colors">
+                        <Icon name="history" size={14} />
+                        Phát hành ({publishHistory.length})
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <InfoRow icon="schedule" label="Ngày cập nhật" value={formatDate(doc['Ngày cập nhật'])} />
                 <InfoRow icon="attach_file" label="Nơi lưu hồ sơ cứng" value={doc['Nơi lưu hồ sơ cứng']} />
@@ -681,6 +733,24 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
           </div>
         </div>
       </div>
+
+      {showPublishDialog && (
+        <PublishDialog
+          users={lookups.users || []}
+          phongBan={lookups.phongBan || []}
+          onPublish={handlePublishFromDialog}
+          onClose={() => setShowPublishDialog(false)}
+          loading={publishing}
+        />
+      )}
+
+      {showPublishHistory && (
+        <PublishHistory
+          history={publishHistory}
+          users={lookups.users || []}
+          onClose={() => setShowPublishHistory(false)}
+        />
+      )}
     </div>
   )
 }

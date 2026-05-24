@@ -9,11 +9,13 @@ import IframeOverlay from './IframeOverlay.jsx'
 import UserManager from './UserManager.jsx'
 import AppManager from './AppManager.jsx'
 import SettingsPage from './SettingsPage.jsx'
+import PhongBanManager from './PhongBanManager.jsx'
 import ChangePasswordModal from './ChangePasswordModal.jsx'
 
 const TABS = [
   { id: 'apps', label: 'Ứng dụng', icon: 'apps' },
   { id: 'users', label: 'Người dùng', icon: 'group' },
+  { id: 'phongban', label: 'Phòng ban', icon: 'apartment' },
   { id: 'app-mgr', label: 'Quản lý App', icon: 'app_registration' },
   { id: 'settings', label: 'Cài đặt', icon: 'settings' },
 ]
@@ -227,6 +229,7 @@ export default function Dashboard() {
           </>
         )}
         {tab === 'users' && <UserManager />}
+        {tab === 'phongban' && <PhongBanManager />}
         {tab === 'app-mgr' && <AppManager apps={apps} setApps={setApps} />}
         {tab === 'settings' && <SettingsPage />}
       </main>

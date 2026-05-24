@@ -8,6 +8,7 @@ const PortalDataContext = createContext(null)
 const APPS_CACHE_KEY = 'sso_apps_cache'
 const USERS_CACHE_KEY = 'sso_users_cache'
 const MAIL_CACHE_KEY = 'sso_mail_config_cache'
+const PHONGBAN_CACHE_KEY = 'sso_phongban_cache'
 
 export function PortalDataProvider({ children }) {
   const { tokenFresh } = useAuth()
@@ -29,6 +30,10 @@ export function PortalDataProvider({ children }) {
 
   const [mailConfig, setMailConfig] = useState(() => {
     try { return JSON.parse(localStorage.getItem(MAIL_CACHE_KEY)) || {} } catch (_) { return {} }
+  })
+
+  const [phongBan, setPhongBan] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(PHONGBAN_CACHE_KEY)) || [] } catch (_) { return [] }
   })
 
   const [loadingApps, setLoadingApps] = useState(apps.length === 0)
@@ -68,6 +73,14 @@ export function PortalDataProvider({ children }) {
             if (JSON.stringify(prev) === json) return prev
             try { localStorage.setItem(MAIL_CACHE_KEY, json) } catch (_) {}
             return data.mailConfig
+          })
+        }
+        if (data.phongBan !== undefined) {
+          const json = JSON.stringify(data.phongBan)
+          setPhongBan(prev => {
+            if (JSON.stringify(prev) === json) return prev
+            try { localStorage.setItem(PHONGBAN_CACHE_KEY, json) } catch (_) {}
+            return data.phongBan
           })
         }
         return data
@@ -110,7 +123,7 @@ export function PortalDataProvider({ children }) {
     }
   }, [tokenFresh, sync])
 
-  const value = { apps, setApps, users, setUsers, mailConfig, setMailConfig, loadingApps, sync, syncing }
+  const value = { apps, setApps, users, setUsers, mailConfig, setMailConfig, phongBan, setPhongBan, loadingApps, sync, syncing }
   return <PortalDataContext.Provider value={value}>{children}</PortalDataContext.Provider>
 }
 

@@ -5,6 +5,7 @@ var SHEETS = {
   APPS: '_Ứng Dụng',
   SYS: '_Hệ Thống',
   HANDOFFS: '_Handoffs',
+  PHONG_BAN: '_Phòng Ban',
 }
 
 var APP_ID = 'sso-portal'
@@ -14,7 +15,7 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '4') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '5') { _initDone = true; return }
   var ss = getAppSheet()
   _ensureAllTabsExist(ss)
 
@@ -24,16 +25,17 @@ function ensureInitialized() {
   } else {
     _ensureOwnerUser(ss)
   }
-  props.setProperty('SCHEMA_V', '4')
+  props.setProperty('SCHEMA_V', '5')
   _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Quyền', 'Chức vụ', 'FailedLogins', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt', 'LogoutEpochs', 'AccessToken', 'AccessTokenExpiry'] },
+    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Chức vụ', 'Quyền', 'FailedLogins', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt', 'LogoutEpochs', 'AccessToken', 'AccessTokenExpiry'] },
     { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
     { name: SHEETS.HANDOFFS, headers: ['ID', 'Token', 'UserID', 'AppID', 'CreatedAt', 'ExpiresAt', 'Consumed'] },
+    { name: SHEETS.PHONG_BAN, headers: ['ID', 'Tên phòng ban', 'Trưởng', 'Phó'] },
   ]
 
   tabDefs.forEach(function(def) {
@@ -58,7 +60,7 @@ function _seedAdminUser(ss) {
   if (!owner.email) return
 
   var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
-  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', 'Quản trị', '', ''])
+  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', '', 'Quản trị', '', ''])
   invalidateSheetCache(SHEETS.USERS)
 }
 
@@ -100,6 +102,7 @@ function _ensureOwnerUser(ss) {
     '',
     'Active',
     'TRUE',
+    '',
     '',
     '',
     'Quản trị',

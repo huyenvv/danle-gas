@@ -112,6 +112,11 @@ const _mockUsers = [
   { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Tên nhân viên': 'Nguyễn Văn A', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '', 'Chức vụ': 'Nhân viên', 'FailedLogins': 0 },
 ]
 
+const _mockPhongBan = [
+  { ID: 1, 'Tên phòng ban': 'Kỹ thuật', 'Trưởng': 'huyenvv', 'Phó': '' },
+  { ID: 2, 'Tên phòng ban': 'Kinh doanh', 'Trưởng': '', 'Phó': '' },
+]
+
 const _mockApps = [
   { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'http://localhost:5173/', 'Icon': 'description', 'Mô tả': 'Quản lý hồ sơ, tài liệu', 'Trạng thái': 'Active' },
   { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://localhost:5175/', 'Icon': 'task_alt', 'Mô tả': 'Quản lý công việc, dự án', 'Trạng thái': 'Active' },
@@ -196,10 +201,19 @@ async function mockCall(fn, ...args) {
       const result = { apps: _mockApps.map(a => ({ ...a })) }
       if (_mockSession?.role === 'admin') {
         result.users = _mockUsers.filter(u => u['Email'] !== 'admin@test.com').map(u => ({ ...u }))
+        result.phongBan = _mockPhongBan.map(pb => ({ ...pb }))
         result.mailConfig = { MAIL_ENABLED: 'FALSE' }
       }
       return result
     }
+    case 'api_getPhongBan':
+      return _mockPhongBan.map(pb => ({ ...pb }))
+    case 'api_addPhongBan':
+      return { ID: ++_nextId, ...args[1] }
+    case 'api_updatePhongBan':
+      return { success: true }
+    case 'api_deletePhongBan':
+      return { success: true }
     case 'api_getMailConfig':
       return { MAIL_ENABLED: 'FALSE' }
     case 'api_saveMailConfig':

@@ -15,6 +15,10 @@ const DEFAULT_TEMPLATES = {
     subject: '[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
   },
+  phatHanh: {
+    subject: '[SBM – Phát hành] {tênHồSơ}',
+    body: 'Kính gửi {tênNgườiNhận},\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}". {linkTàiLiệu}\n\n{ghiChú}\n\nVui lòng đăng nhập hệ thống để xem tại đây:\n{linkHệThống}',
+  },
 }
 
 const TEMPLATE_VARS = [
@@ -28,6 +32,7 @@ const TEMPLATE_VARS = [
   { key: '{linkTàiLiệu}', desc: 'Link file đính kèm (nhiều file = nhiều link)' },
   { key: '{ngàyBanHành}', desc: 'Ngày ban hành (dd/mm/yyyy)' },
   { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc (dd/mm/yyyy)' },
+  { key: '{ghiChú}', desc: 'Ghi chú của hồ sơ' },
 ]
 
 const TOP_TABS = [
@@ -272,6 +277,7 @@ export default function SettingsPage({ token, onCompanyNameChange, initialConfig
 const MAIL_TABS = [
   { key: 'trinhDuyet', label: 'Trình duyệt', icon: 'send', desc: 'Gửi cho Giám đốc khi có hồ sơ cần duyệt' },
   { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
+  { key: 'phatHanh', label: 'Phát hành', icon: 'campaign', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
 ]
 
 function MailTabs({ templates, onSetTpl }) {
