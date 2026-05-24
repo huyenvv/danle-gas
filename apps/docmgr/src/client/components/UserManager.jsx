@@ -6,13 +6,15 @@ import FormModal from './common/FormModal.jsx'
 import { selectCls, labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
 
-const ROLE_OPTIONS = ['admin', 'Giám đốc', 'Trưởng phòng', 'Nhân viên', 'Văn thư']
+const ROLE_OPTIONS = ['admin', 'Giám đốc', 'Phó GĐ', 'Trưởng phòng', 'Phó phòng', 'Nhân viên', 'Văn thư']
 const DIRECTOR_BLOCKED_ROLES = ['admin', 'Giám đốc']
 
 const ROLE_BADGE = {
   'admin':          'bg-primary/10 text-primary',
   'Giám đốc':      'bg-violet-100 text-violet-700',
+  'Phó GĐ':       'bg-violet-50 text-violet-600',
   'Trưởng phòng':  'bg-surface-container text-on-surface-variant',
+  'Phó phòng':     'bg-surface-container text-on-surface-variant',
   'Nhân viên':     'bg-surface-container text-on-surface-variant',
   'Văn thư':      'bg-cyan-100 text-cyan-700',
   'Quản trị viên': 'bg-primary/10 text-primary',

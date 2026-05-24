@@ -55,6 +55,7 @@ function validateAccessTokenCrossScript(parentSheetId, token) {
     name: headers.indexOf('Tên nhân viên'),
     status: headers.indexOf('Trạng thái'),
     dept: headers.indexOf('Phòng ban'),
+    chucVu: headers.indexOf('Chức vụ'),
     at: headers.indexOf('AccessToken'),
     exp: headers.indexOf('AccessTokenExpiry'),
   }
@@ -69,6 +70,7 @@ function validateAccessTokenCrossScript(parentSheetId, token) {
         email: data[i][col.email],
         name: data[i][col.name] || data[i][col.username] || '',
         department: data[i][col.dept] || '',
+        chucVu: col.chucVu !== -1 ? (data[i][col.chucVu] || 'Nhân viên') : 'Nhân viên',
       }
     }
   }

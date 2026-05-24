@@ -48,7 +48,8 @@ export default function UserManager() {
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
-  const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
+  const CHUC_VU_OPTIONS = ['Nhân viên', 'Phó phòng', 'Trưởng phòng', 'Phó GĐ', 'Giám đốc', 'Văn thư', 'admin']
+  const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '', 'Chức vụ': 'Nhân viên' })
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState(null)
   const [search, setSearch] = useState('')
@@ -71,7 +72,7 @@ export default function UserManager() {
       }
       setShowForm(false)
       setEditId(null)
-      setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' })
+      setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '', 'Chức vụ': 'Nhân viên' })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -82,7 +83,10 @@ export default function UserManager() {
 
   async function handleLock(userId, locked) {
     const action = locked ? 'mở khóa' : 'khóa'
-    if (!await confirm(`Bạn có chắc muốn ${action} tài khoản này?`)) return
+    const msg = locked
+      ? 'Mở khóa tài khoản này? Mật khẩu sẽ được reset về mặc định (Admin@@123).'
+      : 'Bạn có chắc muốn khóa tài khoản này?'
+    if (!await confirm(msg)) return
     try {
       if (locked) {
         await gasCall('api_unlockUser', localStorage.getItem('sso_access_token'), userId)
@@ -156,7 +160,7 @@ export default function UserManager() {
 
   function startEdit(user) {
     setEditId(user.ID)
-    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] })
+    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'], 'Chức vụ': user['Chức vụ'] || 'Nhân viên' })
     setShowForm(true)
   }
 
@@ -205,7 +209,7 @@ export default function UserManager() {
           />
         </div>
         <span className="text-sm text-on-surface-variant">{filtered.length} người dùng</span>
-        <button onClick={() => { setEditId(null); setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '' }); setShowForm(true) }}
+        <button onClick={() => { setEditId(null); setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '', 'Chức vụ': 'Nhân viên' }); setShowForm(true) }}
           className="ml-auto flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
           <Icon name="person_add" size={18} />
           Thêm người dùng
@@ -248,6 +252,7 @@ export default function UserManager() {
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Chức vụ</th>
                 {isOwner && <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quản trị</th>}
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Trạng thái</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Đăng nhập cuối</th>
@@ -256,7 +261,7 @@ export default function UserManager() {
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {filtered.length === 0 && (
-                <tr><td colSpan={isOwner ? 7 : 6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+                <tr><td colSpan={isOwner ? 8 : 7} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
               )}
               {filtered.map(u => (
                 <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
@@ -278,6 +283,11 @@ export default function UserManager() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-on-surface-variant">{u['Phòng ban'] || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                      {u['Chức vụ'] || 'Nhân viên'}
+                    </span>
+                  </td>
                   {isOwner && (
                     <td className="px-4 py-3 text-center">
                       <button onClick={() => handleToggleAdmin(u.ID, u['Quyền'])}
@@ -376,6 +386,14 @@ export default function UserManager() {
                     onChange={e => setFormData(f => ({ ...f, 'Phòng ban': e.target.value }))}
                     className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
                     placeholder="vd: Kỹ thuật" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Chức vụ</label>
+                  <select value={formData['Chức vụ']}
+                    onChange={e => setFormData(f => ({ ...f, 'Chức vụ': e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition">
+                    {CHUC_VU_OPTIONS.map(cv => <option key={cv} value={cv}>{cv}</option>)}
+                  </select>
                 </div>
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => { setShowForm(false); setEditId(null) }}

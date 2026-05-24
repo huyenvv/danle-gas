@@ -9,14 +9,13 @@ const PARENT_SHEET_KEY = 'sso_parent_sheet_id'
 
 let _refreshInFlight = null
 
-function _doRefresh() {
-  if (_refreshInFlight) return _refreshInFlight
-  const rt = localStorage.getItem(REFRESH_KEY)
-  if (!rt) return Promise.reject(new Error('TOKEN_REVOKED'))
-  _refreshInFlight = new Promise((resolve, reject) => {
+// Token errors that should NOT be retried (genuine auth failures)
+const _FATAL_TOKEN_ERRORS = ['TOKEN_REVOKED', 'USER_LOCKED']
+
+function _doRefreshOnce(rt) {
+  return new Promise((resolve, reject) => {
     google.script.run
       .withSuccessHandler(res => {
-        _refreshInFlight = null
         if (res && res.success) {
           const p = res.payload
           localStorage.setItem(ACCESS_KEY, p.accessToken)
@@ -25,18 +24,38 @@ function _doRefresh() {
           if (p.parentSheetId) localStorage.setItem(PARENT_SHEET_KEY, p.parentSheetId)
           resolve(p.accessToken)
         } else {
-          localStorage.removeItem(ACCESS_KEY)
-          localStorage.removeItem(REFRESH_KEY)
-          localStorage.removeItem(USER_KEY)
-          reject(new Error((res && res.error) || 'TOKEN_REVOKED'))
+          const errMsg = (res && res.error) || 'TOKEN_REVOKED'
+          reject(new Error(errMsg))
         }
       })
-      .withFailureHandler(err => {
-        _refreshInFlight = null
-        reject(err)
-      })
+      .withFailureHandler(err => reject(err))
       .api_resume(rt)
   })
+}
+
+function _doRefresh() {
+  if (_refreshInFlight) return _refreshInFlight
+  const rt = localStorage.getItem(REFRESH_KEY)
+  if (!rt) return Promise.reject(new Error('TOKEN_REVOKED'))
+  _refreshInFlight = _doRefreshOnce(rt).catch(err => {
+    // Fatal token errors — don't retry
+    if (_FATAL_TOKEN_ERRORS.includes(err.message)) {
+      localStorage.removeItem(ACCESS_KEY)
+      localStorage.removeItem(REFRESH_KEY)
+      localStorage.removeItem(USER_KEY)
+      throw err
+    }
+    // Transient error (network not ready after wake) — retry once after 2s
+    return new Promise(r => setTimeout(r, 2000)).then(() => _doRefreshOnce(rt))
+  }).catch(err => {
+    // Final failure — clean up if token error
+    if (_FATAL_TOKEN_ERRORS.includes(err.message)) {
+      localStorage.removeItem(ACCESS_KEY)
+      localStorage.removeItem(REFRESH_KEY)
+      localStorage.removeItem(USER_KEY)
+    }
+    throw err
+  }).finally(() => { _refreshInFlight = null })
   return _refreshInFlight
 }
 
@@ -88,9 +107,9 @@ let _mockSession = null
 let _nextId = 10
 
 const _mockUsers = [
-  { ID: 1, 'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com', 'Tên nhân viên': '', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '', 'Quyền': 'Quản trị' },
-  { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv.it@gmail.com', 'Tên nhân viên': 'Vũ Văn Huyên', 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kỹ thuật', 'Quyền': '' },
-  { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Tên nhân viên': 'Nguyễn Văn A', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '' },
+  { ID: 1, 'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com', 'Tên nhân viên': '', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '', 'Quyền': 'Quản trị', 'Chức vụ': 'admin', 'FailedLogins': 0 },
+  { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv.it@gmail.com', 'Tên nhân viên': 'Vũ Văn Huyên', 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kỹ thuật', 'Quyền': '', 'Chức vụ': 'Trưởng phòng', 'FailedLogins': 0 },
+  { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Tên nhân viên': 'Nguyễn Văn A', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '', 'Chức vụ': 'Nhân viên', 'FailedLogins': 0 },
 ]
 
 const _mockApps = [
@@ -106,19 +125,22 @@ async function mockCall(fn, ...args) {
     case 'api_login': {
       const [email, password] = args
       const loginEmail = (email || '').toLowerCase()
-      if (loginEmail === 'admin@test.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 1, username: 'admin@test.com', email: 'admin@test.com', displayName: 'admin@test.com', role: 'admin', isOwner: true, mustChangePass: false, ssoToken: 'mock-sso-token' }
-        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
+      const mockUser = _mockUsers.find(u => u['Email'].toLowerCase() === loginEmail)
+      if (!mockUser) throw new Error('Email hoặc mật khẩu không đúng')
+      if (mockUser['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
+      if (password !== 'Admin@@123') {
+        mockUser['FailedLogins'] = (mockUser['FailedLogins'] || 0) + 1
+        if (mockUser['FailedLogins'] >= 5) {
+          mockUser['Trạng thái'] = 'Locked'
+          throw new Error('Tài khoản đã bị khóa do nhập sai mật khẩu quá 5 lần. Liên hệ quản trị viên.')
+        }
+        throw new Error('Email hoặc mật khẩu không đúng')
       }
-      if (loginEmail === 'huyenvv.it@gmail.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 2, username: 'huyenvv', email: 'huyenvv.it@gmail.com', displayName: 'Vũ Văn Huyên', role: 'user', isOwner: false, mustChangePass: true, ssoToken: 'mock-sso-token-2' }
-        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
-      }
-      if (loginEmail === 'nv1@test.com' && password === 'Admin@@123') {
-        _mockSession = { userId: 3, username: 'nhanvien1', email: 'nv1@test.com', displayName: 'Nguyễn Văn A', role: 'user', isOwner: false, mustChangePass: false, ssoToken: 'mock-sso-token-3' }
-        return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
-      }
-      throw new Error('Email hoặc mật khẩu không đúng')
+      mockUser['FailedLogins'] = 0
+      const isOwner = mockUser['Email'] === 'admin@test.com'
+      const isAdmin = isOwner || mockUser['Quyền'] === 'Quản trị'
+      _mockSession = { userId: mockUser.ID, username: mockUser['Tên đăng nhập'], email: mockUser['Email'], displayName: mockUser['Tên nhân viên'] || mockUser['Email'], role: isAdmin ? 'admin' : 'user', isOwner, mustChangePass: mockUser['MustChangePass'] === 'TRUE', ssoToken: 'mock-sso-token-' + mockUser.ID }
+      return { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token', user: { ..._mockSession }, parentSheetId: 'mock-sheet-id' }
     }
     case 'api_logout':
       _mockSession = null
@@ -140,8 +162,13 @@ async function mockCall(fn, ...args) {
       return { success: true }
     case 'api_adminResetPassword':
     case 'api_lockUser':
-    case 'api_unlockUser':
       return { success: true }
+    case 'api_unlockUser': {
+      const targetId = args[1]
+      const target = _mockUsers.find(u => String(u.ID) === String(targetId))
+      if (target) { target['Trạng thái'] = 'Active'; target['FailedLogins'] = 0; target['MustChangePass'] = 'TRUE' }
+      return { success: true }
+    }
     case 'api_getUsers': {
       // Mock visibility: owner hidden, admins hide each other
       const isOwner = _mockSession?.isOwner
@@ -152,7 +179,7 @@ async function mockCall(fn, ...args) {
       }).map(u => ({ ...u }))
     }
     case 'api_addUser':
-      return { ID: ++_nextId, ...args[1], 'Trạng thái': 'Active', 'MustChangePass': 'TRUE' }
+      return { ID: ++_nextId, ...args[1], 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Chức vụ': args[1]['Chức vụ'] || 'Nhân viên', 'FailedLogins': 0 }
     case 'api_updateUser':
       return { success: true }
     case 'api_getApps':

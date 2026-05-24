@@ -95,11 +95,14 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
     var appRole = roles.find(function(r) {
       return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
     })
+    // Chức vụ from SSO — sync every login
+    var ssoChucVu = ssoUser.chucVu || 'Nhân viên'
+
     if (!appRole) {
       var ownerEmail = ''
       try { ownerEmail = getCentralSheet().getOwner().getEmail() } catch(oe) {}
       var autoRole = (userRow['Email'] && ownerEmail &&
-        String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : 'Nhân viên'
+        String(userRow['Email']).toLowerCase() === ownerEmail.toLowerCase()) ? 'admin' : ssoChucVu
       addRow(SHEETS.APP_ROLES, {
         'UserID': userRow['ID'],
         'Tên đăng nhập': userRow['Tên đăng nhập'],
@@ -112,6 +115,10 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
       appRole = roles.find(function(r) {
         return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
       })
+    } else if (appRole['Quyền'] !== 'admin' && appRole['Quyền'] !== ssoChucVu) {
+      // Sync role from SSO (admin role is never overwritten)
+      updateRow(SHEETS.APP_ROLES, appRole['ID'], { 'Quyền': ssoChucVu })
+      appRole['Quyền'] = ssoChucVu
     }
 
     var tokens = _mintTokensForUser(userRow, appRole, deviceType)

@@ -6,11 +6,18 @@ function login(email, password, deviceType) {
 
   if (!user) throw new Error('Email hoặc mật khẩu không đúng')
   if (user['Trạng thái'] === 'Locked') throw new Error('Tài khoản đã bị khóa. Liên hệ quản trị viên.')
+
+  var failedCount = Number(user['FailedLogins']) || 0
   if (!_verifyPassword(user['Tên đăng nhập'], password, user['Mật khẩu'])) {
+    failedCount++
+    var updates = { 'FailedLogins': failedCount }
+    if (failedCount >= 5) updates['Trạng thái'] = 'Locked'
+    updateRow(SHEETS.USERS, user['ID'], updates)
+    if (failedCount >= 5) throw new Error('Tài khoản đã bị khóa do nhập sai mật khẩu quá 5 lần. Liên hệ quản trị viên.')
     throw new Error('Email hoặc mật khẩu không đúng')
   }
 
-  updateRow(SHEETS.USERS, user['ID'], { 'Đăng nhập cuối': now() })
+  updateRow(SHEETS.USERS, user['ID'], { 'Đăng nhập cuối': now(), 'FailedLogins': 0 })
 
   var ownerEmail = ''
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
@@ -131,7 +138,16 @@ function portalLockUser(token, targetUserId) {
 
 function portalUnlockUser(token, targetUserId) {
   requireAdmin(token)
-  updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Active' })
+  var users = getSheetData(SHEETS.USERS)
+  var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
+  if (!user) throw new Error('Không tìm thấy tài khoản')
+  var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
+  updateRow(SHEETS.USERS, targetUserId, {
+    'Trạng thái': 'Active',
+    'FailedLogins': 0,
+    'Mật khẩu': newHash,
+    'MustChangePass': 'TRUE',
+  })
   return { success: true }
 }
 
@@ -160,6 +176,7 @@ function getUsers(token) {
       'Đăng nhập cuối': u['Đăng nhập cuối'],
       'Phòng ban': u['Phòng ban'] || '',
       'Quyền': u['Quyền'] || '',
+      'Chức vụ': u['Chức vụ'] || 'Nhân viên',
     }
   })
 }
@@ -195,6 +212,7 @@ function addUser(token, data) {
     'Đăng nhập cuối': '',
     'Phòng ban': data['Phòng ban'] || '',
     'Quyền': data['Quyền'] || '',
+    'Chức vụ': data['Chức vụ'] || 'Nhân viên',
   }
   var added = addRow(SHEETS.USERS, userData)
 
@@ -215,6 +233,7 @@ function updateUser(token, id, data) {
   if (data['Tên nhân viên'] !== undefined) updateData['Tên nhân viên'] = data['Tên nhân viên']
   if (data['Phòng ban'] !== undefined) updateData['Phòng ban'] = data['Phòng ban']
   if (data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
+  if (data['Chức vụ'] !== undefined) updateData['Chức vụ'] = data['Chức vụ']
   if (Object.keys(updateData).length > 0) updateRow(SHEETS.USERS, id, updateData)
   return { success: true }
 }
