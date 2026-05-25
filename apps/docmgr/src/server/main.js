@@ -11,6 +11,7 @@ function _buildSessionFromRows(userRow, roleRow) {
   var perms = getPermissions(roleRow)
   var canCreate = (perms && perms.hoSo && perms.hoSo.c) || roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
   var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
+  var canPublish = roleRow['Được phát hành'] === 'TRUE' || roleRow['Được phát hành'] === true
 
   return {
     userId: userRow['ID'],
@@ -22,6 +23,7 @@ function _buildSessionFromRows(userRow, roleRow) {
     permissions: perms,
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
+    canPublish: !!canPublish,
   }
 }
 
@@ -185,6 +187,21 @@ function api_resume(refreshToken) {
     if (userInfo['Trạng thái'] === 'Locked') {
       revokeRefreshToken(SHEETS.APP_ROLES, roleRow['ID'], refreshToken)
       throw new Error('USER_LOCKED')
+    }
+
+    // Sync role from SSO parent on every resume (admin is never overwritten)
+    if (roleRow['Quyền'] !== 'admin') {
+      var ssoChucVu = userInfo['Chức vụ'] || 'Nhân viên'
+      try {
+        var deptRole = _getDeptRole(parentSs, roleRow['UserID'])
+        if (deptRole && (_ROLE_RANK[deptRole] || 0) > (_ROLE_RANK[ssoChucVu] || 0)) {
+          ssoChucVu = deptRole
+        }
+      } catch(_) {}
+      if (roleRow['Quyền'] !== ssoChucVu) {
+        updateRow(SHEETS.APP_ROLES, roleRow['ID'], { 'Quyền': ssoChucVu })
+        roleRow['Quyền'] = ssoChucVu
+      }
     }
 
     var sessionData = _buildSessionFromRows(userInfo, roleRow)
@@ -531,6 +548,7 @@ function api_getUsers(token) {
           'Phân quyền chi tiết': appRole ? (appRole['Phân quyền chi tiết'] || '') : '',
           'Được tạo hồ sơ': appRole && (appRole['Được tạo hồ sơ'] === true || appRole['Được tạo hồ sơ'] === 'TRUE') ? 'TRUE' : '',
           'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
+          'Được phát hành': appRole && (appRole['Được phát hành'] === true || appRole['Được phát hành'] === 'TRUE') ? 'TRUE' : '',
           'Phòng ban': u['Phòng ban'] || '',
         }
       })
@@ -580,6 +598,7 @@ function api_updateUser(token, id, data) {
     if (data['permissions'] !== undefined) roleUpdates['Phân quyền chi tiết'] = JSON.stringify(data['permissions'])
     if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
     if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
+    if (data['Được phát hành'] !== undefined) roleUpdates['Được phát hành'] = data['Được phát hành'] ? 'TRUE' : ''
     if (existing) {
       updateRow(SHEETS.APP_ROLES, existing['ID'], roleUpdates)
     } else {

@@ -3,9 +3,15 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
 
-// Dev mode: simulate SSO token injection so AuthContext can initialize
-if (import.meta.env.DEV && !window.__SSO_TOKEN__) {
-  window.__SSO_TOKEN__ = 'dev-mock-token'
+// Dev mode: read SSO token from URL params (simulates server-side doGet injection)
+if (import.meta.env.DEV) {
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('token')
+  const parent = params.get('parent')
+  if (token) {
+    window.__SSO_TOKEN__ = token
+    window.__SSO_PARENT__ = parent || ''
+  }
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(

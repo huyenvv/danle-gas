@@ -3,10 +3,9 @@ import gasCall from '../gasClient.js'
 import { viMatch } from '../utils/viSearch.js'
 import Icon from './common/Icon.jsx'
 import FormModal from './common/FormModal.jsx'
-import { selectCls, labelCls, fieldCls } from './common/formStyles.js'
+import { labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
 
-const ROLE_OPTIONS = ['admin', 'Giám đốc', 'Phó GĐ', 'Trưởng phòng', 'Phó phòng', 'Nhân viên', 'Văn thư']
 const DIRECTOR_BLOCKED_ROLES = ['admin', 'Giám đốc']
 
 const ROLE_BADGE = {
@@ -59,6 +58,7 @@ export default function UserManager({ token, session }) {
   const [perms, setPerms]     = useState(defaultPerms())
   const [canCreateDoc, setCanCreateDoc] = useState(false)
   const [canCreateSubCat, setCanCreateSubCat] = useState(false)
+  const [canPublish, setCanPublish] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
@@ -86,18 +86,12 @@ export default function UserManager({ token, session }) {
     setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
     setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
     setCanCreateSubCat(user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true)
+    setCanPublish(user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true)
     setFormError('')
     setModal({ user })
   }
 
   function closeModal() { setModal(null); setFormError('') }
-
-  function handleRoleChange(newRole) {
-    setRole(newRole)
-    if (newRole === 'admin' || newRole === 'Giám đốc' || newRole === 'Quản trị viên') setPerms(fullPerms())
-    else if (newRole === 'Văn thư') setPerms(Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }])))
-    else setPerms(defaultPerms())
-  }
 
   function togglePerm(mod, op) {
     if (role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên') return
@@ -105,16 +99,13 @@ export default function UserManager({ token, session }) {
   }
 
   async function handleSave() {
-    if (!role) { setFormError('Vui lòng chọn quyền'); return }
     setSaving(true); setFormError('')
-    const isFullAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
-    const finalPerms = isFullAdmin ? fullPerms() : perms
     try {
       await gasCall('api_updateUser', token, modal.user.ID, {
         'Tên đăng nhập': modal.user['Tên đăng nhập'],
-        'Quyền': role,
         'Được tạo hồ sơ': canCreateDoc,
         'Được tạo danh mục con': canCreateSubCat,
+        'Được phát hành': canPublish,
       })
       closeModal()
       showToast('Đã lưu phân quyền', 'success')
@@ -147,10 +138,6 @@ export default function UserManager({ token, session }) {
 
   const avatar = (name) => (name || '?')[0].toUpperCase()
   const isAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
-  const availableRoleOptions = session?.role === 'Giám đốc'
-    ? ROLE_OPTIONS.filter(r => DIRECTOR_BLOCKED_ROLES.indexOf(r) === -1)
-    : ROLE_OPTIONS
-
   function canManage(user) {
     if (session?.role !== 'Giám đốc') return true
     if (String(user.ID) === String(session.userId)) return false
@@ -330,10 +317,12 @@ export default function UserManager({ token, session }) {
             </div>
 
             <div className={fieldCls}>
-              <label className={labelCls}>Quyền</label>
-              <select className={selectCls} value={role} onChange={e => handleRoleChange(e.target.value)}>
-                {availableRoleOptions.map(r => <option key={r}>{r}</option>)}
-              </select>
+              <label className={labelCls}>Vai trò (từ SSO)</label>
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface-container-low text-sm text-on-surface">
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[role] || ROLE_BADGE['Xem']}`}>
+                  {role}
+                </span>
+              </div>
             </div>
 
             {/* Được tạo hồ sơ / danh mục con — only for Nhân viên & Trưởng phòng */}
@@ -356,6 +345,15 @@ export default function UserManager({ token, session }) {
                     Được tạo danh mục con
                   </label>
                   <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo danh mục con</span>
+                </div>
+                <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                  <input type="checkbox" id="canPublish" checked={canPublish}
+                    onChange={e => setCanPublish(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                  <label htmlFor="canPublish" className="text-sm text-on-surface cursor-pointer select-none">
+                    Được phát hành
+                  </label>
+                  <span className="text-xs text-on-surface-variant ml-auto">{canCreateDoc ? 'Phát hành ngay từ mọi trạng thái' : 'Phát hành khi hoàn thành'}</span>
                 </div>
               </>
             )}

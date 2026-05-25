@@ -68,6 +68,15 @@ export function AuthProvider({ children }) {
       return
     }
 
+    // Dev mode: auto-login with mock when no SSO token and no refresh token
+    if (import.meta.env.DEV) {
+      localStorage.setItem(REFRESH_KEY, 'dev-auto')
+      gasCall('api_resume', 'dev-auto')
+        .then(_storeSession)
+        .catch(err => _fail(err.message))
+      return
+    }
+
     setAccessDenied(true)
     setAccessError('Vui lòng truy cập qua SSO Portal.')
     setLoading(false)

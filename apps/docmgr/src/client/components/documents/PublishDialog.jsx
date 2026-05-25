@@ -1,20 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 
-function RecipientColumn({ label, users, phongBan, selectedIds, onChange }) {
+function RecipientColumn({ label, users, phongBan, assignments, selectedIds, onChange }) {
   const [search, setSearch] = useState('')
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const dropdownRef = useRef(null)
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
-  // Department checkbox state: { deptId: { all: bool, leadersOnly: bool } }
-  const [deptChecks, setDeptChecks] = useState({})
+  // Department checkbox state: { deptId: { leadersOnly: bool } }
+  const [deptOpts, setDeptOpts] = useState({})
 
   function toggleUser(userId) {
     const next = new Set(selectedIds)
@@ -23,170 +12,212 @@ function RecipientColumn({ label, users, phongBan, selectedIds, onChange }) {
     onChange(next)
   }
 
-  function getDeptUsers(dept) {
-    const deptName = dept['Tên phòng ban']
-    return users.filter(u => u['Phòng ban'] === deptName)
+  // Get user IDs that belong to a dept (from assignments)
+  function getDeptUserIds(deptId) {
+    return (assignments || [])
+      .filter(a => String(a['PhongBanID']) === String(deptId))
+      .map(a => String(a['UserID']))
   }
 
-  function getDeptLeaderIds(dept) {
-    const ids = []
-    if (dept['Trưởng']) ids.push(String(dept['Trưởng']))
-    if (dept['Phó']) {
-      try {
-        const arr = typeof dept['Phó'] === 'string' ? JSON.parse(dept['Phó']) : dept['Phó']
-        if (Array.isArray(arr)) arr.forEach(id => ids.push(String(id)))
-      } catch (_) {}
-    }
-    return ids
+  function getDeptUsers(deptId) {
+    const ids = new Set(getDeptUserIds(deptId))
+    return users.filter(u => ids.has(String(u.ID)))
   }
 
-  function hasDeptLeaders(dept) {
-    return getDeptLeaderIds(dept).length > 0 && getDeptUsers(dept).length > getDeptLeaderIds(dept).length
+  // Leaders = Trưởng phòng + Phó phòng from assignments
+  function getDeptLeaderIds(deptId) {
+    return (assignments || [])
+      .filter(a => String(a['PhongBanID']) === String(deptId) && (a['Chức vụ'] === 'Trưởng phòng' || a['Chức vụ'] === 'Phó phòng'))
+      .map(a => String(a['UserID']))
+  }
+
+  function hasDeptLeaders(deptId) {
+    return getDeptLeaderIds(deptId).length > 0 && getDeptUsers(deptId).length > getDeptLeaderIds(deptId).length
   }
 
   function handleDeptToggle(dept) {
-    const deptId = dept.ID
-    const isChecked = deptChecks[deptId]?.all
-    const leadersOnly = deptChecks[deptId]?.leadersOnly || false
-    const next = new Set(selectedIds)
+    const deptUsers = getDeptUsers(dept.ID)
+    const leadersOnly = deptOpts[dept.ID]?.leadersOnly || false
+    const leaderIds = getDeptLeaderIds(dept.ID)
+    const targetUsers = leadersOnly
+      ? deptUsers.filter(u => leaderIds.includes(String(u.ID)))
+      : deptUsers
+    const targetIds = targetUsers.map(u => String(u.ID))
+    const allSelected = targetIds.length > 0 && targetIds.every(id => selectedIds.has(id))
 
-    if (isChecked) {
-      // Uncheck — remove dept users
-      const deptUserIds = getDeptUsers(dept).map(u => String(u.ID))
-      deptUserIds.forEach(id => next.delete(id))
-      setDeptChecks(prev => ({ ...prev, [deptId]: { all: false, leadersOnly: false } }))
+    const next = new Set(selectedIds)
+    if (allSelected) {
+      targetIds.forEach(id => next.delete(id))
     } else {
-      // Check — add users based on leadersOnly
-      const deptUsers = getDeptUsers(dept)
-      const leaderIds = getDeptLeaderIds(dept)
-      const idsToAdd = leadersOnly
-        ? deptUsers.filter(u => leaderIds.includes(String(u.ID))).map(u => String(u.ID))
-        : deptUsers.map(u => String(u.ID))
-      idsToAdd.forEach(id => next.add(id))
-      setDeptChecks(prev => ({ ...prev, [deptId]: { all: true, leadersOnly } }))
+      targetIds.forEach(id => next.add(id))
     }
     onChange(next)
   }
 
   function handleLeadersOnlyToggle(dept) {
     const deptId = dept.ID
-    const wasLeadersOnly = deptChecks[deptId]?.leadersOnly || false
-    const isDeptChecked = deptChecks[deptId]?.all || false
+    const wasLeadersOnly = deptOpts[deptId]?.leadersOnly || false
     const newLeadersOnly = !wasLeadersOnly
+    setDeptOpts(prev => ({ ...prev, [deptId]: { ...prev[deptId], leadersOnly: newLeadersOnly } }))
 
-    setDeptChecks(prev => ({ ...prev, [deptId]: { ...prev[deptId], leadersOnly: newLeadersOnly } }))
-
-    if (isDeptChecked) {
-      // Re-calculate which users to include
+    // If dept has selected users, re-calculate
+    const deptUsers = getDeptUsers(deptId)
+    const deptUserIds = deptUsers.map(u => String(u.ID))
+    const hasAnySelected = deptUserIds.some(id => selectedIds.has(id))
+    if (hasAnySelected) {
+      const leaderIds = getDeptLeaderIds(deptId)
       const next = new Set(selectedIds)
-      const deptUsers = getDeptUsers(dept)
-      const leaderIds = getDeptLeaderIds(dept)
-
-      // Remove all dept users first
-      deptUsers.forEach(u => next.delete(String(u.ID)))
-      // Add back based on new filter
+      deptUserIds.forEach(id => next.delete(id))
       const idsToAdd = newLeadersOnly
         ? deptUsers.filter(u => leaderIds.includes(String(u.ID))).map(u => String(u.ID))
-        : deptUsers.map(u => String(u.ID))
+        : deptUserIds
       idsToAdd.forEach(id => next.add(id))
       onChange(next)
     }
   }
 
-  // Selected users for display as chips
-  const selectedUsers = users.filter(u => selectedIds.has(String(u.ID)))
+  // Group users by department using assignments (multi-dept: user appears in each dept they're assigned to)
+  function groupByDept() {
+    const depts = phongBan || []
+    const allAssignments = assignments || []
+    const groups = []
 
-  // Filtered users for dropdown
-  const filteredDropdown = users.filter(u => {
-    if (selectedIds.has(String(u.ID))) return false
-    if (!search) return true
-    const name = (u['Tên nhân viên'] || '').toLowerCase()
-    const email = (u['Email'] || '').toLowerCase()
-    return name.includes(search.toLowerCase()) || email.includes(search.toLowerCase())
-  })
+    // Each department from _Phòng Ban
+    depts.forEach(dept => {
+      const deptUserIds = new Set(getDeptUserIds(dept.ID))
+      const deptUsers = users.filter(u => deptUserIds.has(String(u.ID)))
+      if (deptUsers.length > 0) {
+        groups.push({ name: dept['Tên phòng ban'], users: deptUsers, dept })
+      }
+    })
+
+    // Company-level assignments (no PhongBanID)
+    const companyUserIds = new Set(
+      allAssignments
+        .filter(a => !a['PhongBanID'] || a['PhongBanID'] === '')
+        .map(a => String(a['UserID']))
+    )
+    // Unassigned: users with no assignment at all
+    const assignedIds = new Set(allAssignments.map(a => String(a['UserID'])))
+    const unassigned = users.filter(u => !assignedIds.has(String(u.ID)) && !companyUserIds.has(String(u.ID)))
+
+    // Company-level users not in any dept
+    const companyOnlyUsers = users.filter(u => companyUserIds.has(String(u.ID)) && !groups.some(g => g.users.some(gu => String(gu.ID) === String(u.ID))))
+    if (companyOnlyUsers.length > 0) {
+      groups.unshift({ name: 'Ban lãnh đạo', users: companyOnlyUsers, dept: null })
+    }
+
+    if (unassigned.length > 0) {
+      groups.push({ name: 'Chưa phân phòng', users: unassigned, dept: null })
+    }
+
+    return groups
+  }
+
+  // Filter by search
+  const q = search.toLowerCase()
+  const groups = groupByDept().map(g => {
+    if (!q) return g
+    const filtered = g.users.filter(u => {
+      const name = (u['Tên nhân viên'] || '').toLowerCase()
+      const email = (u['Email'] || '').toLowerCase()
+      return name.includes(q) || email.includes(q)
+    })
+    return { ...g, users: filtered }
+  }).filter(g => g.users.length > 0)
 
   return (
-    <div className="flex-1 min-w-0">
+    <div className="flex-1 min-w-0 flex flex-col">
       <p className="text-xs font-semibold text-on-surface-variant mb-2 uppercase tracking-wide">{label}</p>
 
-      {/* Multi-select dropdown */}
-      <div className="relative" ref={dropdownRef}>
-        <div
-          className="w-full bg-surface-container-low rounded-xl px-3 py-2 min-h-[40px] flex flex-wrap gap-1.5 items-center cursor-text border border-transparent focus-within:ring-2 focus-within:ring-primary/20"
-          onClick={() => setDropdownOpen(true)}
-        >
-          {selectedUsers.map(u => (
-            <span key={u.ID} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
-              {u['Tên nhân viên'] || u['Tên đăng nhập']}
-              <button type="button" onClick={e => { e.stopPropagation(); toggleUser(String(u.ID)) }}
-                className="hover:text-error transition-colors">
-                <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
-              </button>
-            </span>
-          ))}
-          <input
-            className="flex-1 min-w-[80px] bg-transparent text-sm focus:outline-none text-on-surface"
-            placeholder={selectedUsers.length ? '' : 'Chọn người...'}
-            value={search}
-            onChange={e => { setSearch(e.target.value); setDropdownOpen(true) }}
-            onFocus={() => setDropdownOpen(true)}
-          />
-        </div>
-
-        {dropdownOpen && filteredDropdown.length > 0 && (
-          <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-outline-variant rounded-xl shadow-md3-3 max-h-40 overflow-y-auto">
-            {filteredDropdown.map(u => {
-              const name = u['Tên nhân viên'] || u['Tên đăng nhập']
-              const email = u['Email'] || ''
-              return (
-                <button key={u.ID} type="button"
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-primary/5 flex items-center gap-2"
-                  onClick={() => { toggleUser(String(u.ID)); setSearch('') }}>
-                  <span className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                    {name.charAt(0).toUpperCase()}
-                  </span>
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-on-surface truncate">{name}</span>
-                    {email && <span className="block text-on-surface-variant text-xs truncate">{email}</span>}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
+      {/* Search */}
+      <div className="relative mb-2">
+        <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 16 }}>search</span>
+        <input
+          className="w-full bg-surface-container-low border-none rounded-xl pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          placeholder="Tìm kiếm..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
       </div>
 
-      {/* Department checkboxes */}
-      <div className="mt-3 space-y-1.5 max-h-[240px] overflow-y-auto">
-        {phongBan.map(dept => {
-          const deptId = dept.ID
-          const isChecked = deptChecks[deptId]?.all || false
-          const leadersOnly = deptChecks[deptId]?.leadersOnly || false
-          const showLeadersToggle = hasDeptLeaders(dept)
+      {/* Grouped checkbox list */}
+      <div className="border border-outline-variant/40 rounded-xl overflow-hidden flex-1 overflow-y-auto max-h-[320px]">
+        {groups.map(group => {
+          const deptUserIds = group.users.map(u => String(u.ID))
+          const leadersOnly = group.dept ? (deptOpts[group.dept.ID]?.leadersOnly || false) : false
+          const leaderIds = group.dept ? getDeptLeaderIds(group.dept.ID) : []
+          const targetIds = leadersOnly
+            ? deptUserIds.filter(id => leaderIds.includes(id))
+            : deptUserIds
+          const selectedCount = targetIds.filter(id => selectedIds.has(id)).length
+          const allSelected = targetIds.length > 0 && selectedCount === targetIds.length
+          const someSelected = selectedCount > 0 && !allSelected
+          const showLeadersToggle = group.dept && hasDeptLeaders(group.dept.ID)
 
           return (
-            <div key={deptId} className="flex items-center gap-2 text-sm">
-              <label className="flex items-center gap-1.5 cursor-pointer min-w-0 flex-1">
-                <input type="checkbox" checked={isChecked} onChange={() => handleDeptToggle(dept)}
-                  className="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary/20 accent-primary cursor-pointer" />
-                <span className="text-on-surface truncate">{dept['Tên phòng ban']}</span>
-              </label>
-              {showLeadersToggle && (
-                <label className="flex items-center gap-1 cursor-pointer text-xs text-on-surface-variant whitespace-nowrap">
-                  <input type="checkbox" checked={leadersOnly} onChange={() => handleLeadersOnlyToggle(dept)}
-                    className="w-3.5 h-3.5 rounded border-outline-variant text-secondary focus:ring-secondary/20 accent-secondary cursor-pointer" />
-                  <span>Chỉ T,P</span>
-                </label>
-              )}
+            <div key={group.name}>
+              {/* Department header */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-surface-container-low border-b border-outline-variant/30">
+                <input type="checkbox"
+                  checked={allSelected}
+                  ref={el => { if (el) el.indeterminate = someSelected }}
+                  onChange={() => group.dept && handleDeptToggle(group.dept)}
+                  disabled={!group.dept}
+                  className="w-4 h-4 rounded border-outline-variant accent-primary cursor-pointer" />
+                <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide flex-1 min-w-0 truncate">{group.name}</span>
+                {showLeadersToggle && (
+                  <label className="flex items-center gap-1 cursor-pointer text-[10px] text-on-surface-variant whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={leadersOnly}
+                      onChange={() => handleLeadersOnlyToggle(group.dept)}
+                      className="w-3 h-3 rounded border-outline-variant accent-secondary cursor-pointer" />
+                    <span>Chỉ T,P</span>
+                  </label>
+                )}
+                <span className="text-[10px] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">
+                  {selectedCount}/{targetIds.length}
+                </span>
+              </div>
+              {/* Users */}
+              {group.users.map(u => {
+                const uid = String(u.ID)
+                const checked = selectedIds.has(uid)
+                const name = u['Tên nhân viên'] || u['Tên đăng nhập'] || u['Email']
+                return (
+                  <label key={u.ID}
+                    className={`flex items-center gap-2.5 px-3 py-1.5 cursor-pointer transition-colors border-b border-outline-variant/20 last:border-b-0
+                      ${checked ? 'bg-primary/5' : 'hover:bg-surface-container-low/50'}`}>
+                    <input type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleUser(uid)}
+                      className="w-4 h-4 rounded border-outline-variant accent-primary cursor-pointer" />
+                    <span className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <span className="text-[10px] font-bold text-primary">{name.charAt(0).toUpperCase()}</span>
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-on-surface truncate">{name}</p>
+                      {u['Email'] && <p className="text-[11px] text-on-surface-variant truncate">{u['Email']}</p>}
+                    </div>
+                  </label>
+                )
+              })}
             </div>
           )
         })}
+        {groups.length === 0 && (
+          <div className="px-3 py-6 text-center text-on-surface-variant text-sm">Không tìm thấy</div>
+        )}
       </div>
+
+      {/* Summary */}
+      <p className="text-xs text-on-surface-variant text-center mt-2">
+        Đã chọn {selectedIds.size} người
+      </p>
     </div>
   )
 }
 
-export default function PublishDialog({ users, phongBan, onPublish, onClose, loading }) {
+export default function PublishDialog({ users, phongBan, assignments, onPublish, onClose, loading }) {
   const [toIds, setToIds] = useState(new Set())
   const [ccIds, setCcIds] = useState(new Set())
   const [error, setError] = useState('')
@@ -227,6 +258,7 @@ export default function PublishDialog({ users, phongBan, onPublish, onClose, loa
               label="Người nhận:"
               users={users}
               phongBan={phongBan}
+              assignments={assignments}
               selectedIds={toIds}
               onChange={setToIds}
             />
@@ -235,6 +267,7 @@ export default function PublishDialog({ users, phongBan, onPublish, onClose, loa
               label="CC:"
               users={users}
               phongBan={phongBan}
+              assignments={assignments}
               selectedIds={ccIds}
               onChange={setCcIds}
             />

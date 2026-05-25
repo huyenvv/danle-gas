@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useAuth } from '../context/AuthContext.jsx'
 import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
@@ -43,20 +42,16 @@ function StatCard({ icon, label, value, color }) {
 }
 
 export default function UserManager() {
-  const { session } = useAuth()
-  const { users, phongBan, sync } = usePortalData()
+  const { users, phongBan, assignments, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
-  const CHUC_VU_OPTIONS = ['Nhân viên', 'Phó phòng', 'Trưởng phòng', 'Phó GĐ', 'Giám đốc', 'Văn thư', 'admin']
-  const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '', 'Chức vụ': 'Nhân viên' })
+  const [formData, setFormData] = useState({ 'Email': '', 'Tên nhân viên': '' })
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState(null)
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkResetting, setBulkResetting] = useState(false)
-
-  const isOwner = session.isOwner === true
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -72,7 +67,7 @@ export default function UserManager() {
       }
       setShowForm(false)
       setEditId(null)
-      setFormData({ 'Email': '', 'Tên nhân viên': '', 'Phòng ban': '', 'Chức vụ': 'Nhân viên' })
+      setFormData({ 'Email': '', 'Tên nhân viên': '' })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -145,22 +140,9 @@ export default function UserManager() {
     })
   }
 
-  async function handleToggleAdmin(userId, currentQuyen) {
-    const newQuyen = currentQuyen === 'Quản trị' ? '' : 'Quản trị'
-    const action = newQuyen ? 'cấp quyền Quản trị cho' : 'thu hồi quyền Quản trị của'
-    if (!await confirm(`${action} tài khoản này?`)) return
-    try {
-      await gasCall('api_updateUser', localStorage.getItem('sso_access_token'), userId, { 'Quyền': newQuyen })
-      addToast(newQuyen ? 'Đã cấp quyền Quản trị' : 'Đã thu hồi quyền Quản trị', 'success')
-      await sync(true)
-    } catch (err) {
-      addToast(err.message, 'error')
-    }
-  }
-
   function startEdit(user) {
     setEditId(user.ID)
-    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '', 'Phòng ban': user['Phòng ban'] || '', 'Chức vụ': user['Chức vụ'] || 'Nhân viên' })
+    setFormData({ 'Email': user['Email'], 'Tên nhân viên': user['Tên nhân viên'] || '' })
     setShowForm(true)
   }
 
@@ -176,6 +158,19 @@ export default function UserManager() {
   const activeCount = users.filter(u => u['Trạng thái'] !== 'Locked').length
   const lockedCount = users.filter(u => u['Trạng thái'] === 'Locked').length
   const avatar = (name) => (name || '?')[0].toUpperCase()
+
+  // Get user assignments from _Phân Bổ data
+  function getUserAssignments(userId) {
+    const uid = String(userId)
+    const allAssignments = assignments || []
+    const allDepts = phongBan || []
+    return allAssignments
+      .filter(a => String(a['UserID']) === uid)
+      .map(a => {
+        const dept = a['PhongBanID'] ? allDepts.find(d => String(d.ID) === String(a['PhongBanID'])) : null
+        return { role: a['Chức vụ'], dept: dept ? dept['Tên phòng ban'] : '' }
+      })
+  }
 
   return (
     <div className="space-y-5">
@@ -251,9 +246,7 @@ export default function UserManager() {
                     onChange={() => toggleSelectAll(filtered.map(u => u.ID))} />
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Chức vụ</th>
-                {isOwner && <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quản trị</th>}
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban / Chức vụ</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Trạng thái</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Đăng nhập cuối</th>
                 <th className="px-4 py-3"></th>
@@ -261,7 +254,7 @@ export default function UserManager() {
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {filtered.length === 0 && (
-                <tr><td colSpan={isOwner ? 8 : 7} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
               )}
               {filtered.map(u => (
                 <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
@@ -282,22 +275,21 @@ export default function UserManager() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-on-surface-variant">{u['Phòng ban'] || '—'}</td>
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                      {u['Chức vụ'] || 'Nhân viên'}
-                    </span>
+                    {(() => {
+                      const entries = getUserAssignments(u.ID)
+                      if (entries.length === 0) return <span className="text-on-surface-variant">—</span>
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          {entries.map((e, i) => (
+                            <span key={i} className="text-sm text-on-surface-variant">
+                              {e.role}{e.dept ? ' — ' : ''}{e.dept && <span className="text-on-surface font-medium">{e.dept}</span>}
+                            </span>
+                          ))}
+                        </div>
+                      )
+                    })()}
                   </td>
-                  {isOwner && (
-                    <td className="px-4 py-3 text-center">
-                      <button onClick={() => handleToggleAdmin(u.ID, u['Quyền'])}
-                        className="p-1.5 rounded-lg hover:bg-surface-container transition-colors"
-                        title={u['Quyền'] === 'Quản trị' ? 'Thu hồi quyền' : 'Cấp quyền Quản trị'}>
-                        <Icon name={u['Quyền'] === 'Quản trị' ? 'admin_panel_settings' : 'person'} size={20}
-                          className={u['Quyền'] === 'Quản trị' ? 'text-primary' : 'text-on-surface-variant/40'} />
-                      </button>
-                    </td>
-                  )}
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       u['Trạng thái'] === 'Locked'
@@ -380,25 +372,12 @@ export default function UserManager() {
                     className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
                     placeholder="vd: Nguyễn Văn A" />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Phòng ban</label>
-                  <select value={formData['Phòng ban']}
-                    onChange={e => setFormData(f => ({ ...f, 'Phòng ban': e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition">
-                    <option value="">-- Chọn phòng ban --</option>
-                    {(phongBan || []).map(pb => (
-                      <option key={pb.ID} value={pb['Tên phòng ban']}>{pb['Tên phòng ban']}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Chức vụ</label>
-                  <select value={formData['Chức vụ']}
-                    onChange={e => setFormData(f => ({ ...f, 'Chức vụ': e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition">
-                    {CHUC_VU_OPTIONS.map(cv => <option key={cv} value={cv}>{cv}</option>)}
-                  </select>
-                </div>
+                {editId && (
+                  <div className="p-3 rounded-xl bg-surface-container-low text-xs text-on-surface-variant flex items-center gap-2">
+                    <Icon name="info" size={16} className="text-primary shrink-0" />
+                    Phòng ban và chức vụ được quản lý trong tab <strong>Bộ máy</strong>.
+                  </div>
+                )}
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => { setShowForm(false); setEditId(null) }}
                     className="flex-1 py-2.5 rounded-xl border border-outline-variant text-on-surface-variant text-sm font-medium hover:bg-surface-container transition-colors">

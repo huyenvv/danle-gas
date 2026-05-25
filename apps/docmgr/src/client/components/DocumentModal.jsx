@@ -634,7 +634,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
               Hủy
             </button>
-            {!isEdit && (isVanThu || isNvTpCreate) ? (
+            {!isEdit && (isAdminRole || isVanThu || isNvTpCreate) ? (
               <>
                 <button type="button" disabled={uploading}
                   onClick={async () => {
@@ -645,7 +645,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>inventory</span>
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
-                {!isEdit && (isVanThu || isNvTpCreate) && canPublish && (
+                {!isEdit && (isAdminRole || isVanThu || isNvTpCreate) && canPublish && (
                 <button type="button" disabled={uploading}
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
@@ -657,7 +657,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   {uploading ? 'Đang lưu…' : 'Phát hành'}
                 </button>
                 )}
-                {isVanThu && (
+                {(isAdminRole || isVanThu) && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
@@ -686,6 +686,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         <PublishDialog
           users={lookups.users || []}
           phongBan={lookups.phongBan || []}
+          assignments={lookups.assignments || []}
           onPublish={handlePublishFromDialog}
           onClose={() => setShowPublishDialog(false)}
           loading={uploading}

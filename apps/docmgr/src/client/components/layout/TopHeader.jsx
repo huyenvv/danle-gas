@@ -6,8 +6,10 @@ const ROLE_LABELS = {
   'admin':          'Quản trị hệ thống',
   'Quản trị viên':  'Quản trị viên',
   'Giám đốc':       'Giám đốc',
+  'Phó GĐ':         'Phó Giám đốc',
   'Văn thư':        'Văn thư',
   'Trưởng phòng':   'Trưởng phòng',
+  'Phó phòng':      'Phó phòng',
   'Nhân viên':      'Nhân viên',
   'Xem':            'Chỉ xem',
 }
@@ -16,8 +18,10 @@ const ROLE_COLORS = {
   'admin':          'bg-red-100 text-red-700',
   'Quản trị viên':  'bg-red-100 text-red-700',
   'Giám đốc':       'bg-purple-100 text-purple-700',
+  'Phó GĐ':         'bg-violet-100 text-violet-700',
   'Văn thư':        'bg-blue-100 text-blue-700',
   'Trưởng phòng':   'bg-gray-100 text-gray-600',
+  'Phó phòng':      'bg-gray-100 text-gray-600',
   'Nhân viên':      'bg-gray-100 text-gray-600',
   'Xem':            'bg-gray-100 text-gray-500',
 }

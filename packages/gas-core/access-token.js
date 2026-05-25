@@ -1,6 +1,6 @@
 // ===== Access token — short-lived (30 min), cache + sheet =====
 
-var ACCESS_TOKEN_TTL = 86400 // 24 hours
+var ACCESS_TOKEN_TTL = 604800 // 7 days
 
 function mintAccessToken(sessionData, usersSheetName) {
   if (!sessionData) throw new Error('mintAccessToken: sessionData required')

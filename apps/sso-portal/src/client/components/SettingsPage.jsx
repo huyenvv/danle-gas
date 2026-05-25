@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import gasCall from '../gasClient.js'
@@ -7,6 +7,9 @@ export default function SettingsPage() {
   const { mailConfig, sync } = usePortalData()
   const { addToast } = useToast()
   const [config, setConfig] = useState(mailConfig)
+
+  // Sync local state when context updates (e.g. after portalSync completes)
+  useEffect(() => { setConfig(mailConfig) }, [mailConfig])
   const [saving, setSaving] = useState(false)
 
   async function handleSave() {

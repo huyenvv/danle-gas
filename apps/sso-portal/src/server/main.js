@@ -85,6 +85,7 @@ function api_logout(refreshToken) {
       // Other device (e.g. mobile) keeps working.
       bumpEpochDevice(SHEETS.USERS, found.userId, label)
       revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
+      logAudit({ username: found.user['Tên đăng nhập'], email: found.user['Email'] }, 'Đăng xuất', 'Xác thực', found.user['Tên đăng nhập'] || '', label)
     }
     return { success: true }
   })
@@ -160,6 +161,24 @@ function api_deleteApp(token, id) {
   return _wrap(function() { return deleteApp(token, id) })
 }
 
+// ===== Org structure API =====
+
+function api_getOrgStructure(token) {
+  return _wrap(function() { return getOrgStructure(token) })
+}
+
+function api_saveAssignment(token, data) {
+  return _wrap(function() { return saveAssignment(token, data) })
+}
+
+function api_removeAssignment(token, assignmentId) {
+  return _wrap(function() { return removeAssignment(token, assignmentId) })
+}
+
+function api_batchSaveAssignments(token, operations) {
+  return _wrap(function() { return batchSaveAssignments(token, operations) })
+}
+
 // ===== SSO API =====
 
 function api_getSsoParams(token) {
@@ -168,6 +187,12 @@ function api_getSsoParams(token) {
 
 function api_portalSync(token) {
   return _wrap(function() { return portalSync(token) })
+}
+
+// ===== Audit log API =====
+
+function api_getAuditLogs(token, filters) {
+  return _wrap(function() { return getAuditLogs(token, filters) })
 }
 
 // ===== Mail config API =====

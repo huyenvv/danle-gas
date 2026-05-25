@@ -214,6 +214,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const isVanThuRole = role === 'Văn thư'
   const canPublish = isAdminRole || isVanThuRole || session?.canPublish
   const isHoanThanh = status === 'Hoàn thành'
+  const showPublishBtn = canPublish && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
   const publishHistory = (() => {
     const raw = doc['Lịch sử phát hành']
     if (!raw) return []
@@ -241,7 +242,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     }
   }
 
-  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm || (isHoanThanh && canPublish)
+  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm || showPublishBtn
   const noteText = String(doc['Ghi chú'] || '')
   const noteOverflow = noteText.length > NOTE_PREVIEW_LIMIT
   const notePreview = noteOverflow && !noteExpanded
@@ -249,6 +250,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     : noteText
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="relative bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-7xl max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
 
@@ -367,7 +369,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   {primaryGiaoViecAction.label}
                 </button>
                 )}
-                {isHoanThanh && canPublish && (
+                {showPublishBtn && (
                 <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
                   <Icon name="send" size={18} />
@@ -734,6 +736,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
         </div>
       </div>
 
+    </div>
+
       {showPublishDialog && (
         <PublishDialog
           users={lookups.users || []}
@@ -751,7 +755,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
           onClose={() => setShowPublishHistory(false)}
         />
       )}
-    </div>
+    </>
   )
 }
 

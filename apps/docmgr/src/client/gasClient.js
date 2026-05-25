@@ -206,6 +206,15 @@ const _mockData = {
     { ID: 1, 'Tên NCC viết tắt': 'ABC Corp', 'Tên NCC đầy đủ': 'Công ty TNHH ABC', 'Mã số thuế': '012345', 'Điện thoại': '028-1234', 'Lĩnh vực kinh doanh': 'CNTT' },
     { ID: 2, 'Tên NCC viết tắt': 'XYZ Ltd', 'Tên NCC đầy đủ': 'Công ty CP XYZ', 'Mã số thuế': '067890', 'Điện thoại': '024-5678', 'Lĩnh vực kinh doanh': 'Xây dựng' },
   ],
+  phongBan: [
+    { ID: 1, 'Tên phòng ban': 'Kỹ thuật' },
+    { ID: 2, 'Tên phòng ban': 'Kinh doanh' },
+  ],
+  assignments: [
+    { ID: 1, UserID: '1', 'Chức vụ': 'admin', PhongBanID: '' },
+    { ID: 2, UserID: '3', 'Chức vụ': 'Trưởng phòng', PhongBanID: '1' },
+    { ID: 3, UserID: '2', 'Chức vụ': 'Nhân viên', PhongBanID: '1' },
+  ],
   docs: [
     { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]) },
     { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]) },
@@ -252,6 +261,7 @@ async function mockCall(fn, ...args) {
     case 'api_logout':
       _mockSession = null
       return { success: true }
+    case 'api_ssoLogin':
     case 'api_resume': {
       if (!_mockSession) {
         _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true, canCreateSubCat: true }
@@ -269,6 +279,8 @@ async function mockCall(fn, ...args) {
         nhom:        _mockData.nhom.map(i => ({ ...i })),
         duAn:        _mockData.duAn.map(i => ({ ...i })),
         nhaCungCap:  _mockData.nhaCungCap.map(i => ({ ...i })),
+        phongBan:    _mockData.phongBan.map(i => ({ ...i })),
+        assignments: _mockData.assignments.map(i => ({ ...i })),
         users: [
           { ID: 1, 'Tên đăng nhập': 'admin',       'Tên nhân viên': 'Admin Hệ thống',  'Email': 'admin@test.com',  'Quyền': 'admin' },
           { ID: 2, 'Tên đăng nhập': 'editor1',      'Tên nhân viên': 'Nguyễn Văn A',    'Email': 'nva@test.com',    'Quyền': 'Nhân viên' },
@@ -288,6 +300,8 @@ async function mockCall(fn, ...args) {
           nhom: _mockData.nhom.map(i => ({ ...i })),
           duAn: _mockData.duAn.map(i => ({ ...i })),
           nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
+          phongBan: _mockData.phongBan.map(i => ({ ...i })),
+          assignments: _mockData.assignments.map(i => ({ ...i })),
           users: [
             { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
             { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
@@ -309,6 +323,8 @@ async function mockCall(fn, ...args) {
           nhom: _mockData.nhom.map(i => ({ ...i })),
           duAn: _mockData.duAn.map(i => ({ ...i })),
           nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
+          phongBan: _mockData.phongBan.map(i => ({ ...i })),
+          assignments: _mockData.assignments.map(i => ({ ...i })),
           users: [
             { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
             { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
