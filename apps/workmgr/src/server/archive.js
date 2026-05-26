@@ -75,7 +75,7 @@ function archiveCompletedTasksForDept(deptId) {
  * MUST be a top-level function so ScriptApp.newTrigger can reference it.
  */
 function archiveOldCompletedTasks() {
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
   var results = []
   depts.forEach(function(d) {
     try {

@@ -4,7 +4,6 @@
 
 var SHEETS = {
   APP_ROLES:   '_Phân Quyền',
-  PHONG_BAN:   'Phòng Ban',
   BINH_LUAN:   '_Bình Luận',
   HOAT_DONG:   '_Hoạt Động',
   NHAN:        'Nhãn',
@@ -37,17 +36,16 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '2') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '3') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
-  props.setProperty('SCHEMA_V', '2')
+  props.setProperty('SCHEMA_V', '3')
   _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
     { name: SHEETS.APP_ROLES,  headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết', 'RefreshTokens'] },
-    { name: SHEETS.PHONG_BAN,  headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Trưởng phòng ID', 'Phó phòng ID', 'PGĐ phụ trách ID', 'Thành viên', 'Đơn vị quản lý', 'Sheet Name', 'Người tạo', 'Ngày tạo', 'Ghi chú'] },
     { name: SHEETS.BINH_LUAN,  headers: ['ID', 'Mã đối tượng', 'Loại đối tượng', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },
     { name: SHEETS.HOAT_DONG,  headers: ['ID', 'Loại', 'Mô tả', 'Đối tượng', 'Mã đối tượng', 'UserID', 'Tên người dùng', 'Thời gian'] },
     { name: SHEETS.NHAN,       headers: ['ID', 'Tên nhãn', 'Màu sắc'] },
@@ -102,10 +100,3 @@ function ensureDepartmentTaskSheet(deptId) {
   return sheetName
 }
 
-/**
- * Get all department task sheet names from the Phòng Ban registry.
- */
-function getAllDeptTaskSheetNames() {
-  var depts = getSheetData(SHEETS.PHONG_BAN)
-  return depts.map(function(d) { return d['Sheet Name'] || (TASK_SHEET_PREFIX + d['ID']) }).filter(Boolean)
-}

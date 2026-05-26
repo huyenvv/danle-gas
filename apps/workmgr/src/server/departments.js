@@ -1,87 +1,20 @@
 // ===== Department (Phòng/Ban) business logic =====
-// Replaces projects.js. Each department gets its own task sheet (CV_<ID>).
+// Departments are managed in the SSO Portal parent sheet.
+// This app reads them via _getSSODepartments() (defined in sheets.js).
 
 /**
- * Get all departments. All logged-in users can view the dept list
- * (for cross-view filtering); edit/delete is gated separately.
+ * Get all departments from SSO parent sheet.
  */
 function getDepartments(token, filters) {
   requireAuth(token)
-  return getSheetData(SHEETS.PHONG_BAN)
-}
-
-/**
- * Create a new department and its task sheet. Only Admin/GĐ.
- */
-function createDepartment(token, data) {
-  var session = requireAuth(token)
-  if (!canManageDept(session)) throw new Error('Chỉ Admin hoặc Giám đốc được tạo phòng ban')
-
-  data['Người tạo'] = session.userId
-  data['Ngày tạo'] = new Date().toISOString()
-
-  var result = addRow(SHEETS.PHONG_BAN, data)
-
-  // Create the per-department task sheet
-  var sheetName = ensureDepartmentTaskSheet(result.ID)
-  updateRow(SHEETS.PHONG_BAN, result.ID, { 'Sheet Name': sheetName })
-  result['Sheet Name'] = sheetName
-
-  logActivity(session, 'Tạo phòng ban', 'Phòng Ban', result.ID, data['Tên phòng ban'])
-
-  return result
-}
-
-/**
- * Update a department.
- */
-function updateDepartment(token, id, data) {
-  var session = requireAuth(token)
-  if (!canManageDept(session)) throw new Error('Chỉ Admin hoặc Giám đốc được sửa phòng ban')
-
-  var result = updateRow(SHEETS.PHONG_BAN, id, data)
-
-  logActivity(session, 'Cập nhật phòng ban', 'Phòng Ban', id, data['Tên phòng ban'] || '')
-
-  return result
-}
-
-/**
- * Delete a department (only if its task sheet is empty).
- */
-function _deleteDepartment(token, id) {
-  var session = requireAuth(token)
-  if (!canManageDept(session)) throw new Error('Chỉ Admin hoặc Giám đốc được xóa phòng ban')
-
-  // Check if department has tasks
-  var depts = getSheetData(SHEETS.PHONG_BAN)
-  var dept = depts.find(function(d) { return String(d['ID']) === String(id) })
-  var name = dept ? dept['Tên phòng ban'] : String(id)
-
-  if (dept && dept['Sheet Name']) {
-    try {
-      var taskData = getSheetData(dept['Sheet Name'])
-      if (taskData.length > 0) {
-        throw new Error('Không thể xóa vì phòng ban còn ' + taskData.length + ' công việc')
-      }
-    } catch(e) {
-      if (e.message.indexOf('Không thể xóa') === 0) throw e
-    }
-  }
-
-  var result = _coreDeleteRow(SHEETS.PHONG_BAN, id)
-
-  logActivity(session, 'Xóa phòng ban', 'Phòng Ban', id, name)
-
-  return result
+  return _getSSODepartments()
 }
 
 /**
  * Get dashboard statistics across all departments.
  * Result is cached per (user, filters) for DASHBOARD_CACHE_TTL seconds.
- * Cache key includes the version of PHONG_BAN sheet so structural changes
- * (new dept, etc) bust the cache; mutations of task sheets aren't tracked
- * here — rely on the short TTL for freshness.
+ * Cache key includes the task-index version so task mutations bust the
+ * cache; dept data comes from SSO parent via _getSSODepartments().
  */
 var DASHBOARD_CACHE_TTL = 60 // seconds
 
@@ -99,13 +32,12 @@ function getDashboardStats(token, filters) {
 
   // Use the task-index version as a fast cache buster: any task write invalidates _TaskIndex,
   // bumping its version, so stale dashboard entries die immediately.
-  var deptVersion = getDataVersion(SHEETS.PHONG_BAN)
   var idxVersion = getDataVersion(TASK_INDEX_SHEET)
-  var cacheKey = 'dash_' + session.userId + '_d' + deptVersion + '_i' + idxVersion + '_' + _stableStringify(filters)
+  var cacheKey = 'dash_' + session.userId + '_i' + idxVersion + '_' + _stableStringify(filters)
   var cached = cacheGet(cacheKey)
   if (cached) return cached
 
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
 
   // Cross-view: everyone sees stats across all depts. Optionally filter to one dept.
   var visibleDepts = depts
@@ -226,7 +158,7 @@ function getDashboardStats(token, filters) {
   // Per-department distribution — for Admin/GĐ and PGĐ
   var deptDistribution = []
   var isAdmin = session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Giám đốc'
-  var isPGD = depts.some(function(d) { return String(d['PGĐ phụ trách ID']) === String(session.userId) })
+  var isPGD = depts.some(function(d) { return String(d['PGĐ phụ trách ID'] || '').split(',').indexOf(String(session.userId)) !== -1 })
   if (isAdmin || isPGD) {
     var deptMap = {}
     statTasks.forEach(function(t) {

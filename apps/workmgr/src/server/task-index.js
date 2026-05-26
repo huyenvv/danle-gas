@@ -68,7 +68,7 @@ function rebuildTaskIndex() {
   var idx = ss.getSheetByName(TASK_INDEX_SHEET)
   if (idx.getLastRow() > 1) idx.deleteRows(2, idx.getLastRow() - 1)
 
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
   var rows = []
   depts.forEach(function(d) {
     var sheetName = d['Sheet Name'] || (TASK_SHEET_PREFIX + d['ID'])

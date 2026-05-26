@@ -66,12 +66,12 @@ function _notifyParticipants(schedule, subject, intro) {
 }
 
 function _findUserDept(userId) {
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
   var uid = String(userId)
   return depts.find(function(d) {
-    if (String(d['Trưởng phòng ID']) === uid) return true
-    if (String(d['Phó phòng ID']) === uid) return true
-    if (String(d['PGĐ phụ trách ID']) === uid) return true
+    if (String(d['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+    if (String(d['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+    if (String(d['PGĐ phụ trách ID'] || '').split(',').indexOf(uid) !== -1) return true
     var members = String(d['Thành viên'] || '')
     return members.split(',').some(function(m) { return m.trim() === uid })
   })
@@ -127,8 +127,8 @@ function createSchedule(token, data) {
     userDept = _findUserDept(session.userId)
     if (!userDept) throw new Error('Bạn không thuộc phòng/ban nào — không thể đăng ký lịch. Liên hệ admin.')
     var isLeader =
-      String(userDept['Trưởng phòng ID']) === String(session.userId) ||
-      String(userDept['Phó phòng ID']) === String(session.userId)
+      String(userDept['Trưởng phòng ID'] || '').split(',').indexOf(String(session.userId)) !== -1 ||
+      String(userDept['Phó phòng ID'] || '').split(',').indexOf(String(session.userId)) !== -1
     startStatus = isLeader ? 'Chờ GĐ' : 'Chờ TP'
     data['Phòng ban ID'] = userDept['ID']
   }
@@ -147,8 +147,9 @@ function createSchedule(token, data) {
     // Notify TP/PP of the registrant's dept
     var dept = userDept
     if (dept) {
-      ;[dept['Trưởng phòng ID'], dept['Phó phòng ID']].filter(Boolean).forEach(function(uid) {
-        _notifySchedule(uid, 'Lịch mới chờ Trưởng/Phó phòng xác nhận', intro, data)
+      var leaderIds = String(dept['Trưởng phòng ID'] || '').split(',').concat(String(dept['Phó phòng ID'] || '').split(','))
+      leaderIds.filter(Boolean).forEach(function(uid) {
+        _notifySchedule(uid.trim(), 'Lịch mới chờ Trưởng/Phó phòng xác nhận', intro, data)
       })
     }
   } else if (startStatus === 'Chờ GĐ') {
@@ -175,11 +176,11 @@ function approveSchedule(token, id) {
   if (row['Trạng thái'] === 'Chờ TP') {
     // Need to be TP/PP of the registrant's dept
     var deptId = row['Phòng ban ID']
-    var depts = getSheetData(SHEETS.PHONG_BAN)
+    var depts = _getSSODepartments()
     var dept = depts.find(function(d) { return String(d['ID']) === String(deptId) })
     if (!dept) throw new Error('Phòng ban không tồn tại')
     var uid = String(session.userId)
-    var isLeader = String(dept['Trưởng phòng ID']) === uid || String(dept['Phó phòng ID']) === uid
+    var isLeader = String(dept['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1 || String(dept['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1
     if (!isLeader && !_isAdminRole(session.role)) {
       throw new Error('Chỉ Trưởng/Phó phòng được xác nhận')
     }
@@ -230,10 +231,10 @@ function rejectSchedule(token, id, reason) {
 
   if (row['Trạng thái'] === 'Chờ TP') {
     var deptId = row['Phòng ban ID']
-    var depts = getSheetData(SHEETS.PHONG_BAN)
+    var depts = _getSSODepartments()
     var dept = depts.find(function(d) { return String(d['ID']) === String(deptId) })
     var uid = String(session.userId)
-    var isLeader = dept && (String(dept['Trưởng phòng ID']) === uid || String(dept['Phó phòng ID']) === uid)
+    var isLeader = dept && (String(dept['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1 || String(dept['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1)
     if (!isLeader && !_isAdminRole(session.role)) throw new Error('Chỉ Trưởng/Phó phòng được từ chối')
   } else if (row['Trạng thái'] === 'Chờ GĐ') {
     if (!_isAdminRole(session.role)) throw new Error('Chỉ Giám đốc được từ chối')
