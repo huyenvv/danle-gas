@@ -32,6 +32,60 @@ function _getParentUsersMap() {
   return map
 }
 
+var SSO_DEPTS_CACHE_KEY = 'sso_depts'
+var SSO_DEPTS_CACHE_TTL = 300
+
+function _getSSODepartments() {
+  var cached = cacheGet(SSO_DEPTS_CACHE_KEY)
+  if (cached) return cached
+
+  var parentId = ssoGetParentSheetId()
+  if (!parentId) return []
+
+  try {
+    var parentSs = SpreadsheetApp.openById(parentId)
+
+    var pbSheet = parentSs.getSheetByName('_Phòng Ban')
+    if (!pbSheet) return []
+    var depts = rowsToObjects(pbSheet.getDataRange().getValues())
+
+    var phanBoSheet = parentSs.getSheetByName('_Phân Bổ')
+    var assignments = phanBoSheet ? rowsToObjects(phanBoSheet.getDataRange().getValues()) : []
+
+    var result = depts.map(function(dept) {
+      var deptId = String(dept['ID'])
+      var deptAssignments = assignments.filter(function(a) { return String(a['PhongBanID']) === deptId })
+
+      var tpIds = [], ppIds = [], nptIds = [], memberIds = []
+      deptAssignments.forEach(function(a) {
+        var uid = String(a['UserID'])
+        memberIds.push(uid)
+        if (a['Chức vụ'] === 'Trưởng phòng') tpIds.push(uid)
+        else if (a['Chức vụ'] === 'Phó phòng') ppIds.push(uid)
+        else if (a['Chức vụ'] === 'Người phụ trách') nptIds.push(uid)
+      })
+
+      return {
+        ID: dept['ID'],
+        'Tên phòng ban': dept['Tên phòng ban'] || '',
+        'Mô tả': dept['Mô tả'] || '',
+        'Trưởng phòng ID': tpIds.join(','),
+        'Phó phòng ID': ppIds.join(','),
+        'PGĐ phụ trách ID': nptIds.join(','),
+        'Thành viên': memberIds.join(','),
+        'Đơn vị quản lý': dept['Đơn vị thuộc sự quản lý'] || '',
+        'Sheet Name': TASK_SHEET_PREFIX + dept['ID'],
+      }
+    })
+
+    cachePut(SSO_DEPTS_CACHE_KEY, result, SSO_DEPTS_CACHE_TTL)
+    return result
+  } catch(e) {
+    Logger.log('_getSSODepartments error: ' + e.message)
+    return []
+  }
+}
+
 /**
  * Get all lookup data for client initialization.
  */
@@ -51,7 +105,7 @@ function getAllData() {
   })
 
   return {
-    phongBan: getSheetData(SHEETS.PHONG_BAN),
+    phongBan: _getSSODepartments(),
     nhan:     getSheetData(SHEETS.NHAN),
     users:    users,
   }
