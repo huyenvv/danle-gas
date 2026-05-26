@@ -2,7 +2,6 @@ import { useAuth } from '../../context/AuthContext.jsx'
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Tổng Quan', icon: 'dashboard' },
-  { id: 'departments', label: 'Phòng/ Ban/ NM', icon: 'apartment', adminOnly: true },
   { id: 'kanban', label: 'Kanban', icon: 'view_kanban' },
   { id: 'tasks', label: 'Công Việc', icon: 'task_alt' },
   { id: 'calendar', label: 'Lịch', icon: 'calendar_month' },

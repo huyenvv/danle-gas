@@ -5,7 +5,6 @@ import gasCall from '../../gasClient.js'
 import Sidebar from './Sidebar.jsx'
 import TopHeader from './TopHeader.jsx'
 import DashboardPage from '../dashboard/DashboardPage.jsx'
-import DepartmentListPage from '../departments/DepartmentListPage.jsx'
 import KanbanPage from '../kanban/KanbanPage.jsx'
 import TaskListPage from '../tasks/TaskListPage.jsx'
 import CalendarPage from '../calendar/CalendarPage.jsx'
@@ -45,7 +44,6 @@ export default function MainLayout() {
     const props = { masterData: md, reloadMaster: loadMasterData, token: getToken() }
     switch (currentView) {
       case 'dashboard': return <DashboardPage {...props} />
-      case 'departments': return <DepartmentListPage {...props} />
       case 'kanban': return <KanbanPage {...props} />
       case 'tasks': return <TaskListPage {...props} />
       case 'calendar': return <SchedulePage {...props} />
