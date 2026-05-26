@@ -186,9 +186,9 @@ const _mockData = {
     { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Tên nhân viên': 'Trần Thị Mai', 'Email': 'mai@test.com', 'Quyền': 'Nhân viên', 'Trạng thái': 'Active' },
   ],
   phongBan: [
-    { ID: 1, 'Tên phòng ban': 'Phòng Công Nghệ', 'Mô tả': 'Phát triển phần mềm', 'Trưởng phòng ID': 2, 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '2,3', 'Sheet Name': 'CV_1', 'Người tạo': 1, 'Ngày tạo': '2026-01-10' },
-    { ID: 2, 'Tên phòng ban': 'Phòng Marketing', 'Mô tả': 'Marketing và truyền thông', 'Trưởng phòng ID': 1, 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '1,3', 'Sheet Name': 'CV_2', 'Người tạo': 1, 'Ngày tạo': '2026-02-01' },
-    { ID: 3, 'Tên phòng ban': 'Phòng Nhân Sự', 'Mô tả': 'Quản lý nhân sự', 'Trưởng phòng ID': 1, 'Phó phòng ID': 2, 'PGĐ phụ trách ID': '', 'Thành viên': '1,2,3', 'Sheet Name': 'CV_3', 'Người tạo': 1, 'Ngày tạo': '2026-02-15' },
+    { ID: 1, 'Tên phòng ban': 'Phòng Công Nghệ', 'Mô tả': 'Phát triển phần mềm', 'Trưởng phòng ID': '2', 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '2,3', 'Đơn vị quản lý': '', 'Sheet Name': 'CV_1' },
+    { ID: 2, 'Tên phòng ban': 'Phòng Marketing', 'Mô tả': 'Marketing và truyền thông', 'Trưởng phòng ID': '1', 'Phó phòng ID': '', 'PGĐ phụ trách ID': '', 'Thành viên': '1,3', 'Đơn vị quản lý': '', 'Sheet Name': 'CV_2' },
+    { ID: 3, 'Tên phòng ban': 'Phòng Nhân Sự', 'Mô tả': 'Quản lý nhân sự', 'Trưởng phòng ID': '1', 'Phó phòng ID': '2', 'PGĐ phụ trách ID': '', 'Thành viên': '1,2,3', 'Đơn vị quản lý': '', 'Sheet Name': 'CV_3' },
   ],
   nhan: [
     { ID: 1, 'Tên nhãn': 'Bug', 'Màu sắc': '#e53935' },
@@ -226,9 +226,6 @@ async function mockCall(fn, ...args) {
     case 'api_getAllData':
       return { phongBan: _mockData.phongBan.map(i => ({...i})), nhan: _mockData.nhan.map(i => ({...i})), users: _mockData.users.map(i => ({...i})) }
     case 'api_getDepartments': return _mockData.phongBan.map(i => ({...i}))
-    case 'api_createDepartment': return _mockAdd(_mockData.phongBan, { ...(args[1]||{}), 'Sheet Name': 'CV_' + (_nextId+1) })
-    case 'api_updateDepartment': return _mockUpdate(_mockData.phongBan, args[1], args[2])
-    case 'api_deleteDepartment': return _mockDelete(_mockData.phongBan, args[1])
     case 'api_getTasks': return _mockData.congViec.map(i => ({...i}))
     case 'api_createTask': return _mockAdd(_mockData.congViec, { ...(args[1]||{}), 'Ngày tạo': new Date().toISOString() })
     case 'api_updateTask': return _mockUpdate(_mockData.congViec, args[1], args[2])
