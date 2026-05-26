@@ -150,18 +150,6 @@ function api_getDepartments(token, filters) {
   return _wrap(function() { return getDepartments(token, filters) })
 }
 
-function api_createDepartment(token, data) {
-  return _wrap(function() { return createDepartment(token, data) })
-}
-
-function api_updateDepartment(token, id, data) {
-  return _wrap(function() { return updateDepartment(token, id, data) })
-}
-
-function api_deleteDepartment(token, id) {
-  return _wrap(function() { return _deleteDepartment(token, id) })
-}
-
 // Generic paginated, filterable log reader. Mirrors docmgr's audit endpoint.
 // userField defaults to 'Tên người dùng' (workmgr's HOAT_DONG column) — docmgr
 // uses 'Người dùng' on its NHAT_KY sheet.
