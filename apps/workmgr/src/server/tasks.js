@@ -6,10 +6,7 @@
  * Get the task sheet name for a department, looking it up from the registry.
  */
 function _getTaskSheetName(deptId) {
-  var depts = getSheetData(SHEETS.PHONG_BAN)
-  var dept = depts.find(function(d) { return String(d['ID']) === String(deptId) })
-  if (!dept) throw new Error('Phòng ban không tồn tại: ' + deptId)
-  return dept['Sheet Name'] || ensureDepartmentTaskSheet(deptId)
+  return ensureDepartmentTaskSheet(deptId)
 }
 
 /**
@@ -17,9 +14,9 @@ function _getTaskSheetName(deptId) {
  */
 function _userBelongsToDept(dept, userId) {
   var uid = String(userId)
-  if (String(dept['Trưởng phòng ID']) === uid) return true
-  if (String(dept['Phó phòng ID']) === uid) return true
-  if (String(dept['PGĐ phụ trách ID']) === uid) return true
+  if (String(dept['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+  if (String(dept['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+  if (String(dept['PGĐ phụ trách ID'] || '').split(',').indexOf(uid) !== -1) return true
   var members = String(dept['Thành viên'] || '')
   return members.split(',').some(function(m) { return m.trim() === uid })
 }
@@ -29,9 +26,10 @@ function _userBelongsToDept(dept, userId) {
  */
 function _isLeaderOfDept(dept, userId) {
   var uid = String(userId)
-  return String(dept['Trưởng phòng ID']) === uid ||
-    String(dept['Phó phòng ID']) === uid ||
-    String(dept['PGĐ phụ trách ID']) === uid
+  if (String(dept['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+  if (String(dept['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1) return true
+  if (String(dept['PGĐ phụ trách ID'] || '').split(',').indexOf(uid) !== -1) return true
+  return false
 }
 
 /**
@@ -42,7 +40,7 @@ function _isLeaderOfDept(dept, userId) {
 function getTasks(token, filters) {
   var session = requireAuth(token)
   filters = filters || {}
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
   var allTasks = []
 
   function readDept(d) {
@@ -121,7 +119,7 @@ function getTasks(token, filters) {
  * Look up a department row by ID.
  */
 function _getDeptById(deptId) {
-  var depts = getSheetData(SHEETS.PHONG_BAN)
+  var depts = _getSSODepartments()
   return depts.find(function(d) { return String(d['ID']) === String(deptId) })
 }
 
