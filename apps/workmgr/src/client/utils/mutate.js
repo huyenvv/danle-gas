@@ -15,10 +15,7 @@ const RULES = {
   api_updateTaskStatus:     ['dashboard', 'kanban', 'tasklist'],
   api_updateTaskProgress:   ['dashboard', 'kanban', 'tasklist'],
   api_batchUpdateTaskStatus:['dashboard', 'kanban', 'tasklist'],
-  // Dept & labels live in masterData (persistent)
-  api_createDepartment:     ['__persistent_masterData', 'dashboard'],
-  api_updateDepartment:     ['__persistent_masterData'],
-  api_deleteDepartment:     ['__persistent_masterData', 'dashboard', 'kanban', 'tasklist'],
+  // Labels live in masterData (persistent)
   api_addLabel:             ['__persistent_masterData'],
   api_updateLabel:          ['__persistent_masterData'],
   api_deleteLabel:          ['__persistent_masterData'],
