@@ -75,13 +75,14 @@ function _isAdminRole(role) {
 
 function _isPGDOfDept(session, dept) {
   if (!dept) return false
-  return String(dept['PGĐ phụ trách ID']) === String(session.userId)
+  return String(dept['PGĐ phụ trách ID'] || '').split(',').indexOf(String(session.userId)) !== -1
 }
 
 function _isLeaderOfDept(session, dept) {
   if (!dept) return false
   var uid = String(session.userId)
-  return String(dept['Trưởng phòng ID']) === uid || String(dept['Phó phòng ID']) === uid
+  return String(dept['Trưởng phòng ID'] || '').split(',').indexOf(uid) !== -1 ||
+    String(dept['Phó phòng ID'] || '').split(',').indexOf(uid) !== -1
 }
 
 /**
