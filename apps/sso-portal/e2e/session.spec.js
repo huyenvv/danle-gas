@@ -4,25 +4,27 @@ const { loginAs, waitForDashboard, getLocalStorage } = require('./fixtures.js')
 test.describe('Multi-device login', () => {
   test('desktop and mobile can both log in independently', async ({ browser }) => {
     const desktopCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-    const desktopPage = await desktopCtx.newPage()
-    await loginAs(desktopPage, 'nv2@test.com', 'Admin@@123')
-    await waitForDashboard(desktopPage)
-    const desktopToken = await getLocalStorage(desktopPage, 'sso_access_token')
-    expect(desktopToken).toBeTruthy()
-
     const mobileCtx = await browser.newContext({
       viewport: { width: 393, height: 851 },
       isMobile: true,
       userAgent: 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Mobile Safari/537.36'
     })
-    const mobilePage = await mobileCtx.newPage()
-    await loginAs(mobilePage, 'nv2@test.com', 'Admin@@123')
-    await waitForDashboard(mobilePage)
-    const mobileToken = await getLocalStorage(mobilePage, 'sso_access_token')
-    expect(mobileToken).toBeTruthy()
+    try {
+      const desktopPage = await desktopCtx.newPage()
+      await loginAs(desktopPage, 'nv2@test.com', 'Admin@@123')
+      await waitForDashboard(desktopPage)
+      const desktopToken = await getLocalStorage(desktopPage, 'sso_access_token')
+      expect(desktopToken).toBeTruthy()
 
-    await desktopCtx.close()
-    await mobileCtx.close()
+      const mobilePage = await mobileCtx.newPage()
+      await loginAs(mobilePage, 'nv2@test.com', 'Admin@@123')
+      await waitForDashboard(mobilePage)
+      const mobileToken = await getLocalStorage(mobilePage, 'sso_access_token')
+      expect(mobileToken).toBeTruthy()
+    } finally {
+      await desktopCtx.close()
+      await mobileCtx.close()
+    }
   })
 })
 
@@ -81,18 +83,10 @@ test.describe('Child app token injection', () => {
     await page.waitForSelector('iframe', { state: 'attached', timeout: 10_000 })
 
     const iframeSrcs = await page.locator('iframe').evaluateAll(iframes => iframes.map(i => i.src))
-    const docmgrIframe = iframeSrcs.find(s => s.includes('localhost:5173') || s.includes('token='))
-
-    if (docmgrIframe) {
-      expect(docmgrIframe).toContain('token=')
-      expect(docmgrIframe).toContain('parent=')
-    } else {
-      // If no iframe with localhost:5173, check any iframe has token param
-      const anyWithToken = iframeSrcs.some(s => s.includes('token='))
-      expect(iframeSrcs.length).toBeGreaterThan(0)
-      // Log for debugging
-      console.log('iframe srcs:', iframeSrcs)
-    }
+    // Every app iframe src must carry token= and parent= query params (SSO injection)
+    const tokenIframe = iframeSrcs.find(s => s.includes('token='))
+    expect(tokenIframe, `Expected iframe with token= param; got: ${JSON.stringify(iframeSrcs)}`).toBeTruthy()
+    expect(tokenIframe).toContain('parent=')
   })
 })
 
