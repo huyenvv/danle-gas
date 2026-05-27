@@ -415,7 +415,11 @@ function addPhongBan(token, data) {
   var dup = existing.find(function(d) { return d['Tên phòng ban'] === name })
   if (dup) throw new Error('Phòng ban đã tồn tại')
 
-  var added = addRow(SHEETS.PHONG_BAN, { 'Tên phòng ban': name })
+  var rowData = { 'Tên phòng ban': name }
+  if (data['Mô tả'] !== undefined) rowData['Mô tả'] = data['Mô tả']
+  if (data['Người phụ trách'] !== undefined) rowData['Người phụ trách'] = data['Người phụ trách']
+  if (data['Đơn vị thuộc sự quản lý'] !== undefined) rowData['Đơn vị thuộc sự quản lý'] = data['Đơn vị thuộc sự quản lý']
+  var added = addRow(SHEETS.PHONG_BAN, rowData)
   logAudit(session, 'Thêm', 'Phòng ban', name, '')
   return added
 }
@@ -428,6 +432,11 @@ function updatePhongBan(token, id, data) {
 
   var updateData = {}
   if (data['Tên phòng ban'] !== undefined) updateData['Tên phòng ban'] = data['Tên phòng ban']
+  if (data['Mô tả'] !== undefined) updateData['Mô tả'] = data['Mô tả']
+  if (data['Trưởng'] !== undefined) updateData['Trưởng'] = data['Trưởng']
+  if (data['Phó'] !== undefined) updateData['Phó'] = data['Phó']
+  if (data['Người phụ trách'] !== undefined) updateData['Người phụ trách'] = data['Người phụ trách']
+  if (data['Đơn vị thuộc sự quản lý'] !== undefined) updateData['Đơn vị thuộc sự quản lý'] = data['Đơn vị thuộc sự quản lý']
 
   if (Object.keys(updateData).length > 0) {
     updateRow(SHEETS.PHONG_BAN, id, updateData)

@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
+import UserPickerDropdown from './common/UserPickerDropdown.jsx'
 import PublishDialog from './documents/PublishDialog.jsx'
 
 const STATUS_OPTIONS = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
@@ -102,7 +103,6 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   })
   const [phuTrach, setPhuTrach] = useState(initialPhuTrach)
   const [collaborators, setCollaborators] = useState(initialCollaborators)
-  const [collabSearch, setCollabSearch] = useState('')
   const [currencyTyping, setCurrencyTyping] = useState(null)
 
   const [files, setFiles]           = useState([])   // new files: [{file: File}]
@@ -312,14 +312,13 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               {/* Phụ trách (single person) — only admin/GĐ can change */}
               {canEditPhuTrach ? (
                 <Field label="Phụ trách">
-                  <select className={iCls} value={phuTrach} onChange={e => setPhuTrach(e.target.value)}>
-                    <option value="">-- Chọn --</option>
-                    {(lookups.users || []).map(u => {
-                      const name = u['Tên nhân viên'] || u['Tên đăng nhập']
-                      const label = u['Email'] ? `${name} (${u['Email']})` : name
-                      return <option key={u.ID} value={u['Tên đăng nhập']}>{label}</option>
-                    })}
-                  </select>
+                  <UserPickerDropdown
+                    users={lookups.users || []}
+                    phongBan={lookups.phongBan || []}
+                    assignments={lookups.assignments || []}
+                    value={phuTrach}
+                    onChange={setPhuTrach}
+                  />
                 </Field>
               ) : phuTrach ? (
                 <Field label="Phụ trách">
@@ -345,64 +344,16 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               {/* Người phối hợp (multi-select) — admin/GĐ/phụ trách can edit */}
               {canEditPhoiHop ? (
                 <Field label="Người phối hợp">
-                  <div className="space-y-1.5">
-                    {collaborators.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {collaborators.map(a => {
-                          const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
-                          const displayName = u?.['Tên nhân viên'] || a
-                          const email = u?.['Email'] || ''
-                          return (
-                            <div key={a} className="relative group">
-                              <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2.5 py-1 rounded-full">
-                                <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{displayName.charAt(0).toUpperCase()}</span>
-                                {displayName}
-                                <button type="button" onClick={() => setCollaborators(prev => prev.filter(x => x !== a))}
-                                  className="ml-0.5 hover:text-error transition-colors">
-                                  <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
-                                </button>
-                              </span>
-                              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                                <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
-                                  <p className="font-medium">{displayName}</p>
-                                  {email && <p className="text-surface/70 text-[10px]">{email}</p>}
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                    <div className="relative">
-                      <input className={iCls} placeholder="Thêm người phối hợp..."
-                        value={collabSearch}
-                        onChange={e => setCollabSearch(e.target.value)} />
-                      {collabSearch && (() => {
-                        const users = lookups.users || []
-                        const filtered = users.filter(u =>
-                          (u['Tên nhân viên'] || u['Tên đăng nhập']).toLowerCase().includes(collabSearch.toLowerCase()) &&
-                          !collaborators.includes(u['Tên đăng nhập']) &&
-                          u['Tên đăng nhập'] !== phuTrach
-                        )
-                        if (!filtered.length) return null
-                        return (
-                          <div className="absolute z-10 top-full mt-1 left-0 right-0 bg-white border border-outline-variant rounded-xl shadow-md3-3 max-h-40 overflow-y-auto">
-                            {filtered.map(u => {
-                              const dn = u['Tên nhân viên'] || u['Tên đăng nhập']
-                              return (
-                                <button key={u.ID} type="button"
-                                  className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/5 flex items-center gap-2"
-                                  onClick={() => { setCollaborators(prev => [...prev, u['Tên đăng nhập']]); setCollabSearch('') }}>
-                                  <span className="w-6 h-6 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[10px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
-                                  <span>{dn}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  </div>
+                  <UserPickerDropdown
+                    users={lookups.users || []}
+                    phongBan={lookups.phongBan || []}
+                    assignments={lookups.assignments || []}
+                    value={collaborators}
+                    onChange={setCollaborators}
+                    placeholder="+ Thêm người phối hợp..."
+                    exclude={phuTrach ? [phuTrach] : []}
+                    multiple
+                  />
                 </Field>
               ) : collaborators.length > 0 ? (
                 <Field label="Người phối hợp">

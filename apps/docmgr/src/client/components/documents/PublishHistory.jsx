@@ -100,7 +100,7 @@ export default function PublishHistory({ history, users, onClose }) {
             </div>
             <div>
               <p className="text-xs text-on-surface-variant">Người gửi</p>
-              <p className="text-sm text-on-surface font-medium">{entry.nguoiGui || '—'}</p>
+              <p className="text-sm text-on-surface font-medium">{entry.nguoiGui ? getUserName(entry.nguoiGui) : '—'}</p>
             </div>
           </div>
           <RecipientList label="Người nhận (TO)" items={entry.to} />

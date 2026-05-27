@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import gasCall from '../gasClient.js'
 import { viMatch } from '../utils/viSearch.js'
+import { groupUsersByDept } from '../utils/groupUsers.js'
 import Icon from './common/Icon.jsx'
 import FormModal from './common/FormModal.jsx'
 import { labelCls, fieldCls } from './common/formStyles.js'
@@ -49,7 +50,7 @@ function parsePermissions(raw, role) {
   return defaultPerms()
 }
 
-export default function UserManager({ token, session }) {
+export default function UserManager({ token, session, lookups }) {
   const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
@@ -81,7 +82,7 @@ export default function UserManager({ token, session }) {
   useEffect(() => { load() }, [])
 
   function openEdit(user) {
-    const currentRole = user['Quyền'] || 'Nhân viên'
+    const currentRole = getSsoRole(user) || user['Quyền'] || 'Nhân viên'
     setRole(currentRole)
     setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
     setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
@@ -118,16 +119,6 @@ export default function UserManager({ token, session }) {
     }
   }
 
-  async function handleRemoveRole(user) {
-    try {
-      await gasCall('api_removeUserRole', token, user.ID)
-      showToast('Đã xóa quyền', 'success')
-      load(true)
-    } catch (err) {
-      showToast(err.message, 'error')
-    }
-  }
-
   const assignedUsers = users.filter(u => u['Quyền'])
   const unassignedUsers = users.filter(u => !u['Quyền'])
 
@@ -136,12 +127,46 @@ export default function UserManager({ token, session }) {
     return viMatch(u['Tên đăng nhập'], search) || viMatch(u['Email'], search)
   })
 
+  // Group filtered users by department
+  const phongBan = lookups?.phongBan || []
+  const assignments = lookups?.assignments || []
+  const groups = phongBan.length > 0 ? groupUsersByDept(filtered, phongBan, assignments) : [{ name: '', users: filtered }]
+
+  // Build role lookup from SSO assignments (highest priority role per user)
+  const ROLE_PRIORITY = { 'Giám đốc': 6, 'Phó GĐ': 5, 'Văn thư': 4, 'admin': 3, 'Trưởng phòng': 2, 'Phó phòng': 1, 'Nhân viên': 0 }
+  const COMPANY_ROLES = new Set(['Giám đốc', 'Phó GĐ', 'Văn thư', 'admin'])
+  const ssoRoleMap = {}
+  const deptRolesMap = {} // userId -> [{ role, deptName }]
+  const deptNameMap = {}
+  phongBan.forEach(d => { deptNameMap[String(d.ID)] = d['Tên phòng ban'] })
+  assignments.forEach(a => {
+    const uid = String(a['UserID'])
+    const role = a['Chức vụ']
+    if (!ssoRoleMap[uid] || (ROLE_PRIORITY[role] || 0) > (ROLE_PRIORITY[ssoRoleMap[uid]] || 0)) {
+      ssoRoleMap[uid] = role
+    }
+    // Track department assignments for concurrent role display
+    if (a['PhongBanID'] && a['PhongBanID'] !== '') {
+      if (!deptRolesMap[uid]) deptRolesMap[uid] = []
+      deptRolesMap[uid].push({ role, deptName: deptNameMap[String(a['PhongBanID'])] || '' })
+    }
+  })
+  function getSsoRole(user) {
+    return ssoRoleMap[String(user.ID)] || ''
+  }
+  function getConcurrentRoles(user) {
+    const primary = getSsoRole(user)
+    if (!COMPANY_ROLES.has(primary)) return []
+    return deptRolesMap[String(user.ID)] || []
+  }
+
   const avatar = (name) => (name || '?')[0].toUpperCase()
   const isAdmin = role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên'
   function canManage(user) {
     if (session?.role !== 'Giám đốc') return true
     if (String(user.ID) === String(session.userId)) return false
-    if (DIRECTOR_BLOCKED_ROLES.indexOf(user['Quyền']) !== -1) return false
+    const ssoRole = getSsoRole(user)
+    if (DIRECTOR_BLOCKED_ROLES.indexOf(ssoRole) !== -1) return false
     return true
   }
 
@@ -197,91 +222,123 @@ export default function UserManager({ token, session }) {
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Quyền</th>
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo hồ sơ</th>
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo danh mục con</th>
+              <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Phát hành</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Trạng thái (SSO)</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
             )}
-            {filtered.map(user => (
-              <tr key={user.ID} className="hover:bg-surface-container-low transition-colors">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <span className="text-sm font-semibold text-primary">{avatar(user['Tên đăng nhập'])}</span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-on-surface">{user['Tên đăng nhập']}</p>
-                      <p className="text-xs text-on-surface-variant">{user['Email'] || '—'}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  {user['Quyền'] ? (
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[user['Quyền']] || ROLE_BADGE['Xem']}`}>
-                      {user['Quyền']}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-on-surface-variant italic">Chưa phân quyền</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-center hidden md:table-cell">
-                  {(() => {
-                    const r = user['Quyền']
-                    const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
-                    const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true
-                    return canCreate ? (
-                      <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
-                    ) : (
-                      <Icon name="cancel" size={18} className="text-on-surface-variant/40 inline-block" />
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-center hidden md:table-cell">
-                  {(() => {
-                    const r = user['Quyền']
-                    const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên'
-                    const canSubCat = isFullRole || user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true
-                    return canSubCat ? (
-                      <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
-                    ) : (
-                      <Icon name="cancel" size={18} className="text-on-surface-variant/40 inline-block" />
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-3 hidden md:table-cell">
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    user['Trạng thái'] === 'Active'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : 'bg-error-container text-on-error-container'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${user['Trạng thái'] === 'Active' ? 'bg-emerald-500' : 'bg-error'}`} />
-                    {user['Trạng thái'] === 'Active' ? 'Hoạt động' : user['Trạng thái'] || '—'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1 justify-end">
-                    {canManage(user) ? (
-                      <>
-                        <button onClick={() => openEdit(user)}
-                          className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">
-                          {user['Quyền'] ? 'Sửa quyền' : 'Phân quyền'}
-                        </button>
-                        {user['Quyền'] && (
-                          <button onClick={() => handleRemoveRole(user)}
-                            className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error/10 transition-colors font-medium">
-                            Xóa quyền
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-xs text-on-surface-variant italic px-2">—</span>
-                    )}
-                  </div>
-                </td>
-              </tr>
+            {groups.map(group => (
+              <React.Fragment key={group.name}>
+                {group.name && (
+                  <tr className="bg-surface-container-low/60">
+                    <td colSpan={7} className="px-4 py-2">
+                      <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">{group.name}</span>
+                      <span className="ml-2 text-[10px] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">{group.users.length}</span>
+                    </td>
+                  </tr>
+                )}
+                {group.users.map(user => (
+                  <tr key={user.ID} className="hover:bg-surface-container-low transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <span className="text-sm font-semibold text-primary">{avatar(user['Tên đăng nhập'])}</span>
+                        </div>
+                        <div>
+                          <p className="font-medium text-on-surface">{user['Tên đăng nhập']}</p>
+                          <p className="text-xs text-on-surface-variant">{user['Email'] || '—'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {getSsoRole(user) ? (
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium w-fit ${ROLE_BADGE[getSsoRole(user)] || ROLE_BADGE['Xem']}`}>
+                            {getSsoRole(user)}
+                          </span>
+                          {getConcurrentRoles(user).map((cr, i) => (
+                            <div key={i} className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-on-surface-variant">kiêm</span>
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[cr.role] || ROLE_BADGE['Xem']}`}>
+                                {cr.role}
+                              </span>
+                              {cr.deptName && <span className="text-xs text-on-surface-variant">{cr.deptName}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-on-surface-variant italic">Chưa phân quyền</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center hidden md:table-cell">
+                      {(() => {
+                        const r = getSsoRole(user)
+                        const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
+                        const canCreate = isFullRole || user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true
+                        return canCreate ? (
+                          <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                        ) : (
+                          <span className="text-on-surface-variant/40">—</span>
+                        )
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-center hidden md:table-cell">
+                      {(() => {
+                        const r = getSsoRole(user)
+                        const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên'
+                        const canSubCat = isFullRole || user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true
+                        return canSubCat ? (
+                          <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                        ) : (
+                          <span className="text-on-surface-variant/40">—</span>
+                        )
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-center hidden md:table-cell">
+                      {(() => {
+                        const r = getSsoRole(user)
+                        const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
+                        const canPub = isFullRole || user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true
+                        return canPub ? (
+                          <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                        ) : (
+                          <span className="text-on-surface-variant/40">—</span>
+                        )
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        user['Trạng thái'] === 'Active'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-error-container text-on-error-container'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${user['Trạng thái'] === 'Active' ? 'bg-emerald-500' : 'bg-error'}`} />
+                        {user['Trạng thái'] === 'Active' ? 'Hoạt động' : user['Trạng thái'] || '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-1 justify-end">
+                        {(() => {
+                          const r = getSsoRole(user)
+                          const hasFullDefaults = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
+                          if (hasFullDefaults) return null
+                          if (!canManage(user)) return <span className="text-xs text-on-surface-variant italic px-2">—</span>
+                          return (
+                            <button onClick={() => openEdit(user)}
+                              className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">
+                              Sửa quyền
+                            </button>
+                          )
+                        })()}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -325,8 +382,8 @@ export default function UserManager({ token, session }) {
               </div>
             </div>
 
-            {/* Được tạo hồ sơ / danh mục con — only for Nhân viên & Trưởng phòng */}
-            {(role === 'Nhân viên' || role === 'Trưởng phòng') && (
+            {/* Được tạo hồ sơ / danh mục con / phát hành — for non-admin roles */}
+            {!isAdmin && (
               <>
                 <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
                   <input type="checkbox" id="canCreateDoc" checked={canCreateDoc}

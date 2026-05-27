@@ -125,24 +125,44 @@ function _pushLog(action, type, target, details) {
 }
 
 const _mockUsers = [
-  { ID: 1, 'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com', 'Tên nhân viên': '', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '', 'Quyền': 'Quản trị', 'Chức vụ': 'admin', 'FailedLogins': 0 },
-  { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv.it@gmail.com', 'Tên nhân viên': 'Vũ Văn Huyên', 'Trạng thái': 'Active', 'MustChangePass': 'TRUE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kỹ thuật', 'Quyền': '', 'Chức vụ': 'Trưởng phòng', 'FailedLogins': 0 },
-  { ID: 3, 'Tên đăng nhập': 'nhanvien1', 'Email': 'nv1@test.com', 'Tên nhân viên': 'Nguyễn Văn A', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '', 'Phòng ban': 'Kinh doanh', 'Quyền': '', 'Chức vụ': 'Nhân viên', 'FailedLogins': 0 },
+  { ID: 1,  'Tên đăng nhập': 'admin@test.com', 'Email': 'admin@test.com',      'Tên nhân viên': 'Admin Hệ thống',    'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '2024-01-15', 'Quyền': 'Quản trị', 'FailedLogins': 0 },
+  { ID: 2,  'Tên đăng nhập': 'huyenvv',        'Email': 'huyenvv.it@gmail.com', 'Tên nhân viên': 'Vũ Văn Huyên',      'Trạng thái': 'Active', 'MustChangePass': 'TRUE',  'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 3,  'Tên đăng nhập': 'nhanvien1',      'Email': 'nv1@test.com',         'Tên nhân viên': 'Nguyễn Văn A',      'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 4,  'Tên đăng nhập': 'giamdoc',        'Email': 'gd@test.com',          'Tên nhân viên': 'Lê Văn Giám Đốc',  'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 5,  'Tên đăng nhập': 'phogd1',         'Email': 'pgd1@test.com',        'Tên nhân viên': 'Phạm Phó GĐ 1',    'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 6,  'Tên đăng nhập': 'phogd2',         'Email': 'pgd2@test.com',        'Tên nhân viên': 'Hoàng Phó GĐ 2',   'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 7,  'Tên đăng nhập': 'vanthu',         'Email': 'vt@test.com',          'Tên nhân viên': 'Ngô Thị Văn Thư',  'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 8,  'Tên đăng nhập': 'nhanvien2',      'Email': 'nv2@test.com',         'Tên nhân viên': 'Đỗ Minh Tuấn',     'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 9,  'Tên đăng nhập': 'tpkd',           'Email': 'tpkd@test.com',        'Tên nhân viên': 'Vũ Thị Hương',     'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 10, 'Tên đăng nhập': 'nvkd1',          'Email': 'nvkd1@test.com',       'Tên nhân viên': 'Bùi Đức Thắng',    'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
+  { ID: 11, 'Tên đăng nhập': 'newuser',        'Email': 'new@test.com',         'Tên nhân viên': 'Người Mới',         'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'Đăng nhập cuối': '',           'Quyền': '',        'FailedLogins': 0 },
 ]
 
 const _mockPhongBan = [
-  { ID: 1, 'Tên phòng ban': 'Kỹ thuật' },
-  { ID: 2, 'Tên phòng ban': 'Kinh doanh' },
+  { ID: 1, 'Tên phòng ban': 'Kỹ thuật', 'Mô tả': 'Phòng kỹ thuật & phát triển', 'Người phụ trách': '', 'Đơn vị thuộc sự quản lý': '' },
+  { ID: 2, 'Tên phòng ban': 'Kinh doanh', 'Mô tả': 'Phòng kinh doanh & marketing', 'Người phụ trách': '', 'Đơn vị thuộc sự quản lý': '' },
 ]
 
 const _mockAssignments = [
-  { ID: 1, 'UserID': '2', 'Chức vụ': 'Trưởng phòng', 'PhongBanID': 1 },
-  { ID: 2, 'UserID': '3', 'Chức vụ': 'Nhân viên', 'PhongBanID': 2 },
+  // Ban Giám Đốc
+  { ID: 1, 'UserID': '4', 'Chức vụ': 'Giám đốc', 'PhongBanID': '' },
+  { ID: 2, 'UserID': '5', 'Chức vụ': 'Phó GĐ', 'PhongBanID': '' },
+  { ID: 3, 'UserID': '6', 'Chức vụ': 'Phó GĐ', 'PhongBanID': '' },
+  // Văn thư & Quản trị
+  { ID: 4, 'UserID': '1', 'Chức vụ': 'admin', 'PhongBanID': '' },
+  { ID: 5, 'UserID': '7', 'Chức vụ': 'Văn thư', 'PhongBanID': '' },
+  // Phòng Kỹ thuật
+  { ID: 6, 'UserID': '2', 'Chức vụ': 'Trưởng phòng', 'PhongBanID': '1' },
+  { ID: 7, 'UserID': '3', 'Chức vụ': 'Nhân viên', 'PhongBanID': '1' },
+  { ID: 8, 'UserID': '8', 'Chức vụ': 'Nhân viên', 'PhongBanID': '1' },
+  // Phòng Kinh doanh
+  { ID: 9, 'UserID': '9', 'Chức vụ': 'Trưởng phòng', 'PhongBanID': '2' },
+  { ID: 10, 'UserID': '10', 'Chức vụ': 'Nhân viên', 'PhongBanID': '2' },
 ]
 
 const _mockApps = [
   { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'http://127.0.0.1:5173/', 'Icon': 'description', 'Mô tả': 'Quản lý hồ sơ, tài liệu', 'Trạng thái': 'Active', 'Quyền xem': '' },
-  { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://127.0.0.1:5175/', 'Icon': 'task_alt', 'Mô tả': 'Quản lý công việc, dự án', 'Trạng thái': 'Active', 'Quyền xem': '' },
+  { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://127.0.0.1:5175/', 'Icon': 'task', 'Mô tả': 'Quản lý công việc, dự án', 'Trạng thái': 'Active', 'Quyền xem': '' },
 ]
 
 async function mockCall(fn, ...args) {
@@ -260,7 +280,7 @@ async function mockCall(fn, ...args) {
     case 'api_getPhongBan':
       return _mockPhongBan.map(pb => ({ ...pb }))
     case 'api_addPhongBan': {
-      const newDept = { ID: ++_nextId, 'Tên phòng ban': args[1]['Tên phòng ban'] }
+      const newDept = { ID: ++_nextId, 'Tên phòng ban': args[1]['Tên phòng ban'], 'Mô tả': args[1]['Mô tả'] || '', 'Người phụ trách': args[1]['Người phụ trách'] || '', 'Đơn vị thuộc sự quản lý': args[1]['Đơn vị thuộc sự quản lý'] || '' }
       _mockPhongBan.push(newDept)
       return { ...newDept }
     }
@@ -269,7 +289,9 @@ async function mockCall(fn, ...args) {
       const deptUpdates = args[2]
       const dept = _mockPhongBan.find(d => String(d.ID) === String(deptId))
       if (dept && deptUpdates) {
-        if (deptUpdates['Tên phòng ban'] !== undefined) dept['Tên phòng ban'] = deptUpdates['Tên phòng ban']
+        for (const k of ['Tên phòng ban', 'Mô tả', 'Trưởng', 'Phó', 'Người phụ trách', 'Đơn vị thuộc sự quản lý']) {
+          if (deptUpdates[k] !== undefined) dept[k] = deptUpdates[k]
+        }
       }
       return { success: true }
     }

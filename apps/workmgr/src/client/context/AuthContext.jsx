@@ -53,7 +53,16 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // Priority 2: saved refresh_token → auto-resume
+    // Dev mode: always use mock auto-login (skip stale refresh tokens)
+    if (import.meta.env.DEV) {
+      _clearAuth()
+      gasCall('api_resume', 'dev-auto')
+        .then(_storeSession)
+        .catch(err => _fail(err.message))
+      return
+    }
+
+    // Priority 2: saved refresh_token → auto-resume (prod only)
     const rt = localStorage.getItem(REFRESH_KEY)
     if (rt) {
       const cached = localStorage.getItem(USER_KEY)

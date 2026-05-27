@@ -4,9 +4,12 @@ import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
 
-const COMPANY_POSITIONS = [
+const LEADERSHIP_POSITIONS = [
   { code: 'Giám đốc', max: 1 },
   { code: 'Phó GĐ', max: -1 },
+]
+
+const SUPPORT_POSITIONS = [
   { code: 'Văn thư', max: -1 },
   { code: 'admin', max: -1 },
 ]
@@ -14,6 +17,7 @@ const COMPANY_POSITIONS = [
 const DEPT_HEAD_POSITIONS = [
   { code: 'Trưởng phòng', max: 1 },
   { code: 'Phó phòng', max: -1 },
+  { code: 'Người phụ trách', max: -1 },
 ]
 
 function Icon({ name, size = 20, className = '' }) {
@@ -27,6 +31,7 @@ export default function OrgStructure() {
   const [saving, setSaving] = useState(false)
   const [addingDept, setAddingDept] = useState(false)
   const [newDeptName, setNewDeptName] = useState('')
+  const [newDeptMoTa, setNewDeptMoTa] = useState('')
   const [collapsed, setCollapsed] = useState({})
 
   // Pending changes: { adds: [{userId, chucVu, phongBanId}], removes: [assignmentId] }
@@ -138,8 +143,9 @@ export default function OrgStructure() {
     if (!newDeptName.trim() || saving) return
     setSaving(true)
     try {
-      await gasCall('api_addPhongBan', getToken(), { 'Tên phòng ban': newDeptName.trim() })
+      await gasCall('api_addPhongBan', getToken(), { 'Tên phòng ban': newDeptName.trim(), 'Mô tả': newDeptMoTa.trim() })
       setNewDeptName('')
+      setNewDeptMoTa('')
       setAddingDept(false)
       addToast('Thêm phòng ban thành công', 'success')
       await sync(true)
@@ -273,7 +279,6 @@ export default function OrgStructure() {
     return (
       <div className="mt-1">
         <div className="flex items-center gap-3 mb-2">
-          <span className="text-sm font-medium text-on-surface-variant">Nhân viên</span>
           {members.length === 0 && (
             <select
               value=""
@@ -361,19 +366,38 @@ export default function OrgStructure() {
         </div>
       )}
 
-      {/* Ban lãnh đạo */}
+      {/* Ban Giám Đốc */}
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
         <button onClick={() => toggleCollapse('company')} className="w-full px-5 py-4 border-b border-outline-variant/40 flex items-center gap-3 hover:bg-surface-container-low/50 transition cursor-pointer">
           <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center">
             <Icon name="stars" size={20} className="text-amber-700" />
           </div>
-          <h2 className="text-base font-bold text-on-surface flex-1 text-left">Ban lãnh đạo</h2>
+          <h2 className="text-base font-bold text-on-surface flex-1 text-left">Ban Giám Đốc</h2>
           <Icon name={collapsed['company'] ? 'expand_more' : 'expand_less'} size={20} className="text-on-surface-variant" />
         </button>
         {!collapsed['company'] && (
           <>
             <div className="px-5 py-3 divide-y divide-outline-variant/20">
-              {COMPANY_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, ''))}
+              {LEADERSHIP_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, ''))}
+            </div>
+            {renderSectionSaveBar('')}
+          </>
+        )}
+      </div>
+
+      {/* Văn thư & Admin */}
+      <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+        <button onClick={() => toggleCollapse('support')} className="w-full px-5 py-4 border-b border-outline-variant/40 flex items-center gap-3 hover:bg-surface-container-low/50 transition cursor-pointer">
+          <div className="w-9 h-9 rounded-xl bg-cyan-100 flex items-center justify-center">
+            <Icon name="support_agent" size={20} className="text-cyan-700" />
+          </div>
+          <h2 className="text-base font-bold text-on-surface flex-1 text-left">Văn thư & Quản trị</h2>
+          <Icon name={collapsed['support'] ? 'expand_more' : 'expand_less'} size={20} className="text-on-surface-variant" />
+        </button>
+        {!collapsed['support'] && (
+          <>
+            <div className="px-5 py-3 divide-y divide-outline-variant/20">
+              {SUPPORT_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, ''))}
             </div>
             {renderSectionSaveBar('')}
           </>
@@ -393,6 +417,7 @@ export default function OrgStructure() {
                 </div>
                 <div className="text-left">
                   <h2 className="text-base font-bold text-on-surface">{dept['Tên phòng ban']}</h2>
+                  {dept['Mô tả'] && <p className="text-xs text-on-surface-variant">{dept['Mô tả']}</p>}
                   <p className="text-xs text-on-surface-variant">{deptAssignments.length} vị trí</p>
                 </div>
                 <Icon name={isCollapsed ? 'expand_more' : 'expand_less'} size={20} className="text-on-surface-variant ml-1" />
@@ -405,11 +430,97 @@ export default function OrgStructure() {
             </div>
             {!isCollapsed && (
               <>
-                <div className="px-5 py-3">
-                  <div className="divide-y divide-outline-variant/20">
-                    {DEPT_HEAD_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, dept.ID))}
+                <div className="px-5 py-4 space-y-4">
+                  {/* Section 1: Thông tin chung */}
+                  <div className="bg-surface-container-low/30 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Icon name="description" size={16} className="text-on-surface-variant" />
+                      <span className="text-sm font-semibold text-on-surface-variant">Thông tin chung</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <input type="text" key={'ten_' + dept.ID}
+                        defaultValue={dept['Tên phòng ban'] || ''}
+                        onBlur={e => {
+                          const val = e.target.value.trim()
+                          if (val && val !== (dept['Tên phòng ban'] || '')) {
+                            gasCall('api_updatePhongBan', getToken(), dept.ID, { 'Tên phòng ban': val }).then(() => sync(true)).catch(err => addToast(err.message, 'error'))
+                          }
+                        }}
+                        disabled={saving}
+                        placeholder="Tên phòng ban..."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-outline-variant/40 text-sm font-semibold outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50"
+                      />
+                      <input type="text" key={'mota_' + dept.ID}
+                        defaultValue={dept['Mô tả'] || ''}
+                        onBlur={e => {
+                          if (e.target.value !== (dept['Mô tả'] || '')) {
+                            gasCall('api_updatePhongBan', getToken(), dept.ID, { 'Mô tả': e.target.value }).then(() => sync(true)).catch(err => addToast(err.message, 'error'))
+                          }
+                        }}
+                        disabled={saving}
+                        placeholder="Mô tả phòng ban..."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50"
+                      />
+                    </div>
+                    {/* Đơn vị thuộc sự quản lý */}
+                    {(() => {
+                      const raw = dept['Đơn vị thuộc sự quản lý']
+                      let ids = []
+                      try { ids = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [] } catch(_) {}
+                      const otherDepts = allDepts.filter(d => String(d.ID) !== String(dept.ID) && !ids.some(x => String(x) === String(d.ID)))
+                      function updateDonVi(newIds) {
+                        gasCall('api_updatePhongBan', getToken(), dept.ID, { 'Đơn vị thuộc sự quản lý': JSON.stringify(newIds) })
+                          .then(() => sync(true)).catch(err => addToast(err.message, 'error'))
+                      }
+                      return (
+                        <div>
+                          <p className="text-xs text-on-surface-variant mb-1.5">Đơn vị thuộc sự quản lý</p>
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {ids.map(id => {
+                              const d = allDepts.find(x => String(x.ID) === String(id))
+                              return (
+                                <span key={id} className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full">
+                                  {d ? d['Tên phòng ban'] : String(id)}
+                                  <button type="button" onClick={() => updateDonVi(ids.filter(x => String(x) !== String(id)))}
+                                    disabled={saving} className="hover:text-error">
+                                    <Icon name="close" size={10} />
+                                  </button>
+                                </span>
+                              )
+                            })}
+                          </div>
+                          <select value="" onChange={e => { if (e.target.value) updateDonVi([...ids, e.target.value]) }}
+                            disabled={saving}
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-outline-variant/40 text-xs outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50">
+                            <option value="">+ Thêm đơn vị...</option>
+                            {otherDepts.map(d => (
+                              <option key={d.ID} value={String(d.ID)}>{d['Tên phòng ban']}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )
+                    })()}
                   </div>
-                  {renderMemberTable(dept.ID)}
+
+                  {/* Section 2: Lãnh đạo */}
+                  <div className="bg-surface-container-low/30 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Icon name="shield_person" size={16} className="text-on-surface-variant" />
+                      <span className="text-sm font-semibold text-on-surface-variant">Lãnh đạo</span>
+                    </div>
+                    <div className="divide-y divide-outline-variant/20">
+                      {DEPT_HEAD_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, dept.ID))}
+                    </div>
+                  </div>
+
+                  {/* Section 3: Nhân viên */}
+                  <div className="bg-surface-container-low/30 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Icon name="group" size={16} className="text-on-surface-variant" />
+                      <span className="text-sm font-semibold text-on-surface-variant">Nhân viên</span>
+                    </div>
+                    {renderMemberTable(dept.ID)}
+                  </div>
                 </div>
                 {renderSectionSaveBar(dept.ID)}
               </>
@@ -420,20 +531,26 @@ export default function OrgStructure() {
 
       {/* Add department */}
       {addingDept ? (
-        <div className="bg-white rounded-2xl shadow-card p-4 flex items-center gap-3">
-          <input type="text" value={newDeptName} autoFocus
-            onChange={e => setNewDeptName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleAddDept(); if (e.key === 'Escape') setAddingDept(false) }}
-            placeholder="Tên phòng ban..."
-            className="flex-1 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition" />
-          <button onClick={handleAddDept} disabled={saving || !newDeptName.trim()}
-            className="px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50 transition shadow-md3-1">
-            Tạo
-          </button>
-          <button onClick={() => { setAddingDept(false); setNewDeptName('') }}
-            className="px-3 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container transition">
-            Hủy
-          </button>
+        <div className="bg-white rounded-2xl shadow-card p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <input type="text" value={newDeptName} autoFocus
+              onChange={e => setNewDeptName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { setAddingDept(false); setNewDeptName(''); setNewDeptMoTa('') } }}
+              placeholder="Tên phòng ban..."
+              className="flex-1 px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition" />
+            <button onClick={handleAddDept} disabled={saving || !newDeptName.trim()}
+              className="px-4 py-2 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50 transition shadow-md3-1">
+              Tạo
+            </button>
+            <button onClick={() => { setAddingDept(false); setNewDeptName(''); setNewDeptMoTa('') }}
+              className="px-3 py-2 rounded-xl text-sm text-on-surface-variant hover:bg-surface-container transition">
+              Hủy
+            </button>
+          </div>
+          <input type="text" value={newDeptMoTa}
+            onChange={e => setNewDeptMoTa(e.target.value)}
+            placeholder="Mô tả phòng ban..."
+            className="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition" />
         </div>
       ) : (
         <button onClick={() => setAddingDept(true)}

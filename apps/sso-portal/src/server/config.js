@@ -6,6 +6,24 @@ var SHEETS = {
   SYS: '_Hệ Thống',
   HANDOFFS: '_Handoffs',
   PHONG_BAN: '_Phòng Ban',
+  PHAN_BO: '_Phân Bổ',
+  NHAT_KY: '_Nhật Ký',
+}
+
+var POSITIONS = [
+  { code: 'Giám đốc', rank: 90, scope: 'company', max: 1 },
+  { code: 'Phó GĐ', rank: 80, scope: 'company', max: -1 },
+  { code: 'Văn thư', rank: 70, scope: 'company', max: -1 },
+  { code: 'Trưởng phòng', rank: 60, scope: 'dept', max: 1 },
+  { code: 'Phó phòng', rank: 50, scope: 'dept', max: -1 },
+  { code: 'Người phụ trách', rank: 40, scope: 'dept', max: -1 },
+  { code: 'Nhân viên', rank: 10, scope: 'dept', max: -1 },
+  { code: 'admin', rank: 100, scope: 'company', max: -1 },
+]
+
+function _getPositionRank(chucVu) {
+  var pos = POSITIONS.find(function(p) { return p.code === chucVu })
+  return pos ? pos.rank : 0
 }
 
 var APP_ID = 'sso-portal'
@@ -15,7 +33,7 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '5') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '9') { _initDone = true; return }
   var ss = getAppSheet()
   _ensureAllTabsExist(ss)
 
@@ -25,7 +43,7 @@ function ensureInitialized() {
   } else {
     _ensureOwnerUser(ss)
   }
-  props.setProperty('SCHEMA_V', '5')
+  props.setProperty('SCHEMA_V', '9')
   _initDone = true
 }
 
@@ -35,7 +53,9 @@ function _ensureAllTabsExist(ss) {
     { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
     { name: SHEETS.HANDOFFS, headers: ['ID', 'Token', 'UserID', 'AppID', 'CreatedAt', 'ExpiresAt', 'Consumed'] },
-    { name: SHEETS.PHONG_BAN, headers: ['ID', 'Tên phòng ban', 'Trưởng', 'Phó'] },
+    { name: SHEETS.PHONG_BAN, headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Trưởng', 'Phó', 'Người phụ trách', 'Đơn vị thuộc sự quản lý'] },
+    { name: SHEETS.PHAN_BO, headers: ['ID', 'UserID', 'Chức vụ', 'PhongBanID'] },
+    { name: SHEETS.NHAT_KY, headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
   ]
 
   tabDefs.forEach(function(def) {

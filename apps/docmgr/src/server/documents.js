@@ -139,6 +139,21 @@ function _formatDateDMY(val) {
 function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipients) {
   if (!toRecipients || toRecipients.length === 0) return
   ccRecipients = ccRecipients || []
+  // Deduplicate by email — each address receives at most one email
+  var _dedup = function(list) {
+    var seen = {}
+    return list.filter(function(r) {
+      if (!r.email) return false
+      var key = r.email.toLowerCase()
+      if (seen[key]) return false
+      seen[key] = true
+      return true
+    })
+  }
+  toRecipients = _dedup(toRecipients)
+  var toEmails = {}
+  toRecipients.forEach(function(r) { toEmails[r.email.toLowerCase()] = true })
+  ccRecipients = _dedup(ccRecipients).filter(function(r) { return !toEmails[r.email.toLowerCase()] })
   var docName = (typeof doc === 'string') ? doc : (doc['Tên hồ sơ'] || '')
   // Dev override: redirect all emails to test address for huyenvv90 owner
   try {
@@ -161,37 +176,39 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       if (config['MAIL_SENDER_EMAIL']) baseOptions.from = config['MAIL_SENDER_EMAIL']
     }
 
+    var toEmails = toRecipients.map(function(r) { return r.email }).join(',')
     var ccEmails = ccRecipients.filter(function(r) { return r.email }).map(function(r) { return r.email }).join(',')
 
     var fileLinks = (typeof doc === 'object') ? _buildFileLinks(doc) : ''
     var ngayBanHanh = _formatDateDMY(typeof doc === 'object' ? doc['Ngày ban hành'] : '')
     var ngayKetThuc = _formatDateDMY(typeof doc === 'object' ? doc['Ngày kết thúc'] : '')
 
-    toRecipients.forEach(function(r) {
-      if (!r.email) return
-      var vars = {
-        '{tênHồSơ}': docName,
-        '{tênNgườiGửi}': session ? (session.name || session.username || '') : 'Hệ thống',
-        '{ngườiGửi}': session ? session.username : 'Hệ thống',
-        '{emailNgườiGửi}': session ? (session.email || '') : '',
-        '{tênNgườiNhận}': r.name || '',
-        '{vaiTròNgườiNhận}': r.role || '',
-        '{linkHệThống}': appLink,
-        '{linkTàiLiệu}': fileLinks,
-        '{ngàyBanHành}': ngayBanHanh,
-        '{ngàyKếtThúc}': ngayKetThuc,
-        '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : ''
-      }
-      var subject = _applyTemplate(tpl.subject, vars)
-      var body = _applyTemplate(tpl.body, vars)
-      var mailOptions = Object.assign({}, baseOptions)
-      if (ccEmails) mailOptions.cc = ccEmails
-      Logger.log('_sendNotificationEmails: sending to=' + r.email + ' cc=' + (ccEmails || ''))
-      GmailApp.sendEmail(r.email, subject, body, mailOptions)
-      Logger.log('_sendNotificationEmails: sent OK to ' + r.email)
-    })
+    // Single recipient name for personalized templates, generic for bulk
+    var recipientName = toRecipients.length === 1 ? (toRecipients[0].name || '') : 'Quý Anh/Chị'
+    var recipientRole = toRecipients.length === 1 ? (toRecipients[0].role || '') : ''
+    var vars = {
+      '{tênHồSơ}': docName,
+      '{tênNgườiGửi}': session ? (session.name || session.username || '') : 'Hệ thống',
+      '{ngườiGửi}': session ? session.username : 'Hệ thống',
+      '{emailNgườiGửi}': session ? (session.email || '') : '',
+      '{tênNgườiNhận}': recipientName,
+      '{vaiTròNgườiNhận}': recipientRole,
+      '{linkHệThống}': appLink,
+      '{linkTàiLiệu}': fileLinks,
+      '{ngàyBanHành}': ngayBanHanh,
+      '{ngàyKếtThúc}': ngayKetThuc,
+      '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : ''
+    }
+    var subject = _applyTemplate(tpl.subject, vars)
+    var body = _applyTemplate(tpl.body, vars)
+    var mailOptions = Object.assign({}, baseOptions)
+    if (ccEmails) mailOptions.cc = ccEmails
+    Logger.log('_sendNotificationEmails: sending to=' + toEmails + ' cc=' + (ccEmails || ''))
+    GmailApp.sendEmail(toEmails, subject, body, mailOptions)
+    Logger.log('_sendNotificationEmails: sent OK')
   } catch(e) {
     Logger.log('_sendNotificationEmails ERROR: ' + e.message + '\n' + e.stack)
+    throw new Error('Gửi email thất bại: ' + e.message)
   }
 }
 

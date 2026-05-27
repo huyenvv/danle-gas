@@ -30,7 +30,7 @@ export default function PhongBanManager() {
   const [selectedDeptId, setSelectedDeptId] = useState(null)
   // Create mode: new dept with local form state
   const [creating, setCreating] = useState(false)
-  const [createData, setCreateData] = useState({ name: '', truong: '', pho: [], memberIds: [] })
+  const [createData, setCreateData] = useState({ name: '', moTa: '', truong: '', pho: [], nguoiPhuTrach: '', donViQuanLy: [], memberIds: [] })
 
   const [saving, setSaving] = useState(false)
 
@@ -50,6 +50,9 @@ export default function PhongBanManager() {
   const viewMembers = selectedDept ? (users || []).filter(u => u['Phòng ban'] === viewDeptName) : []
   const viewTruongId = selectedDept ? String(selectedDept['Trưởng'] || '') : ''
   const viewPhoIds = selectedDept ? parsePho(selectedDept['Phó']) : []
+  const viewMoTa = selectedDept ? (selectedDept['Mô tả'] || '') : ''
+  const viewNguoiPhuTrach = selectedDept ? String(selectedDept['Người phụ trách'] || '') : ''
+  const viewDonViQuanLy = selectedDept ? (() => { try { const v = selectedDept['Đơn vị thuộc sự quản lý']; return v ? (typeof v === 'string' ? JSON.parse(v) : v) : [] } catch(_) { return [] } })() : []
   const viewAvailableUsers = activeUsers.filter(u => u['Phòng ban'] !== viewDeptName || !u['Phòng ban'])
 
   // === CREATE MODE helpers ===
@@ -58,7 +61,7 @@ export default function PhongBanManager() {
 
   function openCreate() {
     setCreating(true)
-    setCreateData({ name: '', truong: '', pho: [], memberIds: [] })
+    setCreateData({ name: '', moTa: '', truong: '', pho: [], nguoiPhuTrach: '', donViQuanLy: [], memberIds: [] })
 
   }
 
@@ -75,8 +78,11 @@ export default function PhongBanManager() {
     try {
       const data = {
         'Tên phòng ban': createData.name.trim(),
+        'Mô tả': createData.moTa || '',
         'Trưởng': createData.truong || '',
         'Phó': createData.pho,
+        'Người phụ trách': createData.nguoiPhuTrach || '',
+        'Đơn vị thuộc sự quản lý': JSON.stringify(createData.donViQuanLy || []),
       }
       await gasCall('api_addPhongBan', getToken(), data)
       // Assign members
@@ -106,6 +112,7 @@ export default function PhongBanManager() {
       memberIds: d.memberIds.filter(id => id !== uid),
       truong: d.truong === uid ? '' : d.truong,
       pho: d.pho.filter(id => id !== uid),
+      nguoiPhuTrach: d.nguoiPhuTrach === uid ? '' : d.nguoiPhuTrach,
     }))
   }
 
@@ -171,6 +178,9 @@ export default function PhongBanManager() {
       if (viewPhoIds.includes(String(userId))) {
         await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Phó': viewPhoIds.filter(id => id !== String(userId)) })
       }
+      if (String(userId) === viewNguoiPhuTrach) {
+        await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Người phụ trách': '' })
+      }
       await gasCall('api_updateUser', getToken(), userId, { 'Phòng ban': '' })
       await sync(true)
     } catch (err) {
@@ -222,8 +232,47 @@ export default function PhongBanManager() {
     }
   }
 
+  async function handleChangeNguoiPhuTrach(newId) {
+    setSaving(true)
+    try {
+      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Người phụ trách': newId })
+      await sync(true)
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleChangeMoTa(newVal) {
+    setSaving(true)
+    try {
+      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Mô tả': newVal })
+      await sync(true)
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleChangeDonViQuanLy(newIds) {
+    setSaving(true)
+    try {
+      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Đơn vị thuộc sự quản lý': JSON.stringify(newIds) })
+      await sync(true)
+    } catch (err) {
+      addToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // ===================== SHARED MODAL RENDERER =====================
-  function renderModal({ isCreate, deptLabel, memberList, truong, pho, available, onClose, leaderCandidates }) {
+  function renderModal({ isCreate, deptLabel, moTa, memberList, truong, pho, nguoiPhuTrach, donViQuanLy, available, onClose, leaderCandidates }) {
+    const currentDeptId = isCreate ? null : selectedDeptId
+    const otherDepts = (phongBan || []).filter(d => String(d.ID) !== String(currentDeptId))
+    const getDeptName = (id) => { const d = (phongBan || []).find(x => String(x.ID) === String(id)); return d ? d['Tên phòng ban'] : String(id) }
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
         <div className="bg-white rounded-3xl shadow-[0_24px_80px_rgba(0,0,0,0.2)] w-full max-w-3xl flex flex-col overflow-hidden max-h-[90vh]">
@@ -253,6 +302,26 @@ export default function PhongBanManager() {
 
           {/* Body */}
           <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+            {/* Mô tả */}
+            <div>
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Mô tả</p>
+              {isCreate ? (
+                <textarea value={createData.moTa}
+                  onChange={e => setCreateData(d => ({ ...d, moTa: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition resize-none placeholder:text-on-surface-variant/40"
+                  placeholder="Mô tả phòng ban..." />
+              ) : (
+                <textarea key={selectedDeptId}
+                  defaultValue={moTa}
+                  onBlur={e => { if (e.target.value !== viewMoTa) handleChangeMoTa(e.target.value) }}
+                  rows={2}
+                  disabled={saving}
+                  className="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/40 text-sm outline-none focus:ring-2 focus:ring-primary/20 transition resize-none disabled:opacity-50"
+                  placeholder="Mô tả phòng ban..." />
+              )}
+            </div>
+
             {/* Leadership */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Trưởng */}
@@ -324,6 +393,72 @@ export default function PhongBanManager() {
                   </select>
                 </div>
               </div>
+            </div>
+
+            {/* Người phụ trách */}
+            <div className="rounded-2xl bg-surface-container-lowest border border-outline-variant/40 p-4">
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Người phụ trách</p>
+              {nguoiPhuTrach && getUserById(nguoiPhuTrach) ? (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+                    <span className="text-sm font-bold text-green-700">{avatar(getUserName(nguoiPhuTrach))}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-on-surface text-sm truncate">{getUserName(nguoiPhuTrach)}</p>
+                    <p className="text-xs text-on-surface-variant truncate">{getUserById(nguoiPhuTrach)?.['Email']}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-on-surface-variant italic">Chưa chỉ định</p>
+              )}
+              <div className="mt-3">
+                <select value={nguoiPhuTrach}
+                  onChange={e => isCreate
+                    ? setCreateData(d => ({ ...d, nguoiPhuTrach: e.target.value }))
+                    : handleChangeNguoiPhuTrach(e.target.value)}
+                  disabled={saving}
+                  className="w-full px-3 py-2 rounded-xl bg-surface-container-low border-none text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50">
+                  <option value="">-- Chọn người phụ trách --</option>
+                  {leaderCandidates.map(u => (
+                    <option key={u.ID} value={String(u.ID)}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Đơn vị thuộc sự quản lý */}
+            <div>
+              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-3">Đơn vị thuộc sự quản lý</p>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {donViQuanLy.map(id => (
+                  <span key={id} className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full">
+                    {getDeptName(id)}
+                    <button type="button" onClick={() => {
+                      const next = donViQuanLy.filter(x => String(x) !== String(id))
+                      isCreate
+                        ? setCreateData(d => ({ ...d, donViQuanLy: next }))
+                        : handleChangeDonViQuanLy(next)
+                    }} disabled={saving} className="hover:text-error"><Icon name="close" size={10} /></button>
+                  </span>
+                ))}
+              </div>
+              <select value=""
+                onChange={e => {
+                  if (!e.target.value) return
+                  const newId = e.target.value
+                  if (donViQuanLy.some(x => String(x) === newId)) return
+                  const next = [...donViQuanLy, newId]
+                  isCreate
+                    ? setCreateData(d => ({ ...d, donViQuanLy: next }))
+                    : handleChangeDonViQuanLy(next)
+                }}
+                disabled={saving}
+                className="w-full px-3 py-2 rounded-xl bg-surface-container-low border-none text-xs focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50">
+                <option value="">+ Thêm đơn vị...</option>
+                {otherDepts.filter(d => !donViQuanLy.some(x => String(x) === String(d.ID))).map(d => (
+                  <option key={d.ID} value={String(d.ID)}>{d['Tên phòng ban']}</option>
+                ))}
+              </select>
             </div>
 
             {/* Members (exclude Trưởng/Phó — already shown above) */}
@@ -494,9 +629,12 @@ export default function PhongBanManager() {
       {creating && renderModal({
         isCreate: true,
         deptLabel: '',
+        moTa: createData.moTa,
         memberList: createMembers,
         truong: createData.truong,
         pho: createData.pho,
+        nguoiPhuTrach: createData.nguoiPhuTrach,
+        donViQuanLy: createData.donViQuanLy,
         available: createAvailable,
         leaderCandidates: activeUsers,
         onClose: closeModal,
@@ -506,9 +644,12 @@ export default function PhongBanManager() {
       {selectedDept && renderModal({
         isCreate: false,
         deptLabel: viewDeptName,
+        moTa: viewMoTa,
         memberList: viewMembers,
         truong: viewTruongId,
         pho: viewPhoIds,
+        nguoiPhuTrach: viewNguoiPhuTrach,
+        donViQuanLy: viewDonViQuanLy,
         available: viewAvailableUsers,
         leaderCandidates: viewMembers,
         onClose: closeModal,

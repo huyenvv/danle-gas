@@ -3,6 +3,7 @@ import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
+import { groupUsersByDept } from '../utils/groupUsers.js'
 
 const POPULAR_ICONS = [
   'description', 'folder', 'group', 'bar_chart', 'settings', 'dashboard',
@@ -19,7 +20,7 @@ function Icon({ name, size = 20, className = '' }) {
 }
 
 export default function AppManager() {
-  const { apps, setApps, users, phongBan, sync } = usePortalData()
+  const { apps, setApps, users, phongBan, assignments, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
@@ -154,23 +155,12 @@ export default function AppManager() {
     })
   }
 
-  // Group users by department
   function groupByDept() {
-    const grouped = {}
-    const allUsers = users || []
-    allUsers.forEach(u => {
-      const dept = u['Phòng ban'] || 'Chưa phân phòng'
-      if (!grouped[dept]) grouped[dept] = []
-      grouped[dept].push(u)
-    })
-    // Named departments first, "Chưa phân phòng" last
-    const keys = Object.keys(grouped).sort((a, b) => {
-      if (a === 'Chưa phân phòng') return 1
-      if (b === 'Chưa phân phòng') return -1
-      return a.localeCompare(b, 'vi')
-    })
-    return keys.map(k => ({ name: k, users: grouped[k] }))
+    const allUsers = (users || []).filter(u => u['Trạng thái'] !== 'Locked')
+    return groupUsersByDept(allUsers, phongBan, assignments)
   }
+
+
 
   function getVisLabel(app) {
     const qx = app['Quyền xem']

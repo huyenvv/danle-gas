@@ -7,6 +7,7 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from '../../lib/workflowPermissions.js'
 import WorkflowButtons from './WorkflowButtons.jsx'
 import PublishDialog from './PublishDialog.jsx'
+import UserPickerDropdown from '../common/UserPickerDropdown.jsx'
 import PublishHistory from './PublishHistory.jsx'
 
 function parseFileInfos(fileIdCol) {
@@ -409,42 +410,27 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   {!isNhanViec && (
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phụ trách *</label>
-                    <select className="w-full bg-surface-container-low border-none rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    <UserPickerDropdown
+                      users={lookups.users || []}
+                      phongBan={lookups.phongBan || []}
+                      assignments={lookups.assignments || []}
                       value={giaoViecForm.phuTrach}
-                      onChange={e => setGiaoViecForm(f => ({ ...f, phuTrach: e.target.value }))}>
-                      <option value="">-- Chọn --</option>
-                      {(lookups.users || []).map(u => (
-                        <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>
-                      ))}
-                    </select>
+                      onChange={v => setGiaoViecForm(f => ({ ...f, phuTrach: v }))}
+                    />
                   </div>
                   )}
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phối hợp</label>
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
-                      {giaoViecForm.phoiHop.map(a => {
-                        const dn = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)?.['Tên nhân viên'] || a
-                        return (
-                          <span key={a} className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full">
-                            {dn}
-                            <button type="button" onClick={() => setGiaoViecForm(f => ({ ...f, phoiHop: f.phoiHop.filter(x => x !== a) }))}
-                              className="hover:text-error"><Icon name="close" size={10} /></button>
-                          </span>
-                        )
-                      })}
-                    </div>
-                    <select className="w-full bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                      value=""
-                      onChange={e => {
-                        const v = e.target.value
-                        if (v && !giaoViecForm.phoiHop.includes(v) && v !== giaoViecForm.phuTrach) {
-                          setGiaoViecForm(f => ({ ...f, phoiHop: [...f.phoiHop, v] }))
-                        }
-                      }}>
-                      <option value="">+ Thêm...</option>
-                      {(lookups.users || []).filter(u => !giaoViecForm.phoiHop.includes(u['Tên đăng nhập']) && u['Tên đăng nhập'] !== giaoViecForm.phuTrach)
-                        .map(u => <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>)}
-                    </select>
+                    <UserPickerDropdown
+                      users={lookups.users || []}
+                      phongBan={lookups.phongBan || []}
+                      assignments={lookups.assignments || []}
+                      value={giaoViecForm.phoiHop}
+                      onChange={v => setGiaoViecForm(f => ({ ...f, phoiHop: v }))}
+                      placeholder="+ Thêm..."
+                      exclude={giaoViecForm.phuTrach ? [giaoViecForm.phuTrach] : []}
+                      multiple
+                    />
                   </div>
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => setGiaoViecForm(null)}
@@ -478,12 +464,17 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
                       {doc['Tình trạng'] || '—'}
                     </span>
-                    {publishHistory.length > 0 && (
+                    {publishHistory.length > 0 ? (
                       <button type="button" onClick={() => setShowPublishHistory(true)}
-                        className="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-700 hover:underline transition-colors">
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors">
                         <Icon name="history" size={14} />
-                        Phát hành ({publishHistory.length})
+                        Đã phát hành {publishHistory.length} lần
                       </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs text-on-surface-variant/60 bg-surface-container">
+                        <Icon name="history" size={14} />
+                        Chưa phát hành
+                      </span>
                     )}
                   </div>
                 </div>
@@ -740,8 +731,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
       {showPublishDialog && (
         <PublishDialog
-          users={lookups.users || []}
+          users={lookups.ssoUsers || lookups.users || []}
           phongBan={lookups.phongBan || []}
+          assignments={lookups.assignments || []}
           onPublish={handlePublishFromDialog}
           onClose={() => setShowPublishDialog(false)}
           loading={publishing}

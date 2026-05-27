@@ -277,7 +277,7 @@ export default function SettingsPage({ token, onCompanyNameChange, initialConfig
 const MAIL_TABS = [
   { key: 'trinhDuyet', label: 'Trình duyệt', icon: 'send', desc: 'Gửi cho Giám đốc khi có hồ sơ cần duyệt' },
   { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
-  { key: 'phatHanh', label: 'Phát hành', icon: 'campaign', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
+  { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
 ]
 
 function MailTabs({ templates, onSetTpl }) {

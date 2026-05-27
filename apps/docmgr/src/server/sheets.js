@@ -13,14 +13,16 @@ function getAllData(session) {
 
   // Cross-reference parent SSO sheet to get Tên nhân viên + Email
   var parentInfoMap = {}
+  var parentSs = null
+  var parentUserRows = []
   try {
     var parentId = ssoGetParentSheetId()
     if (parentId) {
-      var parentSs = SpreadsheetApp.openById(parentId)
+      parentSs = SpreadsheetApp.openById(parentId)
       var parentSheet = parentSs.getSheetByName('_Người Dùng')
       if (parentSheet) {
-        var parentUsers = rowsToObjects(parentSheet.getDataRange().getValues())
-        parentUsers.forEach(function(u) {
+        parentUserRows = rowsToObjects(parentSheet.getDataRange().getValues())
+        parentUserRows.forEach(function(u) {
           parentInfoMap[String(u['ID'])] = {
             name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
             email: u['Email'] || '',
@@ -40,6 +42,29 @@ function getAllData(session) {
       phongBanData = rowsToObjects(pbSheet.getDataRange().getValues())
     }
   } catch(e) { Logger.log('getAllData phongBan error: ' + e.message) }
+
+  var assignmentsData = []
+  try {
+    var phanBoSheet = parentSs.getSheetByName('_Phân Bổ')
+    if (phanBoSheet) {
+      assignmentsData = rowsToObjects(phanBoSheet.getDataRange().getValues())
+    }
+  } catch(e) { Logger.log('getAllData assignments error: ' + e.message) }
+
+  // All active SSO employees (for publish dialog — can send email to anyone in company)
+  // Owner's Quyền column may be empty — SSO determines owner at runtime via getOwner().
+  // Mark owner as 'Quản trị' so the client can filter them out when they have no other role.
+  var parentOwnerEmail = ''
+  try { parentOwnerEmail = (parentSs.getOwner().getEmail() || '').toLowerCase() } catch(e) {}
+  var allParentUsers = parentUserRows.filter(function(u) {
+    return u['Trạng thái'] === 'Active'
+  }).map(function(u) {
+    var quyen = u['Quyền'] || ''
+    if (!quyen && parentOwnerEmail && (u['Email'] || '').toLowerCase() === parentOwnerEmail) {
+      quyen = 'Quản trị'
+    }
+    return { ID: u['ID'], 'Tên nhân viên': u['Tên nhân viên'] || u['Tên đăng nhập'] || '', 'Email': u['Email'] || '', 'Tên đăng nhập': u['Tên đăng nhập'] || '', 'Quyền': quyen }
+  })
 
   var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     var info = parentInfoMap[String(r['UserID'])] || {}
@@ -91,7 +116,9 @@ function getAllData(session) {
     duAn:        getSheetData(SHEETS.DU_AN),
     nhaCungCap:  getSheetData(SHEETS.NHA_CUNG_CAP),
     users:       users,
+    ssoUsers:    allParentUsers,
     phongBan:    phongBanData,
+    assignments: assignmentsData,
   }
 }
 

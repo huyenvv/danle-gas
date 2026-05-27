@@ -4,6 +4,17 @@ import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import gasCall from '../gasClient.js'
 
+const ROLE_BADGE = {
+  'admin':          'bg-primary/10 text-primary',
+  'Giám đốc':      'bg-violet-100 text-violet-700',
+  'Phó GĐ':       'bg-violet-50 text-violet-600',
+  'Trưởng phòng':  'bg-surface-container text-on-surface-variant',
+  'Phó phòng':     'bg-surface-container text-on-surface-variant',
+  'Nhân viên':     'bg-surface-container text-on-surface-variant',
+  'Văn thư':      'bg-cyan-100 text-cyan-700',
+  'Quản trị viên': 'bg-primary/10 text-primary',
+}
+
 function viNormalize(str) {
   return (str == null ? '' : String(str))
     .normalize('NFD')
@@ -56,18 +67,19 @@ export default function UserManager() {
   async function handleSubmit(e) {
     e.preventDefault()
     if (!formData['Email']?.trim()) return
+    const isEdit = !!editId
+    setShowForm(false)
+    setEditId(null)
+    setFormData({ 'Email': '', 'Tên nhân viên': '' })
     setSaving(true)
     try {
-      if (editId) {
+      if (isEdit) {
         await gasCall('api_updateUser', localStorage.getItem('sso_access_token'), editId, formData)
         addToast('Cập nhật thành công', 'success')
       } else {
         await gasCall('api_addUser', localStorage.getItem('sso_access_token'), formData)
         addToast('Thêm người dùng thành công. Mật khẩu mặc định: Admin@@123', 'success')
       }
-      setShowForm(false)
-      setEditId(null)
-      setFormData({ 'Email': '', 'Tên nhân viên': '' })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -160,16 +172,18 @@ export default function UserManager() {
   const avatar = (name) => (name || '?')[0].toUpperCase()
 
   // Get user assignments from _Phân Bổ data
+  const COMPANY_ROLES = new Set(['Giám đốc', 'Phó GĐ', 'Văn thư', 'admin'])
   function getUserAssignments(userId) {
     const uid = String(userId)
     const allAssignments = assignments || []
     const allDepts = phongBan || []
-    return allAssignments
-      .filter(a => String(a['UserID']) === uid)
-      .map(a => {
-        const dept = a['PhongBanID'] ? allDepts.find(d => String(d.ID) === String(a['PhongBanID'])) : null
-        return { role: a['Chức vụ'], dept: dept ? dept['Tên phòng ban'] : '' }
-      })
+    const userEntries = allAssignments.filter(a => String(a['UserID']) === uid)
+    const hasCompanyRole = userEntries.some(a => (!a['PhongBanID'] || a['PhongBanID'] === '') && COMPANY_ROLES.has(a['Chức vụ']))
+    return userEntries.map(a => {
+      const dept = a['PhongBanID'] ? allDepts.find(d => String(d.ID) === String(a['PhongBanID'])) : null
+      const isKiemNhiem = hasCompanyRole && !!dept
+      return { role: a['Chức vụ'], dept: dept ? dept['Tên phòng ban'] : '', kiemNhiem: isKiemNhiem }
+    }).sort((a, b) => a.kiemNhiem - b.kiemNhiem)
   }
 
   return (
@@ -180,6 +194,17 @@ export default function UserManager() {
           <div className="bg-white rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.18)] px-8 py-6 flex flex-col items-center gap-3 min-w-[220px]">
             <Icon name="sync" size={32} className="text-primary animate-spin" />
             <p className="text-sm font-medium text-on-surface">Đang reset mật khẩu...</p>
+            <p className="text-xs text-on-surface-variant">Vui lòng đợi</p>
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen loading overlay khi thêm/sửa user */}
+      {saving && (
+        <div className="fixed inset-0 z-[250] bg-black/50 backdrop-blur-sm flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.18)] px-8 py-6 flex flex-col items-center gap-3 min-w-[220px]">
+            <Icon name="sync" size={32} className="text-primary animate-spin" />
+            <p className="text-sm font-medium text-on-surface">Đang lưu...</p>
             <p className="text-xs text-on-surface-variant">Vui lòng đợi</p>
           </div>
         </div>
@@ -280,11 +305,15 @@ export default function UserManager() {
                       const entries = getUserAssignments(u.ID)
                       if (entries.length === 0) return <span className="text-on-surface-variant">—</span>
                       return (
-                        <div className="flex flex-col gap-0.5">
+                        <div className="flex flex-col gap-1">
                           {entries.map((e, i) => (
-                            <span key={i} className="text-sm text-on-surface-variant">
-                              {e.role}{e.dept ? ' — ' : ''}{e.dept && <span className="text-on-surface font-medium">{e.dept}</span>}
-                            </span>
+                            <div key={i} className={e.kiemNhiem ? 'flex items-center gap-1.5' : 'flex items-center gap-1.5'}>
+                              {e.kiemNhiem && <span className="text-[10px] text-on-surface-variant">kiêm</span>}
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[e.role] || 'bg-surface-container text-on-surface-variant'}`}>
+                                {e.role}
+                              </span>
+                              {e.dept && <span className="text-xs text-on-surface-variant">{e.dept}</span>}
+                            </div>
                           ))}
                         </div>
                       )
@@ -375,7 +404,7 @@ export default function UserManager() {
                 {editId && (
                   <div className="p-3 rounded-xl bg-surface-container-low text-xs text-on-surface-variant flex items-center gap-2">
                     <Icon name="info" size={16} className="text-primary shrink-0" />
-                    Phòng ban và chức vụ được quản lý trong tab <strong>Bộ máy</strong>.
+                    Phòng ban và chức vụ được quản lý trong tab <strong>Phòng ban</strong>.
                   </div>
                 )}
                 <div className="flex gap-3 pt-2">

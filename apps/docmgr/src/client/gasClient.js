@@ -211,15 +211,42 @@ const _mockData = {
     { ID: 2, 'Tên phòng ban': 'Kinh doanh' },
   ],
   assignments: [
-    { ID: 1, UserID: '1', 'Chức vụ': 'admin', PhongBanID: '' },
-    { ID: 2, UserID: '3', 'Chức vụ': 'Trưởng phòng', PhongBanID: '1' },
-    { ID: 3, UserID: '2', 'Chức vụ': 'Nhân viên', PhongBanID: '1' },
+    // Ban Giám Đốc
+    { ID: 1, UserID: '4', 'Chức vụ': 'Giám đốc', PhongBanID: '' },
+    { ID: 2, UserID: '5', 'Chức vụ': 'Phó GĐ', PhongBanID: '' },
+    { ID: 3, UserID: '6', 'Chức vụ': 'Phó GĐ', PhongBanID: '' },
+    // Văn thư & Quản trị
+    { ID: 4, UserID: '1', 'Chức vụ': 'admin', PhongBanID: '' },
+    { ID: 5, UserID: '7', 'Chức vụ': 'Văn thư', PhongBanID: '' },
+    // Phòng Kỹ thuật
+    { ID: 6, UserID: '3', 'Chức vụ': 'Trưởng phòng', PhongBanID: '1' },
+    { ID: 7, UserID: '2', 'Chức vụ': 'Nhân viên', PhongBanID: '1' },
+    { ID: 8, UserID: '8', 'Chức vụ': 'Nhân viên', PhongBanID: '1' },
+    // Phòng Kinh doanh
+    { ID: 9, UserID: '9', 'Chức vụ': 'Trưởng phòng', PhongBanID: '2' },
+    { ID: 10, UserID: '10', 'Chức vụ': 'Nhân viên', PhongBanID: '2' },
   ],
   docs: [
-    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]) },
-    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]) },
+    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': '2024-12-31', 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-10T09:00:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }], cc: [{ id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }] }, { lan: 2, ngay: '2024-03-15T14:30:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }, { id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }], cc: [] }]) },
+    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024',    'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': '', 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-20T10:15:00', nguoiGui: 3, to: [{ id: 1, name: 'Admin Hệ thống', email: 'admin@test.com' }], cc: [] }]) },
     { ID: 3, 'Tên hồ sơ': 'Hợp đồng xây dựng VP', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'XYZ Ltd', 'Số hồ sơ': 'HS-003', 'Giá trị HĐ': 500000000, 'Ngày ban hành': '2024-03-01', 'Ngày kết thúc': '2025-03-01', 'Ngày cập nhật': '2024-03-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': '', 'Ghi chú': 'Chờ GĐ duyệt', 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
   ],
+}
+
+function _mockSsoUsers() {
+  return [
+    { ID: 1,  'Tên đăng nhập': 'admin',      'Tên nhân viên': 'Admin Hệ thống',    'Email': 'admin@test.com',   'Quyền': '' },
+    { ID: 2,  'Tên đăng nhập': 'editor1',     'Tên nhân viên': 'Nguyễn Văn A',      'Email': 'nva@test.com',     'Quyền': '' },
+    { ID: 3,  'Tên đăng nhập': 'truongphong', 'Tên nhân viên': 'Trần Thị Bình',     'Email': 'ttb@test.com',     'Quyền': '' },
+    { ID: 4,  'Tên đăng nhập': 'giamdoc',     'Tên nhân viên': 'Lê Văn Giám Đốc',  'Email': 'gd@test.com',      'Quyền': '' },
+    { ID: 5,  'Tên đăng nhập': 'phogd1',      'Tên nhân viên': 'Phạm Phó GĐ 1',    'Email': 'pgd1@test.com',    'Quyền': '' },
+    { ID: 6,  'Tên đăng nhập': 'phogd2',      'Tên nhân viên': 'Hoàng Phó GĐ 2',   'Email': 'pgd2@test.com',    'Quyền': '' },
+    { ID: 7,  'Tên đăng nhập': 'vanthu',      'Tên nhân viên': 'Ngô Thị Văn Thư',  'Email': 'vt@test.com',      'Quyền': '' },
+    { ID: 8,  'Tên đăng nhập': 'nhanvien2',   'Tên nhân viên': 'Đỗ Minh Tuấn',     'Email': 'dmt@test.com',     'Quyền': '' },
+    { ID: 9,  'Tên đăng nhập': 'tpkd',        'Tên nhân viên': 'Vũ Thị Hương',     'Email': 'vth@test.com',     'Quyền': '' },
+    { ID: 10, 'Tên đăng nhập': 'nvkd1',       'Tên nhân viên': 'Bùi Đức Thắng',    'Email': 'bdt@test.com',     'Quyền': '' },
+    { ID: 11, 'Tên đăng nhập': 'newuser',     'Tên nhân viên': 'Người Mới',         'Email': 'new@test.com',     'Quyền': '' },
+  ]
 }
 
 function _mockAdd(list, data) {
@@ -281,11 +308,8 @@ async function mockCall(fn, ...args) {
         nhaCungCap:  _mockData.nhaCungCap.map(i => ({ ...i })),
         phongBan:    _mockData.phongBan.map(i => ({ ...i })),
         assignments: _mockData.assignments.map(i => ({ ...i })),
-        users: [
-          { ID: 1, 'Tên đăng nhập': 'admin',       'Tên nhân viên': 'Admin Hệ thống',  'Email': 'admin@test.com',  'Quyền': 'admin' },
-          { ID: 2, 'Tên đăng nhập': 'editor1',      'Tên nhân viên': 'Nguyễn Văn A',    'Email': 'nva@test.com',    'Quyền': 'Nhân viên' },
-          { ID: 3, 'Tên đăng nhập': 'truongphong',  'Tên nhân viên': 'Trần Thị Bình',   'Email': 'ttb@test.com',    'Quyền': 'Trưởng phòng' },
-        ],
+        users: _mockSsoUsers(),
+        ssoUsers: _mockSsoUsers(),
       }
       return _lookups
     }
@@ -302,11 +326,8 @@ async function mockCall(fn, ...args) {
           nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
           phongBan: _mockData.phongBan.map(i => ({ ...i })),
           assignments: _mockData.assignments.map(i => ({ ...i })),
-          users: [
-            { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
-            { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
-            { ID: 3, 'Tên đăng nhập': 'truongphong', 'Tên nhân viên': 'Trần Thị Bình', 'Email': 'ttb@test.com', 'Quyền': 'Trưởng phòng' },
-          ],
+          users: _mockSsoUsers(),
+          ssoUsers: _mockSsoUsers(),
         },
         docs,
         stats: { total: docs.length, byStatus, totalValue },
@@ -325,11 +346,8 @@ async function mockCall(fn, ...args) {
           nhaCungCap: _mockData.nhaCungCap.map(i => ({ ...i })),
           phongBan: _mockData.phongBan.map(i => ({ ...i })),
           assignments: _mockData.assignments.map(i => ({ ...i })),
-          users: [
-            { ID: 1, 'Tên đăng nhập': 'admin', 'Tên nhân viên': 'Admin Hệ thống', 'Email': 'admin@test.com', 'Quyền': 'admin' },
-            { ID: 2, 'Tên đăng nhập': 'editor1', 'Tên nhân viên': 'Nguyễn Văn A', 'Email': 'nva@test.com', 'Quyền': 'Nhân viên' },
-            { ID: 3, 'Tên đăng nhập': 'truongphong', 'Tên nhân viên': 'Trần Thị Bình', 'Email': 'ttb@test.com', 'Quyền': 'Trưởng phòng' },
-          ],
+          users: _mockSsoUsers(),
+          ssoUsers: _mockSsoUsers(),
         }
       }
       return res
@@ -378,12 +396,24 @@ async function mockCall(fn, ...args) {
       return _mockUpdate(_mockData.duAn, args[1], args[2])
     case 'api_deleteDuAn':
       return _mockDelete(_mockData.duAn, args[1])
-    case 'api_getUsers':
-      return (_mockData.users || [
-        { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '' },
-        { ID: 2, 'Tên đăng nhập': 'editor1', 'Email': 'editor@test.com', 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-10', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
-        { ID: 3, 'Tên đăng nhập': 'truongphong', 'Email': 'tp@test.com', 'Quyền': 'Trưởng phòng', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-12', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
-      ]).map(u => ({ ...u }))
+    case 'api_getUsers': {
+      // Derive Quyền from assignments (like real server does)
+      const roleMap = {}
+      _mockData.assignments.forEach(a => {
+        const uid = String(a.UserID)
+        // Keep highest-priority role per user
+        if (!roleMap[uid]) roleMap[uid] = a['Chức vụ']
+      })
+      return _mockSsoUsers().filter(u => u.ID !== 4 /* hide owner */).map(u => ({
+        ...u,
+        'Trạng thái': 'Active',
+        'Quyền': roleMap[String(u.ID)] || '',
+        'Phân quyền chi tiết': '',
+        'Được tạo hồ sơ': '',
+        'Được tạo danh mục con': '',
+        'Được phát hành': '',
+      }))
+    }
     case 'api_addUser': {
       const nu = { ID: ++_nextId, ...args[1], 'Trạng thái': 'Active', 'Đăng nhập cuối': '' }
       _mockData.users = [...(_mockData.users || []), nu]
@@ -455,6 +485,26 @@ async function mockCall(fn, ...args) {
       const comment = { ID: _nextCommentId++, DocID: docId, UserID: 1, 'Tên người dùng': 'admin', 'Nội dung': content, 'Thời gian': new Date().toISOString() }
       _mockComments.push(comment)
       return { data: comment }
+    }
+    case 'api_publishDocument': {
+      const docId = args[1]
+      const toIds = args[2] || []
+      const ccIds = args[3] || []
+      const idx = _mockData.docs.findIndex(d => String(d.ID) === String(docId))
+      if (idx === -1) throw new Error('Không tìm thấy hồ sơ')
+      const doc = _mockData.docs[idx]
+      const history = doc['Lịch sử phát hành'] ? JSON.parse(doc['Lịch sử phát hành']) : []
+      const toRecipients = toIds.map(id => {
+        const u = _mockData.users.find(u => String(u.ID) === String(id))
+        return { id, name: u ? (u['Tên nhân viên'] || u['Tên đăng nhập']) : String(id), email: u ? u['Email'] : '' }
+      })
+      const ccRecipients = ccIds.map(id => {
+        const u = _mockData.users.find(u => String(u.ID) === String(id))
+        return { id, name: u ? (u['Tên nhân viên'] || u['Tên đăng nhập']) : String(id), email: u ? u['Email'] : '' }
+      })
+      history.push({ lan: history.length + 1, ngay: new Date().toISOString(), nguoiGui: 1, to: toRecipients, cc: ccRecipients })
+      _mockData.docs[idx]['Lịch sử phát hành'] = JSON.stringify(history)
+      return { success: true, lan: history.length }
     }
     case 'api_browseDriveFolders': {
       const pid = args[1]

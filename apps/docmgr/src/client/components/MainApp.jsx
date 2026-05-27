@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import gasCall from '../gasClient.js'
 import { dataCache, prefetchLookups, refreshLookups, startPolling, stopPolling } from '../utils/dataCache.js'
@@ -19,6 +20,7 @@ import DocumentPreview from './documents/DocumentPreview.jsx'
 import AuditLogPage from './AuditLogPage.jsx'
 import TopHeader from './layout/TopHeader.jsx'
 import Icon from './common/Icon.jsx'
+import PublishHistory from './documents/PublishHistory.jsx'
 
 const ROOT_FOLDER_BATCH_SIZE = 25
 
@@ -458,6 +460,7 @@ export default function MainApp() {
                 isAdmin={isAdmin}
                 canDelete={isSuperAdmin}
                 usersMap={usersMap}
+                users={lookups.users}
                 collapsed={collapsed}
                 danhMuc={lookups.danhMuc}
                 unreadDocIds={unreadDocIds}
@@ -595,7 +598,7 @@ export default function MainApp() {
 }
 
 // ── Grouped document table (by category tree) with per-root load more ──────
-function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
+function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
   // Build docs-by-category map for ALL filtered docs (filters stay offline)
   const docsMap = {}
   docs.forEach(doc => {
@@ -657,7 +660,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
     return direct + children.reduce((s, c) => s + visibleSubtreeDocCount(c.ID, rootId), 0)
   }
 
-  const COL = 12
+  const COL = 13
 
   return (
     <div className="bg-white rounded-2xl shadow-card overflow-hidden">
@@ -679,6 +682,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">NCC (Nơi gửi)</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phụ trách</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tình trạng</th>
+              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phát hành</th>
               <th className="hidden">Giá trị HĐ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Ghi chú</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Ngày BH</th>
@@ -703,7 +707,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
                     visibleDocIds={rootVisibleIdsMap[rootKey] || new Set()}
                     indexMap={rootVisibleIndexMap[rootKey] || {}}
                     selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
-                    isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
+                    isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
                     role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
                   />
                   {visibleCount < total && (
@@ -734,7 +738,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
                 {!collapsed['__uncat__'] && uncategorizedVisible.map(doc => (
                   <DocRow key={doc.ID} doc={doc} depth={0} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
                     rowIndex={uncategorizedIndexMap[String(doc.ID)]}
-                    onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
+                    onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
                 ))}
                 {!collapsed['__uncat__'] && uncategorizedVisible.length < uncategorizedTotal && (
                   <tr>
@@ -766,7 +770,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, collapsed,
   )
 }
 
-function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
+function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
   const total = subtreeDocCount(cat.ID)
   const visibleTotal = visibleSubtreeDocCount(cat.ID, rootId)
   if (depth > 0 && visibleTotal === 0) return null
@@ -782,7 +786,7 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocId
           onClick={() => onToggleCat(cat.ID)}>
         <td className="px-3 py-2 w-10" onClick={e => e.stopPropagation()}></td>
         <td className="px-3 py-2 w-16" onClick={e => e.stopPropagation()}></td>
-        <td colSpan={8} className="px-4 py-2 font-semibold text-primary text-xs" style={{ paddingLeft: indent + 16 }}>
+        <td colSpan={9} className="px-4 py-2 font-semibold text-primary text-xs" style={{ paddingLeft: indent + 16 }}>
           <span className="mr-2">{isCollapsed ? '▶' : '▼'}</span>
           {cat['Tên danh mục']} <span className="font-normal text-primary/70 ml-1">({total} hồ sơ)</span>
         </td>
@@ -794,20 +798,20 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocId
           visibleDocIds={visibleDocIds}
           indexMap={indexMap}
           selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
-          isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
+          isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
           role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
         />
       ))}
       {!isCollapsed && directDocs.map(doc => (
         <DocRow key={doc.ID} doc={doc} depth={depth + 1} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
           rowIndex={indexMap[String(doc.ID)]}
-          onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
+          onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
         ))}
     </Fragment>
   )
 }
 
-function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, onPreview, onEdit, onDelete, role }) {
+function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role }) {
   const isRead = !unreadDocIds.has(String(doc.ID))
   const isSelected = selectedIds.has(String(doc.ID))
   const indent = depth * 16 + 16
@@ -815,6 +819,13 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 })
   const menuBtnRef = useRef(null)
+  const [showHistory, setShowHistory] = useState(false)
+
+  const publishHistory = (() => {
+    const raw = doc['Lịch sử phát hành']
+    if (!raw) return []
+    try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch (_) { return [] }
+  })()
   const canEditDoc = role === 'Giám đốc'
     ? doc['Tình trạng'] === 'Chờ duyệt'
     : role === 'admin' || role === 'Quản trị viên'
@@ -895,6 +906,20 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
           {doc['Tình trạng']}
         </span>
+      </td>
+      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+        {publishHistory.length > 0 ? (
+          <button onClick={() => setShowHistory(true)}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-tertiary-container text-on-tertiary-container hover:bg-tertiary-container/80 transition-colors">
+            {publishHistory.length} lần
+          </button>
+        ) : (
+          <span className="text-on-surface-variant/50">—</span>
+        )}
+        {showHistory && createPortal(
+          <PublishHistory history={publishHistory} users={users || []} onClose={() => setShowHistory(false)} />,
+          document.body
+        )}
       </td>
       <td className="hidden">{formatCurrency(doc['Giá trị HĐ'])}</td>
       <td className="px-4 py-3 text-on-surface-variant max-w-xs truncate text-xs"

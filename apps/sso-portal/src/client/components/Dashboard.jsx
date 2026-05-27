@@ -16,7 +16,7 @@ import AuditLogPage from './AuditLogPage.jsx'
 const TABS = [
   { id: 'apps', label: 'Ứng dụng', icon: 'apps' },
   { id: 'users', label: 'Người dùng', icon: 'group' },
-  { id: 'org', label: 'Bộ máy', icon: 'corporate_fare' },
+  { id: 'org', label: 'Phòng ban', icon: 'corporate_fare' },
   { id: 'app-mgr', label: 'Quản lý App', icon: 'app_registration' },
   { id: 'audit', label: 'Nhật ký', icon: 'history' },
   { id: 'settings', label: 'Cài đặt', icon: 'settings' },
