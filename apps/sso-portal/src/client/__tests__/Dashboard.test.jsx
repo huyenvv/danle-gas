@@ -1,5 +1,4 @@
-import { screen, fireEvent, waitFor } from '@testing-library/react'
-import { render } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import gasCall from '../gasClient.js'
 import App from '../App.jsx'
 import { renderDashboard, MOCK_APPS, MOCK_USERS } from './helpers.js'
@@ -53,6 +52,7 @@ describe('Dashboard — tab switching', () => {
     // Tab bar buttons are inside the tab nav — find the tab specifically by role=button
     const tabButtons = screen.getAllByRole('button')
     const userTab = tabButtons.find(btn => btn.textContent.includes('Người dùng'))
+    expect(userTab).toBeDefined()
     fireEvent.click(userTab)
     await waitFor(() => expect(screen.getByText('huyenvv@test.com')).toBeInTheDocument())
   })
@@ -61,6 +61,7 @@ describe('Dashboard — tab switching', () => {
     await renderDashboard(gasCall)
     const tabButtons = screen.getAllByRole('button')
     const auditTab = tabButtons.find(btn => btn.textContent.includes('Nhật ký'))
+    expect(auditTab).toBeDefined()
     fireEvent.click(auditTab)
     await waitFor(() => expect(screen.getByText('Đăng nhập')).toBeInTheDocument())
   })
