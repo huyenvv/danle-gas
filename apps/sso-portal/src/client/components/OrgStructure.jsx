@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
 import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
@@ -25,6 +26,7 @@ function Icon({ name, size = 20, className = '' }) {
 }
 
 export default function OrgStructure() {
+  const { session } = useAuth()
   const { users, phongBan, assignments, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
@@ -397,7 +399,7 @@ export default function OrgStructure() {
         {!collapsed['support'] && (
           <>
             <div className="px-5 py-3 divide-y divide-outline-variant/20">
-              {SUPPORT_POSITIONS.map(pos => renderPositionRow(pos.code, pos.max, ''))}
+              {SUPPORT_POSITIONS.filter(pos => session.isOwner || pos.code !== 'admin').map(pos => renderPositionRow(pos.code, pos.max, ''))}
             </div>
             {renderSectionSaveBar('')}
           </>

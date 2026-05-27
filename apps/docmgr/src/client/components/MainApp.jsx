@@ -317,7 +317,7 @@ export default function MainApp() {
 
               {/* Toolbar */}
               <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap gap-3 items-center">
-                <div className="relative flex-1 min-w-0 max-w-72">
+                <div className="relative flex-[2] min-w-[10rem]">
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>search</span>
                   <input
                     className={`bg-surface-container-low border-none rounded-xl pl-9 pr-8 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/20 ${searchKeyword ? 'ring-2 ring-primary/30' : ''}`}

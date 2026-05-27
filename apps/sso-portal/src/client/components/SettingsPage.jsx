@@ -97,13 +97,13 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-xs font-medium text-on-surface-variant mb-1.5">
                   Nội dung email
-                  <span className="text-outline ml-1">(dùng {'{username}'} và {'{password}'} làm biến)</span>
+                  <span className="text-outline ml-1">(dùng {'{tênNgườiDùng}'}, {'{emailĐăngNhập}'} và {'{mậtKhẩu}'} làm biến)</span>
                 </label>
                 <textarea value={config.MAIL_BODY_NEW_USER || ''}
                   onChange={e => updateConfig('MAIL_BODY_NEW_USER', e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-outline-variant bg-surface-container-lowest text-sm focus:outline-none focus:ring-2 focus:ring-primary transition resize-none font-mono"
                   rows={5}
-                  placeholder={'Xin chào {username},\n\nTài khoản của bạn đã được tạo.\nTên đăng nhập: {username}\nMật khẩu mặc định: {password}\n\nVui lòng đổi mật khẩu ngay lần đăng nhập đầu tiên.'} />
+                  placeholder={'Xin chào {tênNgườiDùng},\n\nTài khoản của bạn đã được tạo.\nTên đăng nhập: {emailĐăngNhập}\nMật khẩu mặc định: {mậtKhẩu}\n\nVui lòng đổi mật khẩu ngay lần đăng nhập đầu tiên.'} />
               </div>
             </>
           )}

@@ -80,7 +80,10 @@ function login(email, password, deviceType) {
   var ownerEmail = ''
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
   var isOwner = !!(ownerEmail && user['Email'].toLowerCase() === ownerEmail.toLowerCase())
-  var isAdmin = isOwner || user['Quyền'] === 'Quản trị'
+  var hasAdminPosition = getSheetData(SHEETS.PHAN_BO).some(function(a) {
+    return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
+  })
+  var isAdmin = isOwner || user['Quyền'] === 'Quản trị' || hasAdminPosition
 
   var sessionData = {
     userId: user['ID'],
@@ -155,13 +158,25 @@ function _isOwnerUser(user) {
   return !!(ownerEmail && user['Email'] && user['Email'].toLowerCase() === ownerEmail)
 }
 
+function _isAdminUser(user) {
+  if (user['Quyền'] === 'Quản trị') return true
+  return getSheetData(SHEETS.PHAN_BO).some(function(a) {
+    return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
+  })
+}
+
+function _guardProtectedUser(session, target) {
+  if (_isOwnerUser(target)) throw new Error('Không thể thay đổi tài khoản chủ sở hữu')
+  if (!session.isOwner && _isAdminUser(target)) throw new Error('Không thể thay đổi tài khoản quản trị viên khác')
+}
+
 function portalAdminResetPassword(token, targetUserId) {
   var session = requireAdmin(token)
 
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
   if (!user) throw new Error('Không tìm thấy tài khoản')
-  if (_isOwnerUser(user)) throw new Error('Không thể thay đổi mật khẩu tài khoản chủ sở hữu')
+  _guardProtectedUser(session, user)
 
   var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
   updateRow(SHEETS.USERS, targetUserId, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
@@ -179,7 +194,7 @@ function portalBulkResetPassword(token, userIds) {
   userIds.forEach(function(id) {
     var user = users.find(function(u) { return String(u['ID']) === String(id) })
     if (!user) { skipped++; return }
-    if (_isOwnerUser(user)) { skipped++; return }
+    if (_isOwnerUser(user) || (!session.isOwner && _isAdminUser(user))) { skipped++; return }
     var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
     updateRow(SHEETS.USERS, id, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
     count++
@@ -193,7 +208,7 @@ function portalLockUser(token, targetUserId) {
   if (String(session.userId) === String(targetUserId)) throw new Error('Không thể tự khóa tài khoản của mình')
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
-  if (user && _isOwnerUser(user)) throw new Error('Không thể khóa tài khoản chủ sở hữu')
+  if (user) _guardProtectedUser(session, user)
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Locked' })
   revokeAllRefreshTokens(SHEETS.USERS, targetUserId)
   bumpEpoch(SHEETS.USERS, targetUserId)
@@ -206,6 +221,7 @@ function portalUnlockUser(token, targetUserId) {
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return String(u['ID']) === String(targetUserId) })
   if (!user) throw new Error('Không tìm thấy tài khoản')
+  _guardProtectedUser(session, user)
   var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
   updateRow(SHEETS.USERS, targetUserId, {
     'Trạng thái': 'Active',
@@ -225,12 +241,9 @@ function getUsers(token) {
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
 
   return users.filter(function(u) {
-    // Owner luôn ẩn khỏi tất cả
+    // Owner luôn ẩn khỏi tất cả (kể cả admin)
     if (ownerEmail && u['Email'] && u['Email'].toLowerCase() === ownerEmail.toLowerCase()) return false
-    // Owner thấy tất cả (trừ chính mình đã filter ở trên)
-    if (session.isOwner) return true
-    // Admin chỉ thấy user thường (không phải Quản trị)
-    return u['Quyền'] !== 'Quản trị'
+    return true
   }).map(function(u) {
     return {
       ID: u['ID'],
@@ -283,7 +296,7 @@ function addUser(token, data) {
   var added = addRow(SHEETS.USERS, userData)
 
   // Send email notification if configured
-  _notifyNewUser(email, username)
+  _notifyNewUser(email, username, data['Tên nhân viên'] || '')
 
   logAudit(session, 'Thêm', 'Người dùng', email, '')
   return added
@@ -293,7 +306,7 @@ function updateUser(token, id, data) {
   var session = requireAdmin(token)
   var users = getSheetData(SHEETS.USERS)
   var target = users.find(function(u) { return String(u['ID']) === String(id) })
-  if (target && _isOwnerUser(target)) throw new Error('Không thể thay đổi thông tin tài khoản chủ sở hữu')
+  if (target) _guardProtectedUser(session, target)
   var updateData = {}
   if (data['Tên đăng nhập'] !== undefined) updateData['Tên đăng nhập'] = data['Tên đăng nhập']
   if (data['Email'] !== undefined) updateData['Email'] = data['Email']
@@ -486,6 +499,7 @@ function saveAssignment(token, data) {
   var phongBanId = data.phongBanId || ''
 
   if (!userId || !chucVu) throw new Error('Thiếu thông tin')
+  if (chucVu === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền phân bổ admin')
 
   // Validate position exists
   var pos = POSITIONS.find(function(p) { return p.code === chucVu })
@@ -628,6 +642,7 @@ function removeAssignment(token, assignmentId) {
   var assignments = getSheetData(SHEETS.PHAN_BO)
   var assignment = assignments.find(function(a) { return String(a['ID']) === String(assignmentId) })
   if (!assignment) throw new Error('Không tìm thấy phân bổ')
+  if (assignment['Chức vụ'] === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền xóa phân bổ admin')
 
   deleteRow(SHEETS.PHAN_BO, assignmentId)
   _syncUsersFromStructure()
@@ -665,11 +680,16 @@ function _syncUsersFromStructure() {
 
     var currentChucVu = u['Chức vụ'] || ''
     var currentPhongBan = u['Phòng ban'] || ''
+    var currentQuyen = u['Quyền'] || ''
 
-    if (currentChucVu !== bestChucVu || currentPhongBan !== bestPhongBan) {
+    var hasAdminPosition = userAssignments.some(function(a) { return a['Chức vụ'] === 'admin' })
+    var bestQuyen = hasAdminPosition ? 'Quản trị' : ''
+
+    if (currentChucVu !== bestChucVu || currentPhongBan !== bestPhongBan || currentQuyen !== bestQuyen) {
       updateRow(SHEETS.USERS, u['ID'], {
         'Chức vụ': bestChucVu,
         'Phòng ban': bestPhongBan,
+        'Quyền': bestQuyen,
       })
     }
   })
@@ -692,16 +712,16 @@ function _getMailConfig() {
   return config
 }
 
-function _notifyNewUser(email, username) {
+function _notifyNewUser(email, username, name) {
   if (!email) return
   try {
     var config = _getMailConfig()
     if (config['MAIL_ENABLED'] !== 'TRUE') return
 
     var subject = config['MAIL_SUBJECT_NEW_USER'] || 'Tài khoản mới đã được tạo'
-    var body = config['MAIL_BODY_NEW_USER'] || 'Xin chào {username},\n\nTài khoản của bạn đã được tạo.\nTên đăng nhập: {username}\nMật khẩu mặc định: {password}\n\nVui lòng đổi mật khẩu ngay lần đăng nhập đầu tiên.'
+    var body = config['MAIL_BODY_NEW_USER'] || 'Xin chào {tênNgườiDùng},\n\nTài khoản của bạn đã được tạo.\nTên đăng nhập: {emailĐăngNhập}\nMật khẩu mặc định: {mậtKhẩu}\n\nVui lòng đổi mật khẩu ngay lần đăng nhập đầu tiên.'
 
-    body = body.replace(/\{username\}/g, username).replace(/\{password\}/g, DEFAULT_PASSWORD)
+    body = body.replace(/\{tênNgườiDùng\}/g, name || username).replace(/\{emailĐăngNhập\}/g, username).replace(/\{mậtKhẩu\}/g, DEFAULT_PASSWORD)
 
     var mailOptions = {}
     if (config['MAIL_SENDER_NAME']) mailOptions.name = config['MAIL_SENDER_NAME']

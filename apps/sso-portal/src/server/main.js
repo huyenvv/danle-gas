@@ -41,7 +41,10 @@ function api_resume(refreshToken) {
     var ownerEmail = ''
     try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
     var isOwner = !!(ownerEmail && user['Email'] && user['Email'].toLowerCase() === ownerEmail.toLowerCase())
-    var isAdmin = isOwner || user['Quyền'] === 'Quản trị'
+    var hasAdminPosition = getSheetData(SHEETS.PHAN_BO).some(function(a) {
+      return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
+    })
+    var isAdmin = isOwner || user['Quyền'] === 'Quản trị' || hasAdminPosition
 
     var sessionData = {
       userId: user['ID'],

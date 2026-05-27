@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
 import { usePortalData } from '../context/PortalDataContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
@@ -54,6 +55,7 @@ function StatCard({ icon, label, value, color }) {
 
 export default function UserManager() {
   const { users, phongBan, assignments, sync } = usePortalData()
+  const { session } = useAuth()
   const { addToast } = useToast()
   const confirm = useConfirm()
   const [showForm, setShowForm] = useState(false)
@@ -186,6 +188,17 @@ export default function UserManager() {
     }).sort((a, b) => a.kiemNhiem - b.kiemNhiem)
   }
 
+  function isProtectedUser(u) {
+    if (u['Quyền'] === 'Quản trị') return true
+    return (assignments || []).some(a => String(a['UserID']) === String(u.ID) && a['Chức vụ'] === 'admin')
+  }
+
+  function canEditUser(u) {
+    if (session.isOwner) return true
+    if (String(u.ID) === String(session.userId)) return false
+    return !isProtectedUser(u)
+  }
+
   return (
     <div className="space-y-5">
       {/* Full-screen loading overlay khi bulk reset */}
@@ -266,9 +279,9 @@ export default function UserManager() {
                 <th className="pl-4 pr-2 py-3 w-10">
                   <input type="checkbox"
                     className="rounded border-outline-variant"
-                    checked={filtered.length > 0 && filtered.every(u => selectedIds.has(u.ID))}
-                    ref={el => { if (el) el.indeterminate = filtered.some(u => selectedIds.has(u.ID)) && !filtered.every(u => selectedIds.has(u.ID)) }}
-                    onChange={() => toggleSelectAll(filtered.map(u => u.ID))} />
+                    checked={filtered.filter(u => canEditUser(u)).length > 0 && filtered.filter(u => canEditUser(u)).every(u => selectedIds.has(u.ID))}
+                    ref={el => { if (el) el.indeterminate = filtered.some(u => canEditUser(u) && selectedIds.has(u.ID)) && !filtered.filter(u => canEditUser(u)).every(u => selectedIds.has(u.ID)) }}
+                    onChange={() => toggleSelectAll(filtered.filter(u => canEditUser(u)).map(u => u.ID))} />
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Người dùng</th>
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Phòng ban / Chức vụ</th>
@@ -284,10 +297,12 @@ export default function UserManager() {
               {filtered.map(u => (
                 <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
                   <td className="pl-4 pr-2 py-3">
+                    {canEditUser(u) ? (
                     <input type="checkbox"
                       className="rounded border-outline-variant"
                       checked={selectedIds.has(u.ID)}
                       onChange={() => toggleSelect(u.ID)} />
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
@@ -337,6 +352,7 @@ export default function UserManager() {
                   </td>
                   <td className="px-4 py-3 text-on-surface-variant text-xs">{u['Đăng nhập cuối'] || '—'}</td>
                   <td className="px-4 py-3">
+                    {canEditUser(u) ? (
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => startEdit(u)} title="Sửa"
                         className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
@@ -352,6 +368,7 @@ export default function UserManager() {
                         {u['Trạng thái'] === 'Locked' ? 'Mở khóa' : 'Khóa'}
                       </button>
                     </div>
+                    ) : <span className="text-xs text-on-surface-variant">—</span>}
                   </td>
                 </tr>
               ))}

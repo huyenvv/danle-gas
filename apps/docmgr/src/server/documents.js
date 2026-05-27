@@ -171,10 +171,9 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
 
     var baseOptions = {}
     var config = _getMailConfigFromSSO()
-    if (config) {
-      if (config['MAIL_SENDER_NAME']) baseOptions.name = config['MAIL_SENDER_NAME']
-      if (config['MAIL_SENDER_EMAIL']) baseOptions.from = config['MAIL_SENDER_EMAIL']
-    }
+    if (!config || config['MAIL_ENABLED'] !== 'TRUE') return
+    if (config['MAIL_SENDER_NAME']) baseOptions.name = config['MAIL_SENDER_NAME']
+    if (config['MAIL_SENDER_EMAIL']) baseOptions.from = config['MAIL_SENDER_EMAIL']
 
     var toEmails = toRecipients.map(function(r) { return r.email }).join(',')
     var ccEmails = ccRecipients.filter(function(r) { return r.email }).map(function(r) { return r.email }).join(',')
@@ -385,7 +384,8 @@ function getDocuments(token, filters) {
         _viNormalize(d['Dự án (Phòng ban)']).indexOf(kw) !== -1 ||
         _viNormalize(d['Nhà cung cấp (Nơi ban hành)']).indexOf(kw) !== -1 ||
         _viNormalize(d['Ghi chú']).indexOf(kw) !== -1 ||
-        _viNormalize(d['Phụ trách']).indexOf(kw) !== -1
+        _viNormalize(d['Phụ trách']).indexOf(kw) !== -1 ||
+        _viNormalize(d['Tên file']).indexOf(kw) !== -1
       )
     })
   }
