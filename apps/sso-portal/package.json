@@ -10,7 +10,8 @@
     "build": "npm run build:client && npm run build:server && npm run build:obfuscate",
     "deploy": "clasp push --force && clasp deploy",
     "test": "jest --config jest.config.js",
-    "test:client": "jest --config jest.config.js --selectProjects client"
+    "test:client": "jest --config jest.config.js --selectProjects client",
+    "test:e2e": "playwright test --config playwright.config.js"
   },
   "dependencies": {
     "react": "^18.3.1",
