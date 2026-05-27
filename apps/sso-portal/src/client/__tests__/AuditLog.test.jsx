@@ -116,3 +116,32 @@ describe('AuditLog — type filter select', () => {
     expect(screen.getByText('Thêm')).toBeInTheDocument()
   })
 })
+
+// ── keyword search ────────────────────────────────────────────────────────────
+
+describe('AuditLog — search', () => {
+  test('typing keyword and pressing Enter calls api_getAuditLogs with keyword param', async () => {
+    await goToAuditLog()
+    // Set up mock for the second api_getAuditLogs call (triggered after Enter)
+    gasCall.mockImplementation((fn, token, params) => {
+      if (fn === 'api_getAuditLogs') return Promise.resolve({
+        data: [MOCK_LOGS[1]], // only the matching log
+        hasMore: false,
+        total: 1,
+        types: ['Xác thực'],
+      })
+      return Promise.reject(new Error('Unhandled: ' + fn))
+    })
+    // Find search input and type keyword
+    const searchInput = screen.getByPlaceholderText('Tìm kiếm...')
+    fireEvent.change(searchInput, { target: { value: 'Đăng nhập' } })
+    // Submit search by pressing Enter
+    fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' })
+    // Wait for api_getAuditLogs to be called with the keyword
+    await waitFor(() => expect(gasCall).toHaveBeenCalledWith(
+      'api_getAuditLogs',
+      expect.any(String),
+      expect.objectContaining({ keyword: 'Đăng nhập' }),
+    ))
+  })
+})
