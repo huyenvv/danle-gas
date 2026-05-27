@@ -139,7 +139,7 @@ function portalChangePassword(token, oldPassword, newPassword) {
 
   // Update session to clear mustChangePass
   session.mustChangePass = false
-  cachePut('sess_' + token, session, SESSION_TTL)
+  cachePut('at_' + token, session, ACCESS_TOKEN_TTL)
 
   logAudit(session, 'Đổi mật khẩu', 'Xác thực', session.username, '')
 
