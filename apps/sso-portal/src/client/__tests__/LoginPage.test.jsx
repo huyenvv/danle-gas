@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { screen, fireEvent, waitFor } from '@testing-library/react'
 import gasCall from '../gasClient.js'
 import App from '../App.jsx'
 import { renderLoginPage, MOCK_ADMIN, MOCK_APPS, MOCK_USERS, MOCK_PHONG_BAN, MOCK_ASSIGNMENTS } from './helpers.js'
@@ -23,14 +23,14 @@ describe('LoginPage — validation', () => {
   test('does not call api_login when email is empty', async () => {
     await renderLoginPage(gasCall)
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'Admin@@123' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     expect(gasCall).not.toHaveBeenCalledWith('api_login', expect.anything(), expect.anything(), expect.anything())
   })
 
   test('does not call api_login when password is empty', async () => {
     await renderLoginPage(gasCall)
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'x@x.com' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     expect(gasCall).not.toHaveBeenCalledWith('api_login', expect.anything(), expect.anything(), expect.anything())
   })
 })
@@ -47,7 +47,7 @@ describe('LoginPage — wrong credentials', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'x@x.com' } })
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'wrong' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     await waitFor(() => expect(screen.getByText('Email hoặc mật khẩu không đúng')).toBeInTheDocument())
   })
 
@@ -60,7 +60,7 @@ describe('LoginPage — wrong credentials', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'x@x.com' } })
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'wrong' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     await waitFor(() => expect(screen.getByText(/khóa/)).toBeInTheDocument())
   })
 })
@@ -80,10 +80,11 @@ describe('LoginPage — mustChangePass', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'admin@test.com' } })
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'Admin@@123' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Đổi mật khẩu' })).toBeInTheDocument())
-    // Forced modal has no close button — only Đăng xuất + submit
-    expect(screen.queryByRole('button', { name: /close/i })).not.toBeInTheDocument()
+    // Forced modal shows Đăng xuất instead of Hủy, and has no dismiss button
+    expect(screen.getByRole('button', { name: /đăng xuất/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /hủy/i })).not.toBeInTheDocument()
   })
 })
 
@@ -105,7 +106,7 @@ describe('LoginPage — successful login', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'admin@test.com' } })
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'Admin@@123' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     await waitFor(() => expect(screen.getByText('Ứng dụng')).toBeInTheDocument())
   })
 
@@ -125,7 +126,7 @@ describe('LoginPage — successful login', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('Nhập email đăng nhập'), { target: { value: 'huyenvv@test.com' } })
     fireEvent.change(screen.getByPlaceholderText('Nhập mật khẩu'), { target: { value: 'Admin@@123' } })
-    fireEvent.submit(document.querySelector('form'))
+    fireEvent.click(screen.getByRole('button', { name: /đăng nhập/i }))
     await waitFor(() => expect(screen.getByText('Ứng dụng')).toBeInTheDocument())
   })
 })
