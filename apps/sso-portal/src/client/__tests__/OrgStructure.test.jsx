@@ -43,10 +43,24 @@ describe('OrgStructure — company-level role display', () => {
     ]
     await goToOrgTab({ phongBan: MOCK_PHONG_BAN, assignments: assignmentsWithGiamdoc, users: MOCK_USERS })
     // Ban Giám Đốc section header
-    expect(screen.getByText('Ban Giám Đốc')).toBeInTheDocument()
-    // Huyên is assigned Giám đốc at company level — name renders as chip in that section
-    // getAllByText handles any duplicate 'Huyên' occurrences
-    const huyenEls = screen.getAllByText('Huyên')
-    expect(huyenEls.length).toBeGreaterThan(0)
+    const bgdHeading = screen.getByText('Ban Giám Đốc')
+    expect(bgdHeading).toBeInTheDocument()
+    // Walk up to the card container (h2 → button → outer div)
+    const bgdSection = bgdHeading.closest('div.bg-white')
+    expect(bgdSection).not.toBeNull()
+    // Huyên is assigned Giám đốc at company level — chip must be inside this section
+    expect(bgdSection.textContent).toContain('Huyên')
+  })
+
+  test('user with both company and dept roles appears in both sections', async () => {
+    const multiRoleAssignments = [
+      { ID: 2, 'UserID': '2', 'Chức vụ': 'Trưởng phòng', 'PhongBanID': '1' },  // Kỹ thuật
+      { ID: 10, 'UserID': '2', 'Chức vụ': 'Giám đốc', 'PhongBanID': '' },       // Ban Giám Đốc
+      { ID: 3, 'UserID': '3', 'Chức vụ': 'Nhân viên', 'PhongBanID': '1' },
+    ]
+    await goToOrgTab({ phongBan: MOCK_PHONG_BAN, assignments: multiRoleAssignments, users: MOCK_USERS })
+    // huyenvv (Huyên) should appear as a chip in Ban Giám Đốc AND in Kỹ thuật
+    const allHuyen = screen.getAllByText('Huyên')
+    expect(allHuyen.length).toBeGreaterThanOrEqual(2)
   })
 })
