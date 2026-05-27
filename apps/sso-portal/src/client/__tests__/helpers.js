@@ -4,7 +4,7 @@ import App from '../App.jsx'
 // ── Mock data factories ───────────────────────────────────────────────────────
 
 export const MOCK_USER = { userId: 2, username: 'huyenvv', email: 'huyenvv@test.com', role: 'user', displayName: 'Huyên', mustChangePass: false, isOwner: false }
-export const MOCK_ADMIN = { userId: 1, username: 'admin', email: 'admin@test.com', role: 'admin', displayName: 'Admin', mustChangePass: false, isOwner: false }
+export const MOCK_ADMIN = { userId: 1, username: 'admin', email: 'admin@test.com', role: 'admin', displayName: 'Admin', mustChangePass: false, isOwner: true }
 
 export const MOCK_USERS = [
   { ID: 2, 'Tên đăng nhập': 'huyenvv', 'Email': 'huyenvv@test.com', 'Tên nhân viên': 'Huyên', 'Trạng thái': 'Active', 'MustChangePass': 'FALSE', 'FailedLogins': 0 },
@@ -13,13 +13,13 @@ export const MOCK_USERS = [
 ]
 
 export const MOCK_APPS = [
-  { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'http://localhost:5173/', 'Icon': 'description', 'Trạng thái': 'Active', 'Quyền xem': '' },
-  { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://localhost:5175/', 'Icon': 'task', 'Trạng thái': 'Active', 'Quyền xem': '' },
+  { ID: 1, 'Tên App': 'Quản lý Tài liệu', 'Webapp URL': 'http://localhost:5173/', 'Icon': 'description', 'Mô tả': '', 'Trạng thái': 'Active', 'Quyền xem': '' },
+  { ID: 2, 'Tên App': 'Quản lý Công việc', 'Webapp URL': 'http://localhost:5175/', 'Icon': 'task', 'Mô tả': '', 'Trạng thái': 'Active', 'Quyền xem': '' },
 ]
 
 export const MOCK_PHONG_BAN = [
-  { ID: 1, 'Tên phòng ban': 'Kỹ thuật' },
-  { ID: 2, 'Tên phòng ban': 'Kinh doanh' },
+  { ID: 1, 'Tên phòng ban': 'Kỹ thuật', 'Mô tả': '', 'Người phụ trách': '', 'Đơn vị thuộc sự quản lý': '' },
+  { ID: 2, 'Tên phòng ban': 'Kinh doanh', 'Mô tả': '', 'Người phụ trách': '', 'Đơn vị thuộc sự quản lý': '' },
 ]
 
 export const MOCK_ASSIGNMENTS = [
