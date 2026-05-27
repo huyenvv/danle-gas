@@ -15,6 +15,9 @@ module.exports = {
         '^.+\\.(js|jsx)$': 'babel-jest',
       },
       moduleFileExtensions: ['js', 'jsx'],
+      moduleNameMapper: {
+        '\\.(png|jpg|jpeg|gif|svg|ico|webp)$': '<rootDir>/src/client/__tests__/helpers/fileMock.js',
+      },
     },
   ],
 }
