@@ -8,7 +8,9 @@
     "build:server": "node ../../scripts/bundle-server.js --app sso-portal",
     "build:obfuscate": "node ../../scripts/obfuscate.js --app sso-portal",
     "build": "npm run build:client && npm run build:server && npm run build:obfuscate",
-    "deploy": "clasp push --force && clasp deploy"
+    "deploy": "clasp push --force && clasp deploy",
+    "test": "jest --config jest.config.js",
+    "test:client": "jest --config jest.config.js --selectProjects client"
   },
   "dependencies": {
     "react": "^18.3.1",
