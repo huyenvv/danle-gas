@@ -19,8 +19,7 @@ async function submitLogin(page, email, password) {
   await page.fill('input[placeholder="Nhập email đăng nhập"]', email)
   await page.fill('input[placeholder="Nhập mật khẩu"]', password)
   await page.click('button[type="submit"]')
-  // Wait for the mock's 80ms delay + React re-render
-  await page.waitForTimeout(300)
+  // Playwright awaits click completion; caller uses waitForSelector for the response
 }
 
 test.describe('Login — success', () => {
