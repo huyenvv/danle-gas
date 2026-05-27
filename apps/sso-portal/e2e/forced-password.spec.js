@@ -31,7 +31,6 @@ test.describe('Forced password change', () => {
     await page.locator('input[autocomplete="new-password"]').nth(0).fill('NewPass@@789')
     await page.locator('input[autocomplete="new-password"]').nth(1).fill('NewPass@@789')
     await page.click('button[type="submit"]')
-    await page.waitForSelector('text=Ứng dụng', { timeout: 10_000 })
-    await expect(page.locator('text=Ứng dụng')).toBeVisible()
+    await expect(page.locator('text=Ứng dụng')).toBeVisible({ timeout: 10_000 })
   })
 })
