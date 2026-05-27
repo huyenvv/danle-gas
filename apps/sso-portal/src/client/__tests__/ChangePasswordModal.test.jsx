@@ -37,9 +37,11 @@ async function renderForcedModal() {
 /**
  * Returns the three password inputs in the ChangePasswordModal in order:
  * [oldPass, newPass, confirmPass]
+ * Scoped to the modal container to avoid picking up stray password inputs.
  */
 function getPasswordInputs() {
-  return document.querySelectorAll('input[type="password"]')
+  const modal = screen.getByRole('heading', { name: 'Đổi mật khẩu' }).closest('.rounded-3xl')
+  return modal.querySelectorAll('input[type="password"]')
 }
 
 // ── Forced mode ───────────────────────────────────────────────────────────────
