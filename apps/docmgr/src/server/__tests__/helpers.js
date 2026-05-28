@@ -19,6 +19,7 @@ function resetAll() {
   CacheService.getScriptCache()._reset()
   PropertiesService._reset()
   DriveApp._reset()
+  GmailApp._reset()
 }
 
 // ── Sheet setup helpers ──────────────────────────────────────────────────────

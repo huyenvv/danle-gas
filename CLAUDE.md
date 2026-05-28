@@ -117,3 +117,8 @@ npm run build:license      # .js → .gs conversion
 - `apps/*/.clasp.json` — contains GAS Script IDs
 - `apps/*/.env` — contains SECRET_SALT, LICENSE_SERVER_URL
 - `.clasprc.json` — clasp OAuth credentials
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->

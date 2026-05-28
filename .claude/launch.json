@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "docmgr",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22 > /dev/null && npm run dev -w apps/docmgr"],
+      "port": 5173
+    },
+    {
+      "name": "sso",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "source ~/.nvm/nvm.sh && nvm use 22 > /dev/null && npm run dev -w apps/sso-portal"],
+      "port": 5174
+    }
+  ]
+}

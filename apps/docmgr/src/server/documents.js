@@ -21,7 +21,12 @@ function _getMailConfigFromSSO() {
     var data = sheet.getDataRange().getValues()
     var config = {}
     for (var i = 1; i < data.length; i++) {
-      if (data[i][0]) config[data[i][0]] = data[i][1]
+      if (data[i][0]) {
+        var val = data[i][1]
+        // Google Sheets auto-converts TRUE/FALSE to booleans — normalize to strings
+        if (typeof val === 'boolean') val = val ? 'TRUE' : 'FALSE'
+        config[data[i][0]] = val != null ? String(val) : ''
+      }
     }
     return config
   } catch(e) {
@@ -460,21 +465,32 @@ function createDocument(token, data, fileInfos, notifyTarget) {
   logAudit(session, 'Tạo', 'Hồ sơ', record['Tên hồ sơ'], JSON.stringify({ soHoSo: record['Số hồ sơ'], danhMuc: record['Danh mục'] }))
 
   // Send email notification if Trình duyệt (notify directors)
+  var emailError = null
   if (notifyTarget === 'directors') {
     var roles = getSheetData(SHEETS.APP_ROLES)
     var dirUserIds = []
     roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
     _markUnreadForUsers(dirUserIds, added['ID'])
-    var dirRecipients = _getRecipientsByUsernames(dirUserIds)
-    _sendNotificationEmails(dirRecipients, added, 'trinhDuyet', session)
+    try {
+      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+      _sendNotificationEmails(dirRecipients, added, 'trinhDuyet', session)
+    } catch(e) {
+      Logger.log('createDocument trinhDuyet email error: ' + e.message)
+      emailError = e.message
+    }
   }
 
   // Publish mode: send to specified recipients
   if (notifyTarget === 'publish' && data._publishTo) {
-    publishDocument(token, added['ID'], data._publishTo, data._publishCc || [])
+    try {
+      publishDocument(token, added['ID'], data._publishTo, data._publishCc || [])
+    } catch(e) {
+      Logger.log('createDocument publish email error: ' + e.message)
+      emailError = e.message
+    }
   }
 
-  return { data: added }
+  return { data: added, emailError: emailError }
 }
 
 function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
@@ -484,12 +500,14 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
-  if (session.role === 'Văn thư') {
-    throw new Error('Văn thư không thể chỉnh sửa hồ sơ sau khi đã tạo')
+  if (session.role === 'Văn thư' && doc['Người tạo'] !== session.username) {
+    throw new Error('Văn thư chỉ được chỉnh sửa hồ sơ do mình tạo')
   }
 
   // Permission: viewer/dept user can only edit docs they are assigned to
-  if (session.role !== 'Quản trị viên' &&
+  // Văn thư editing own doc is allowed (checked above)
+  var isVanThuOwnDoc = session.role === 'Văn thư' && doc['Người tạo'] === session.username
+  if (!isVanThuOwnDoc && session.role !== 'Quản trị viên' &&
       session.role !== 'admin' && session.role !== 'Giám đốc') {
     var existingAssignees = _parseAssignees(doc['Phụ trách'])
     var userId = String(session.userId)
@@ -581,6 +599,7 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   //   default     — normal update → notify assignees
   notifyTarget = notifyTarget || 'all'
 
+  var emailError = null
   if (notifyTarget === 'directors') {
     // Clear read status for directors so doc shows as unread
     // Add unread records for directors + send email
@@ -590,12 +609,17 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
       if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) directorUserIds.push(r['Tên đăng nhập'] || String(r['UserID']))
     })
     _markUnreadForUsers(directorUserIds, id)
-    var directorRecipients = _getRecipientsByUsernames(directorUserIds)
-    _sendNotificationEmails(directorRecipients, updated['Tên hồ sơ'], 'trinhDuyet', session)
+    try {
+      var directorRecipients = _getRecipientsByUsernames(directorUserIds)
+      _sendNotificationEmails(directorRecipients, updated['Tên hồ sơ'], 'trinhDuyet', session)
+    } catch(e) {
+      Logger.log('updateDocument trinhDuyet email error: ' + e.message)
+      emailError = e.message
+    }
   }
 
   logAudit(session, 'Sửa', 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id }))
-  return { data: updated }
+  return { data: updated, emailError: emailError }
 }
 
 function deleteDocument(token, id) {

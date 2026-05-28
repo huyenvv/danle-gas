@@ -129,6 +129,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const role = session?.role || ''
   const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
   const isVanThu = role === 'Văn thư'
+  const isVanThuOwnDoc = isVanThu && isEdit && doc?.['Người tạo'] === session?.username
   const isNvTpCreate = !isEdit && !isAdminRole && !isVanThu && session?.canCreate
   const canEditStatus = isAdminRole || isVanThu
   const statusOptions = isVanThu ? ['Chờ duyệt', 'Hoàn thành'] : STATUS_OPTIONS
@@ -245,11 +246,11 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       notifyTargetRef.current = null
       if (isEdit) {
         const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, notifyTarget)
-        showToast('Đã cập nhật hồ sơ', 'success')
+        showToast(updated?.emailError ? 'Đã cập nhật hồ sơ (gửi email thất bại)' : 'Đã cập nhật hồ sơ', updated?.emailError ? 'warning' : 'success')
         onSaved(updated)
       } else {
         const created = await gasCall('api_createDocument', token, submitForm, fileInfos, notifyTarget)
-        showToast('Đã thêm hồ sơ', 'success')
+        showToast(created?.emailError ? 'Đã thêm hồ sơ (gửi email thất bại)' : 'Đã thêm hồ sơ', created?.emailError ? 'warning' : 'success')
         onSaved(created)
       }
     } catch (err) {
@@ -541,9 +542,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               </Field>
 
               {/* Tình trạng + Số hồ sơ */}
-              <div className={`grid ${isEdit || (!isVanThu && !isNvTpCreate) ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
-                {/* Tình trạng — hidden for Văn thư/NV/TP in create mode (buttons handle status) */}
-                {(isEdit || (!isVanThu && !isNvTpCreate)) && (
+              <div className={`grid ${(isEdit && !isVanThuOwnDoc) || (!isVanThu && !isNvTpCreate) ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
+                {/* Tình trạng — hidden for Văn thư/NV/TP in create mode and Văn thư editing own doc (buttons handle status) */}
+                {((isEdit && !isVanThuOwnDoc) || (!isVanThu && !isNvTpCreate)) && (
                   <Field label="Tình trạng">
                     <select className={iCls} value={form['Tình trạng']} onChange={e => setField('Tình trạng', e.target.value)}
                       disabled={!canEditStatus}>
@@ -585,7 +586,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
               Hủy
             </button>
-            {!isEdit && (isAdminRole || isVanThu || isNvTpCreate) ? (
+            {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc ? (
               <>
                 <button type="button" disabled={uploading}
                   onClick={async () => {
@@ -596,7 +597,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>inventory</span>
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
-                {!isEdit && (isAdminRole || isVanThu || isNvTpCreate) && canPublish && (
+                {canPublish && (
                 <button type="button" disabled={uploading}
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }

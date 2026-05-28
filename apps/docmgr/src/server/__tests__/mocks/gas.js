@@ -3,8 +3,10 @@
 // ── SpreadsheetApp ────────────────────────────────────────────────────────────
 global.SpreadsheetApp = {
   _sheets: {},
+  _externalSpreadsheets: {},  // id → { sheets: {}, ownerEmail }
   _reset() {
     this._sheets = {}
+    this._externalSpreadsheets = {}
   },
   _addSheet(name, rows) {
     this._sheets[name] = {
@@ -55,7 +57,42 @@ global.SpreadsheetApp = {
         return sheets[name]
       }
     }
-  }
+  },
+  openById(id) {
+    const ext = this._externalSpreadsheets[id]
+    if (!ext) throw new Error('Spreadsheet not found: ' + id)
+    return {
+      getSheetByName(name) { return ext.sheets[name] || null },
+      getSheets()          { return Object.values(ext.sheets) },
+      getId()              { return id },
+      getOwner()           { return { getEmail() { return ext.ownerEmail || 'owner@test.com' } } },
+    }
+  },
+  /** Register an external spreadsheet (e.g. SSO parent) for openById */
+  _addExternalSheet(ssId, sheetName, rows) {
+    if (!this._externalSpreadsheets[ssId]) {
+      this._externalSpreadsheets[ssId] = { sheets: {}, ownerEmail: 'owner@test.com' }
+    }
+    const sheetObj = {
+      _name: sheetName,
+      _rows: rows ? rows.map(r => [...r]) : [[]],
+      getName()   { return this._name },
+      getLastRow() { return this._rows.length },
+      getDataRange() {
+        const data = this._rows
+        return { getValues() { return data.map(r => [...r]) } }
+      },
+      getRange(row, col) {
+        const sheet = this
+        return {
+          getValue() { return sheet._rows[row - 1][col - 1] },
+          setValue(v) { sheet._rows[row - 1][col - 1] = v },
+        }
+      },
+      appendRow(row) { this._rows.push([...row]) },
+    }
+    this._externalSpreadsheets[ssId].sheets[sheetName] = sheetObj
+  },
 }
 
 // ── CacheService ──────────────────────────────────────────────────────────────
@@ -220,6 +257,15 @@ global.Session = {
 // ── Logger ────────────────────────────────────────────────────────────────────
 global.Logger = {
   log(...args) { /* silent in tests */ }
+}
+
+// ── GmailApp ─────────────────────────────────────────────────────────────
+global.GmailApp = {
+  _sent: [],
+  _reset() { this._sent = [] },
+  sendEmail(to, subject, body, options) {
+    this._sent.push({ to, subject, body, options: options || {} })
+  }
 }
 
 // ── Console ───────────────────────────────────────────────────────────────────
