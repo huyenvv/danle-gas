@@ -1,43 +1,31 @@
 # Permissions
 
-## Permission Object
+> Abbreviations: see constitution.md
 
-```js
-{ hoSo:{c,r,u,d}, danhMuc:{c,r,u,d}, nhom:{c,r,u,d},
-  nhaCungCap:{c,r,u,d}, duAn:{c,r,u,d}, user:{c,r,u,d},
-  caiDat:{c,r,u,d}, allowedCategories:[] }
-```
+## Object
 
-## Default Roles
+`{hoSo,danhMuc,nhom,nhaCungCap,duAn,user,caiDat}` each `{c,r,u,d}` + `allowedCategories[]`
+
+## Defaults
 
 | Role | Docs | Lookups | Users | Settings |
 |---|---|---|---|---|
-| admin/Quản trị viên/Giám đốc | CRUD | CRUD | CRUD | CRUD |
-| Biên tập viên/Văn thư/Trưởng phòng | CRU | R | — | — |
-| Nhân viên | R | R | — | — |
+| admin/GĐ | CRUD | CRUD | CRUD | CRUD |
+| VT/TP/Biên tập viên | CRU | R | — | — |
+| NV | R | R | — | — |
 | Xem | R | — | — | — |
 
-Only admin deletes docs. Custom perms: JSON in `_Phân Quyền.Phân quyền chi tiết` overrides defaults.
+Only admin deletes docs. Custom: JSON in `_Phân Quyền.Phân quyền chi tiết` overrides.
 
 ## Role Source
 
-From SSO `_Phân Bổ` (highest wins): GĐ(6)>PGĐ(5)>VT(4)>admin(3)>TP(2)>PP(1)>NV(0).
+From SSO `_Phân Bổ` highest: GĐ(6)>PGĐ(5)>VT(4)>admin(3)>TP(2)>PP(1)>NV(0).
 
-## Flags (per user, server-checked)
+## Flags
 
-| Column | Controls |
-|---|---|
-| Được tạo hồ sơ | Create docs |
-| Được tạo danh mục con | Create sub-categories |
-| Được phát hành | Publish docs |
-
-Full-access roles get all 3 by default (not editable in UI).
+`Được tạo hồ sơ`(create docs), `Được tạo danh mục con`(sub-categories), `Được phát hành`(publish). Full-access roles get all 3 default, not editable. Server re-checks each action.
 
 ## Visibility
 
-- Admin/GĐ/VT: all docs. Others: only Phụ trách or Phối hợp docs.
-- Category: `Người/Nhóm được xem` (empty=all).
-
-## Comments
-
-Admin/GĐ/VT/PT/PH: can comment. NV/TP: cannot.
+Admin/GĐ/VT: all docs. Others: only PT or PH docs. Category: `Người/Nhóm được xem` (empty=all).
+Comment: Admin/GĐ/VT/PT/PH can. NV/TP cannot.

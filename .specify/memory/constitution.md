@@ -1,105 +1,143 @@
 <!--
-Sync: 1.0.0→1.1.0 MINOR — added VII–VIII, working preferences
+Sync: 1.0.0→1.2.0 MINOR — rebalanced compression, added abbreviations
 Templates: ✅ plan/spec/tasks — no conflicts
 -->
 
 # Appscripts Monorepo Constitution
 
+## Abbreviations
+
+GĐ=Giám đốc, PGĐ=Phó GĐ, VT=Văn thư, TP=Trưởng phòng, PP=Phó phòng,
+NV=Nhân viên, PT=Phụ trách, PH=Phối hợp, NCC=Nhà Cung Cấp,
+AT=Access Token, RT=Refresh Token.
+
 ## Core Principles
 
 ### I. GAS Concatenation Discipline
 
-No module system. All server files concat into single global scope.
+GAS has no module system. All server files are concatenated into a single
+global scope at build time.
 
-- Concat order fixed: gas-core (`config-base→cache→utils→sheets-crud→auth-core→access-token→refresh-token→session-epoch→handoff→sso→drive-io→license`) → app files (`config→sheets→auth→others→main`).
-- Server: ES5 `var`/`function` only. No let/const/arrow/class/ESM.
-- Single global scope — name collisions are silent bugs.
-- `main.js` always last (contains `doGet`, `api_*`).
+- Concat order MUST be preserved: gas-core (`config-base → cache → utils
+  → sheets-crud → auth-core → access-token → refresh-token →
+  session-epoch → handoff → sso → drive-io → license`), then app files
+  (`config → sheets → auth → others → main`).
+- All server code MUST use ES5 `var`/`function`. No let, const, arrow
+  functions, classes, or ES modules.
+- Every function and variable shares one global scope. Name collisions
+  are silent bugs — prefix or namespace intentionally.
+- `main.js` MUST be concatenated last — it contains GAS entry points
+  (`doGet`, `api_*`).
 
 ### II. Shared Core, App Override
 
-`packages/gas-core/` — plain JS concat'd before app files by `bundle-server.js`. NOT an npm package.
+`packages/gas-core/` provides shared modules consumed by all apps. It is
+NOT an npm package — `bundle-server.js` concatenates its files before
+app files.
 
-- gas-core: app-agnostic only. No app-specific logic/sheet names/Vietnamese strings.
-- Override pattern: `var _coreFn = fn; fn = function() { extra(); _coreFn() }`
-- New gas-core module → update `bundle-server.js` AND test `setup.js` load order.
+- gas-core MUST remain app-agnostic. No app-specific logic, sheet names,
+  or Vietnamese strings.
+- Apps extend gas-core via the override pattern:
+  `var _coreFn = fn; fn = function() { extra(); _coreFn() }`
+- New gas-core module → update `bundle-server.js` concat order AND test
+  `setup.js` load order.
 
 ### III. Security-First Secrets
 
-No plaintext secrets in deployed code or source control.
+Secrets MUST never appear in plain text in deployed code or source control.
 
-- `__ENCODED_SECRET_SALT__`, `__ENCODED_LICENSE_URL__`: reversed-base64, injected from `.env` by bundler, decoded by `_decode()`.
-- `.env`, `.clasp.json`, `.clasprc.json` gitignored.
-- License: SHA-256(`scriptId+appId+salt`). Salt identical in app `.env` and License Server.
-- Password: SHA-256(`username+password`) — username is salt, NOT email.
+- Build-time encoded vars (`__ENCODED_SECRET_SALT__`,
+  `__ENCODED_LICENSE_URL__`): reversed-base64, injected from `.env`,
+  decoded at runtime by `_decode()`.
+- `.env`, `.clasp.json`, `.clasprc.json` MUST be gitignored.
+- License: SHA-256(`scriptId + appId + salt`). Salt MUST be identical
+  between app `.env` and License Server Script Properties.
+- Password: SHA-256(`username + password`) — username is salt, NOT email.
 
 ### IV. SSO Parent-Child Separation
 
-Auth in SSO Portal (parent). Authz in child apps. Children never handle login.
+Authentication lives in SSO Portal (parent). Authorization lives in each
+child app. Child apps MUST NOT handle login.
 
-- `_Người Dùng` sheet = single source of truth (credentials, tokens, epochs).
-- Cross-script validation via `openById` (CacheService is per-script).
-- After SSO login, child mints own AT/RT, refreshes independently. Only epoch checks cross-script.
-- Multi-device: 1 desktop + 1 mobile. Per-device epoch — logout one doesn't kick other.
-- RT no rotation on resume (touch only) — prevents cross-tab race.
-- Client auth: wait for server validation, no optimistic cached UI.
+- `_Người Dùng` sheet is the single source of truth for credentials,
+  tokens, and epochs.
+- Cross-script validation via `SpreadsheetApp.openById` (CacheService
+  is per-script, Sheets are shared).
+- After initial SSO login, child mints own AT/RT and refreshes
+  independently. Only epoch checks go cross-script.
+- Multi-device: 1 desktop + 1 mobile per user. Per-device epoch
+  invalidation — logout one does not kick the other.
+- RT does NOT rotate on resume (touch only) to prevent cross-tab race.
+- Client auth MUST wait for server validation before rendering — no
+  optimistic cached UI.
 
 ### V. Surgical Changes, Simplicity First
 
-- Touch only what's needed. Don't "improve" adjacent code.
-- Match existing style. Remove only what YOUR changes orphaned.
-- No speculative abstractions/flexibility/error handling.
-- Every changed line traces to user's request.
-- "Hide" = comment out / conditional render, never delete.
+Minimum code that solves the problem. No speculative features.
+
+- Touch only what the request requires. Do not "improve" adjacent code,
+  comments, or formatting.
+- Match existing style. Remove only what YOUR changes orphaned — do not
+  remove pre-existing dead code unless asked.
+- No abstractions for single-use code. No error handling for impossible
+  scenarios. No "flexibility" that was not requested.
+- Every changed line MUST trace directly to the user's request.
+- "Hide" means comment out or conditional render — never delete.
 
 ### VI. Sheets-as-Database Integrity
 
-Sheets = database. Referential integrity enforced in app code.
+Google Sheets serve as the database. Referential integrity MUST be
+enforced in application code.
 
-- Delete lookup (Danh Mục/Dự Án/NCC) → check `Hồ Sơ` references first.
-- Delete category → check children first.
+- Delete lookup (Danh Mục / Dự Án / NCC) → check `Hồ Sơ` refs first.
+- Delete category → check child categories first.
 - Schema change → bump `SCHEMA_V` to force `ensureInitialized()`.
-- `_Đã Đọc`: has record = unread, delete = read. Don't invert.
-- Role from SSO `_Phân Bổ` (highest wins): GĐ(6)>PGĐ(5)>VT(4)>admin(3)>TP(2)>PP(1)>NV(0).
+- `_Đã Đọc`: has record = unread, delete record = read. Don't invert.
+- Role from SSO `_Phân Bổ` (highest wins):
+  GĐ(6) > PGĐ(5) > VT(4) > admin(3) > TP(2) > PP(1) > NV(0).
 
 ### VII. Test via vm.runInContext
 
-No `module.exports` in GAS. Tests use `vm.createContext(globalThis)`.
+GAS has no `module.exports`. Tests MUST simulate the global scope using
+`vm.createContext(globalThis)`.
 
-- Load order mirrors production: gas-core → app files via `vm.runInContext`.
-- Mocks (`mocks/gas.js`): SpreadsheetApp, CacheService, LockService, PropertiesService, DriveApp, Utilities, HtmlService, ScriptApp, Session, GmailApp.
+- Load order mirrors production: gas-core → app files via
+  `vm.runInContext`.
+- Mocks in `mocks/gas.js`: SpreadsheetApp, CacheService, LockService,
+  PropertiesService, DriveApp, Utilities, HtmlService, ScriptApp,
+  Session, GmailApp.
 - `_addExternalSheet(ssId, sheet, rows)` mocks cross-script `openById`.
-- Helpers: `resetGAS()`, `setSheetData(name, rows)`, `getSheetData(name)`.
+- Helpers: `resetGAS()`, `setSheetData(name, rows)`, `getSheetData()`.
 - New gas-core module → update `GAS_CORE_FILES` in every app's `setup.js`.
-- Jest: docmgr `projects` (server=node, client=jsdom). E2E: Playwright in `apps/<app>/e2e/`.
+- Jest: docmgr uses `projects` (server=node, client=jsdom).
+  E2E: Playwright in `apps/<app>/e2e/`.
 
 ### VIII. Shared Design System
 
-Identical Tailwind tokens + MD3 colors + SBM branding across all apps.
+All apps MUST share identical Tailwind CSS tokens, MD3 color naming,
+and SBM company branding.
 
-- Same `tailwind.config.js` everywhere. Navy primary `#01458e`, orange accent `#e87a1e`, MD3 surface system.
+- Same `tailwind.config.js` everywhere. Navy primary `#01458e`, orange
+  accent `#e87a1e`, MD3 surface system.
 - Font: Be Vietnam Pro (300–800). Icons: Material Symbols Outlined.
-- Icon limit ~71 in Google Fonts URL. `sync-icons.js` auto-syncs on build.
-- Component patterns in wiki `gas-design-system`.
+- Icon limit ~71 in Google Fonts URL — exceeding breaks ALL icons.
+  `sync-icons.js` auto-syncs on build.
+- Component patterns documented in wiki `gas-design-system`.
 
 ## Build & Deploy
 
 - Client: Vite → `dist/gas/index.html`. `sync-icons.js` in `build:client`.
 - Server: `bundle-server.js` → concat + env inject → `dist/gas/Code.js`.
-- Obfuscation: variable rename only. Other transforms break GAS V8 + Vietnamese.
+- Obfuscation: variable rename only. Other transforms break GAS V8 +
+  Vietnamese Unicode.
 - `reservedNames: ['^api_', '^doGet$']`.
-- Deploy: `npm run deploy:<app>` (reads DEPLOYMENT_ID from .env). **Never bare `clasp push`** — /exec stays old.
-- API: `api_getInitialData` (1 call on load), `api_pollUpdates` (60s background).
-
-## Code Style
-
-- Server: ES5 var/function, no TS. Client: React+JSX+hooks+Tailwind.
-- Vietnamese in app code, English in gas-core.
-- Search: server-side on Enter, NFD diacritics-insensitive. Other filters client-side.
+- Deploy: `npm run deploy:<app>` only. **Never bare `clasp push`** —
+  `/exec` URL stays on old version.
+- API: `api_getInitialData` (1 call on load), `api_pollUpdates` (60s).
 
 ## Working Preferences
 
-- **Ask, don't guess** — unclear → ask immediately.
+- **Ask, don't guess** — unclear requirements → ask immediately.
 - **Never remove code unless asked** — "hide" = conditional render.
 - **Deploy via `npm run deploy:<app>`** only.
 - **Icon sync automated** — `sync-icons.js` hooked into build.
@@ -107,6 +145,8 @@ Identical Tailwind tokens + MD3 colors + SBM branding across all apps.
 
 ## Governance
 
-Non-negotiable constraints. SemVer versioning. Consult `CLAUDE.md` + wiki for workflows. Document workflow (4-status: Chờ duyệt→Chờ xử lý→Đang xử lý→Hoàn thành) defined in wiki `document-workflow`.
+Non-negotiable constraints. SemVer versioning. Consult `CLAUDE.md` +
+wiki for runtime guidance. Document workflow (Chờ duyệt → Chờ xử lý →
+Đang xử lý → Hoàn thành) defined in wiki `document-workflow`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-05-28 | **Last Amended**: 2026-05-28
+**Version**: 1.2.0 | **Ratified**: 2026-05-28 | **Last Amended**: 2026-05-28

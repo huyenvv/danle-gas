@@ -1,37 +1,25 @@
 # Test Setup
 
-## Strategy
-
-GAS has no exports. Tests use `vm.createContext(globalThis)` + `vm.runInContext`. Load order mirrors production: gas-core → app files.
+No exports in GAS. Tests: `vm.createContext(globalThis)`+`vm.runInContext`, load order mirrors production.
 
 ## Mocks (mocks/gas.js)
 
-SpreadsheetApp (in-memory sheets + `_addExternalSheet` for cross-script), CacheService (KV), LockService (no-op), PropertiesService (KV), DriveApp (file tree), Utilities (UUID/SHA256/base64), HtmlService, ScriptApp, Session (`_setEmail`), GmailApp (`_sent` array).
+SpreadsheetApp(in-memory sheets, `_addExternalSheet` for cross-script), CacheService(KV), LockService(no-op), PropertiesService(KV), DriveApp(file tree), Utilities(UUID/SHA256/base64), HtmlService, ScriptApp, Session(`_setEmail`), GmailApp(`_sent[]`).
 
 ## Helpers
 
-`resetGAS()` — clear all. `setSheetData(name, rows)` — mock sheet from objects. `getSheetData(name)`. DocMgr also: `seedUser()`, `createSession()`, `setupRoleSheets()`.
+`resetGAS()`, `setSheetData(name,rows)`, `getSheetData(name)`. DocMgr: `seedUser()`, `createSession()`, `setupRoleSheets()`.
 
-## Jest Config
+## Config
 
-DocMgr: `projects` — server(node) + client(jsdom). Shared: `tests/jest.config.js` node.
+DocMgr: `projects`(server=node, client=jsdom). Shared: `tests/jest.config.js` node.
 
-## Test Files
+## Files
 
-### DocMgr Server
-auth, config, documents, sheets, license, drive, accessToken, refreshToken, sessionEpoch, handoff, notification, main, getAllData
+DocMgr: auth, config, documents, sheets, license, drive, accessToken, refreshToken, sessionEpoch, handoff, notification, main, getAllData
+SSO: login, password, users, orgStructure, batchSaveAssignments
+E2E(Playwright): docmgr(workflow,documents,auth,responsive,sync-cache), sso(session,users,responsive,sync-cache,login,forced-password)
 
-### SSO Portal Server
-login, password, users, orgStructure, batchSaveAssignments
+## Run
 
-## E2E (Playwright)
-
-DocMgr: workflow, documents, auth, responsive, sync-cache
-SSO: session, users, responsive, sync-cache, login, forced-password
-Regression: `node scripts/test-sso-flow.js` (~60s headless)
-
-## Commands
-
-```
-npm run test:docmgr    npm run test:shared    node scripts/test-sso-flow.js
-```
+`npm run test:docmgr` · `npm run test:shared` · `node scripts/test-sso-flow.js`
