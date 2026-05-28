@@ -13,6 +13,7 @@ import CategoryManager from './CategoryManager.jsx'
 import UserManager from './UserManager.jsx'
 import SettingsPage from './SettingsPage.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
+import { groupUsersByDept } from '../utils/groupUsers.js'
 import GroupManager from './departments/GroupManager.jsx'
 import SupplierManager from './suppliers/SupplierManager.jsx'
 import ProjectManager from './projects/ProjectManager.jsx'
@@ -420,8 +421,12 @@ export default function MainApp() {
                   onChange={e => handleFilterChange('phuTrach', e.target.value)}
                 >
                   <option value="">Tất cả phụ trách</option>
-                  {(lookups.users || []).map(u => (
-                    <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>
+                  {groupUsersByDept(lookups.users, lookups.phongBan, lookups.assignments).map(g => (
+                    <optgroup key={g.name} label={g.name}>
+                      {g.users.map(u => (
+                        <option key={u.ID} value={u['Tên đăng nhập']}>{u['Tên nhân viên'] || u['Tên đăng nhập']}</option>
+                      ))}
+                    </optgroup>
                   ))}
                 </select>
 

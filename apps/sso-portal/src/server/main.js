@@ -23,8 +23,8 @@ function doGet() {
 
 // ===== Auth API =====
 
-function api_login(email, password, deviceType) {
-  return _wrap(function() { return login(email, password, deviceType) })
+function api_login(email, password, deviceType, deviceInfo) {
+  return _wrap(function() { return login(email, password, deviceType, deviceInfo) })
 }
 
 function api_resume(refreshToken) {
@@ -88,7 +88,7 @@ function api_logout(refreshToken) {
       // Other device (e.g. mobile) keeps working.
       bumpEpochDevice(SHEETS.USERS, found.userId, label)
       revokeRefreshToken(SHEETS.USERS, found.userId, refreshToken)
-      logAudit({ username: found.user['Tên đăng nhập'], email: found.user['Email'] }, 'Đăng xuất', 'Xác thực', found.user['Tên đăng nhập'] || '', label)
+      logAudit({ username: found.user['Tên đăng nhập'], email: found.user['Email'] }, 'Đăng xuất', 'Xác thực', '', label)
     }
     return { success: true }
   })

@@ -21,6 +21,7 @@ const TYPE_COLORS = {
   'Người dùng':  'bg-amber-100 text-amber-800',
   'Ứng dụng':    'bg-primary/10 text-primary',
   'Phòng ban':   'bg-teal-100 text-teal-800',
+  'Bộ máy':      'bg-violet-100 text-violet-800',
   'Hệ thống':    'bg-surface-container text-on-surface-variant',
 }
 
@@ -46,6 +47,69 @@ function formatDetail(val) {
     const parsed = typeof val === 'string' ? JSON.parse(val) : val
     return JSON.stringify(parsed, null, 2)
   } catch { return String(val) }
+}
+
+function parseDiff(val) {
+  if (!val) return null
+  try {
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const keys = Object.keys(parsed)
+    if (keys.length === 0) return null
+    if (keys.every(k => parsed[k] && typeof parsed[k] === 'object' && 'old' in parsed[k] && 'new' in parsed[k])) return parsed
+    return null
+  } catch { return null }
+}
+
+function DiffTable({ diff }) {
+  const keys = Object.keys(diff)
+  return (
+    <table className="w-full text-sm border border-outline-variant/40 rounded-xl overflow-hidden">
+      <thead>
+        <tr className="bg-surface-container-low">
+          <th className="px-3 py-2 text-left text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Trường</th>
+          <th className="px-3 py-2 text-left text-xs font-semibold text-red-700 uppercase tracking-wide">Giá trị cũ</th>
+          <th className="px-3 py-2 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wide">Giá trị mới</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-outline-variant/30">
+        {keys.map(k => (
+          <tr key={k}>
+            <td className="px-3 py-2 text-xs font-medium text-on-surface-variant whitespace-nowrap">{k}</td>
+            <td className="px-3 py-2 text-xs bg-red-50 text-red-800 break-all">{diff[k].old || <span className="text-on-surface-variant italic">trống</span>}</td>
+            <td className="px-3 py-2 text-xs bg-emerald-50 text-emerald-800 break-all">{diff[k].new || <span className="text-on-surface-variant italic">trống</span>}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function parseDeviceInfo(val) {
+  if (!val) return null
+  try {
+    const parsed = typeof val === 'string' ? JSON.parse(val) : val
+    if (!parsed || typeof parsed !== 'object') return null
+    if (parsed.browser || parsed.ip || parsed.os) return parsed
+    return null
+  } catch { return null }
+}
+
+const DEVICE_LABELS = { ip: 'IP', browser: 'Trình duyệt', os: 'Hệ điều hành', screen: 'Màn hình', tz: 'Múi giờ', device: 'Thiết bị', reason: 'Lý do' }
+
+function DeviceInfoCard({ info }) {
+  const keys = Object.keys(info).filter(k => info[k])
+  if (keys.length === 0) return null
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {keys.map(k => (
+        <div key={k} className="bg-surface-container-low rounded-lg px-3 py-2">
+          <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">{DEVICE_LABELS[k] || k}</span>
+          <p className="text-xs text-on-surface mt-0.5 font-medium">{info[k]}</p>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function AuditLogPage() {
@@ -176,21 +240,25 @@ export default function AuditLogPage() {
                     ) : '—'}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                    <span className="text-xs">
                       <span className={`font-semibold ${ACTION_COLORS[log['Hành động']] || 'text-on-surface-variant'}`}>
                         {log['Hành động'] || '—'}
                       </span>
                       {log['Loại'] && (
-                        <span className={`inline-block px-2 py-0.5 rounded-full font-medium ${TYPE_COLORS[log['Loại']] || 'bg-surface-container text-on-surface-variant'}`}>
-                          {log['Loại']}
-                        </span>
+                        <span className="text-on-surface-variant"> {log['Loại'].toLowerCase()}</span>
                       )}
                       {log['Đối tượng'] && (
-                        <span className="text-on-surface font-medium truncate max-w-[200px]">"{log['Đối tượng']}"</span>
+                        <span className="text-on-surface font-medium"> "{log['Đối tượng']}"</span>
                       )}
-                    </div>
+                    </span>
                   </td>
-                  <td className="px-4 py-3 text-on-surface-variant text-xs max-w-[200px] truncate">{log['Chi tiết'] || '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant text-xs max-w-[200px] truncate">{(() => {
+                    const di = parseDeviceInfo(log['Chi tiết'])
+                    if (di) return [di.browser, di.os, di.ip].filter(Boolean).join(' · ') || '—'
+                    const df = parseDiff(log['Chi tiết'])
+                    if (df) return Object.keys(df).join(', ')
+                    return log['Chi tiết'] || '—'
+                  })()}</td>
                 </tr>
               ))}
               {!loading && loadingMore && (
@@ -277,9 +345,17 @@ export default function AuditLogPage() {
               {selected['Chi tiết'] && (
                 <div>
                   <span className="text-[10px] uppercase tracking-wide text-on-surface-variant font-semibold">Chi tiết</span>
-                  <pre className="mt-1 bg-surface-container-low rounded-xl p-4 text-xs text-on-surface-variant whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[60vh] overflow-y-auto">
-                    {formatDetail(selected['Chi tiết'])}
-                  </pre>
+                  {(() => {
+                    const diff = parseDiff(selected['Chi tiết'])
+                    if (diff) return <div className="mt-1"><DiffTable diff={diff} /></div>
+                    const devInfo = parseDeviceInfo(selected['Chi tiết'])
+                    if (devInfo) return <div className="mt-1"><DeviceInfoCard info={devInfo} /></div>
+                    return (
+                      <pre className="mt-1 bg-surface-container-low rounded-xl p-4 text-xs text-on-surface-variant whitespace-pre-wrap break-words font-mono leading-relaxed max-h-[60vh] overflow-y-auto">
+                        {formatDetail(selected['Chi tiết'])}
+                      </pre>
+                    )
+                  })()}
                 </div>
               )}
             </div>

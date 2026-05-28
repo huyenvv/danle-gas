@@ -56,7 +56,7 @@ function getAuditLogs(token, filters) {
 
 // ===== Authentication =====
 
-function login(email, password, deviceType) {
+function login(email, password, deviceType, deviceInfo) {
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return u['Email'] && u['Email'].toLowerCase() === email.toLowerCase() })
 
@@ -70,7 +70,9 @@ function login(email, password, deviceType) {
     if (failedCount >= 5) updates['Trạng thái'] = 'Locked'
     updateRow(SHEETS.USERS, user['ID'], updates)
     var reason = failedCount >= 5 ? 'Khóa do sai 5 lần' : 'Sai mật khẩu'
-    logAudit({ username: email, email: email }, 'Đăng nhập thất bại', 'Xác thực', email, reason)
+    var failDetail = reason
+    if (deviceInfo) failDetail = JSON.stringify({ reason: reason, ip: deviceInfo.ip || '', browser: deviceInfo.browser || '', os: deviceInfo.os || '', screen: deviceInfo.screen || '', tz: deviceInfo.tz || '' })
+    logAudit({ username: email, email: email }, 'Đăng nhập thất bại', 'Xác thực', '', failDetail)
     if (failedCount >= 5) throw new Error('Tài khoản đã bị khóa do nhập sai mật khẩu quá 5 lần. Liên hệ quản trị viên.')
     throw new Error('Email hoặc mật khẩu không đúng')
   }
@@ -112,7 +114,9 @@ function login(email, password, deviceType) {
   // Track new access token for this device type
   cachePut(deviceAtKey, accessToken, ACCESS_TOKEN_TTL)
 
-  logAudit({ username: sessionData.username, email: sessionData.email }, 'Đăng nhập', 'Xác thực', email, label)
+  var loginDetail = label
+  if (deviceInfo) loginDetail = JSON.stringify({ device: label, ip: deviceInfo.ip || '', browser: deviceInfo.browser || '', os: deviceInfo.os || '', screen: deviceInfo.screen || '', tz: deviceInfo.tz || '' })
+  logAudit({ username: sessionData.username, email: sessionData.email }, 'Đăng nhập', 'Xác thực', '', loginDetail)
 
   return {
     accessToken: accessToken,
@@ -144,7 +148,7 @@ function portalChangePassword(token, oldPassword, newPassword) {
   session.mustChangePass = false
   cachePut('at_' + token, session, ACCESS_TOKEN_TTL)
 
-  logAudit(session, 'Đổi mật khẩu', 'Xác thực', session.username, '')
+  logAudit(session, 'Đổi mật khẩu', 'Xác thực', '', '')
 
   return { success: true }
 }
@@ -170,6 +174,18 @@ function _guardProtectedUser(session, target) {
   if (!session.isOwner && _isAdminUser(target)) throw new Error('Không thể thay đổi tài khoản quản trị viên khác')
 }
 
+function _buildDiff(oldRow, newData) {
+  var diff = {}
+  var keys = Object.keys(newData)
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i]
+    var oldVal = oldRow ? String(oldRow[k] || '') : ''
+    var newVal = String(newData[k] || '')
+    if (oldVal !== newVal) diff[k] = { old: oldVal, new: newVal }
+  }
+  return diff
+}
+
 function portalAdminResetPassword(token, targetUserId) {
   var session = requireAdmin(token)
 
@@ -180,7 +196,8 @@ function portalAdminResetPassword(token, targetUserId) {
 
   var newHash = _hashPassword(user['Tên đăng nhập'], DEFAULT_PASSWORD)
   updateRow(SHEETS.USERS, targetUserId, { 'Mật khẩu': newHash, 'MustChangePass': 'TRUE' })
-  logAudit(session, 'Reset mật khẩu', 'Người dùng', String(targetUserId), '')
+  var resetTarget = user['Tên nhân viên'] ? (user['Tên nhân viên'] + ' (' + user['Email'] + ')') : user['Email']
+  logAudit(session, 'Reset mật khẩu', 'Người dùng', resetTarget, '')
   return { success: true }
 }
 
@@ -212,7 +229,8 @@ function portalLockUser(token, targetUserId) {
   updateRow(SHEETS.USERS, targetUserId, { 'Trạng thái': 'Locked' })
   revokeAllRefreshTokens(SHEETS.USERS, targetUserId)
   bumpEpoch(SHEETS.USERS, targetUserId)
-  logAudit(session, 'Khóa tài khoản', 'Người dùng', String(targetUserId), '')
+  var lockTarget = user ? (user['Tên nhân viên'] ? (user['Tên nhân viên'] + ' (' + user['Email'] + ')') : user['Email']) : targetUserId
+  logAudit(session, 'Khóa tài khoản', 'Người dùng', lockTarget, '')
   return { success: true }
 }
 
@@ -229,7 +247,8 @@ function portalUnlockUser(token, targetUserId) {
     'Mật khẩu': newHash,
     'MustChangePass': 'TRUE',
   })
-  logAudit(session, 'Mở khóa', 'Người dùng', String(targetUserId), '')
+  var unlockTarget = user['Tên nhân viên'] ? (user['Tên nhân viên'] + ' (' + user['Email'] + ')') : user['Email']
+  logAudit(session, 'Mở khóa', 'Người dùng', unlockTarget, '')
   return { success: true }
 }
 
@@ -241,8 +260,8 @@ function getUsers(token) {
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
 
   return users.filter(function(u) {
-    // Owner luôn ẩn khỏi tất cả (kể cả admin)
-    if (ownerEmail && u['Email'] && u['Email'].toLowerCase() === ownerEmail.toLowerCase()) return false
+    // Owner chỉ hiện cho chính mình
+    if (ownerEmail && u['Email'] && u['Email'].toLowerCase() === ownerEmail.toLowerCase()) return session.isOwner
     return true
   }).map(function(u) {
     return {
@@ -306,16 +325,21 @@ function updateUser(token, id, data) {
   var session = requireAdmin(token)
   var users = getSheetData(SHEETS.USERS)
   var target = users.find(function(u) { return String(u['ID']) === String(id) })
-  if (target) _guardProtectedUser(session, target)
+  var isSelf = String(session.userId) === String(id)
+  if (target && !(isSelf && _isOwnerUser(target))) _guardProtectedUser(session, target)
+  // Owner tự sửa chỉ được đổi tên hiển thị
+  var ownerSelfEdit = isSelf && target && _isOwnerUser(target)
   var updateData = {}
-  if (data['Tên đăng nhập'] !== undefined) updateData['Tên đăng nhập'] = data['Tên đăng nhập']
-  if (data['Email'] !== undefined) updateData['Email'] = data['Email']
+  if (!ownerSelfEdit && data['Tên đăng nhập'] !== undefined) updateData['Tên đăng nhập'] = data['Tên đăng nhập']
+  if (!ownerSelfEdit && data['Email'] !== undefined) updateData['Email'] = data['Email']
   if (data['Tên nhân viên'] !== undefined) updateData['Tên nhân viên'] = data['Tên nhân viên']
-  if (data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
+  if (!ownerSelfEdit && data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
   // Phòng ban + Chức vụ are derived from _Phân Bổ — not editable directly
   if (Object.keys(updateData).length > 0) {
+    var diff = _buildDiff(target, updateData)
     updateRow(SHEETS.USERS, id, updateData)
-    logAudit(session, 'Sửa', 'Người dùng', String(id), Object.keys(updateData).join(', '))
+    var editTarget = target ? (target['Tên nhân viên'] ? (target['Tên nhân viên'] + ' (' + target['Email'] + ')') : target['Email']) : id
+    logAudit(session, 'Sửa', 'Người dùng', editTarget, JSON.stringify(diff))
   }
   return { success: true }
 }
@@ -342,6 +366,8 @@ function addApp(token, data) {
 
 function updateApp(token, id, data) {
   var session = requireAdmin(token)
+  var apps = getSheetData(SHEETS.APPS)
+  var oldApp = apps.find(function(a) { return String(a['ID']) === String(id) })
   var updateData = {}
   if (data['Tên App'] !== undefined) updateData['Tên App'] = data['Tên App']
   if (data['Webapp URL'] !== undefined) updateData['Webapp URL'] = data['Webapp URL']
@@ -350,16 +376,21 @@ function updateApp(token, id, data) {
   if (data['Trạng thái'] !== undefined) updateData['Trạng thái'] = data['Trạng thái']
   if (data['Quyền xem'] !== undefined) updateData['Quyền xem'] = data['Quyền xem']
   if (Object.keys(updateData).length > 0) {
+    var diff = _buildDiff(oldApp, updateData)
     updateRow(SHEETS.APPS, id, updateData)
-    logAudit(session, 'Sửa', 'Ứng dụng', String(id), Object.keys(updateData).join(', '))
+    var appName = oldApp ? (oldApp['Tên App'] || id) : id
+    logAudit(session, 'Sửa', 'Ứng dụng', appName, JSON.stringify(diff))
   }
   return { success: true }
 }
 
 function deleteApp(token, id) {
   var session = requireAdmin(token)
+  var apps = getSheetData(SHEETS.APPS)
+  var app = apps.find(function(a) { return String(a['ID']) === String(id) })
+  var appName = app ? (app['Tên App'] || id) : id
   deleteRow(SHEETS.APPS, id)
-  logAudit(session, 'Xóa', 'Ứng dụng', String(id), '')
+  logAudit(session, 'Xóa', 'Ứng dụng', appName, '')
   return { success: true }
 }
 
@@ -452,8 +483,9 @@ function updatePhongBan(token, id, data) {
   if (data['Đơn vị thuộc sự quản lý'] !== undefined) updateData['Đơn vị thuộc sự quản lý'] = data['Đơn vị thuộc sự quản lý']
 
   if (Object.keys(updateData).length > 0) {
+    var diff = _buildDiff(dept, updateData)
     updateRow(SHEETS.PHONG_BAN, id, updateData)
-    logAudit(session, 'Sửa', 'Phòng ban', String(id), Object.keys(updateData).join(', '))
+    logAudit(session, 'Sửa', 'Phòng ban', (dept['Tên phòng ban'] || id), JSON.stringify(diff))
   }
   return { success: true }
 }
@@ -470,7 +502,7 @@ function deletePhongBan(token, id) {
 
   deleteRow(SHEETS.PHONG_BAN, id)
   _syncUsersFromStructure()
-  logAudit(session, 'Xóa', 'Phòng ban', String(id), dept['Tên phòng ban'] || '')
+  logAudit(session, 'Xóa', 'Phòng ban', dept['Tên phòng ban'] || id, '')
   return { success: true }
 }
 
@@ -552,7 +584,13 @@ function saveAssignment(token, data) {
   var users = getSheetData(SHEETS.USERS)
   var user = users.find(function(u) { return String(u['ID']) === userId })
   var userName = user ? (user['Tên nhân viên'] || user['Email']) : userId
-  logAudit(session, 'Phân bổ', 'Bộ máy', userName, chucVu + (phongBanId ? ' — PB ' + phongBanId : ''))
+  var addTarget = userName + ' làm ' + chucVu
+  if (phongBanId) {
+    var allDepts = getSheetData(SHEETS.PHONG_BAN)
+    var addDept = allDepts.find(function(d) { return String(d['ID']) === String(phongBanId) })
+    if (addDept) addTarget += ' — ' + addDept['Tên phòng ban']
+  }
+  logAudit(session, 'Phân bổ', 'Bộ máy', addTarget, '')
 
   return added
 }
@@ -575,7 +613,12 @@ function batchSaveAssignments(token, operations) {
     deleteRow(SHEETS.PHAN_BO, assignmentId)
     var u = users.find(function(u) { return String(u['ID']) === String(assignment['UserID']) })
     var userName = u ? (u['Tên nhân viên'] || u['Email']) : assignment['UserID']
-    logAudit(session, 'Xóa phân bổ', 'Bộ máy', userName, assignment['Chức vụ'])
+    var rmTarget = userName + ' khỏi vị trí ' + assignment['Chức vụ']
+    if (assignment['PhongBanID']) {
+      var dept = depts.find(function(d) { return String(d['ID']) === String(assignment['PhongBanID']) })
+      if (dept) rmTarget += ' — ' + dept['Tên phòng ban']
+    }
+    logAudit(session, 'Xóa', 'Bộ máy', rmTarget, '')
   })
 
   // Re-read after removes
@@ -628,7 +671,12 @@ function batchSaveAssignments(token, operations) {
 
     var u = users.find(function(u) { return String(u['ID']) === userId })
     var userName = u ? (u['Tên nhân viên'] || u['Email']) : userId
-    logAudit(session, 'Phân bổ', 'Bộ máy', userName, chucVu + (phongBanId ? ' — PB ' + phongBanId : ''))
+    var batchAddTarget = userName + ' làm ' + chucVu
+    if (phongBanId) {
+      var batchDept = depts.find(function(d) { return String(d['ID']) === String(phongBanId) })
+      if (batchDept) batchAddTarget += ' — ' + batchDept['Tên phòng ban']
+    }
+    logAudit(session, 'Phân bổ', 'Bộ máy', batchAddTarget, '')
   })
 
   // Sync users ONCE at the end
@@ -644,10 +692,20 @@ function removeAssignment(token, assignmentId) {
   if (!assignment) throw new Error('Không tìm thấy phân bổ')
   if (assignment['Chức vụ'] === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền xóa phân bổ admin')
 
+  var users = getSheetData(SHEETS.USERS)
+  var user = users.find(function(u) { return String(u['ID']) === String(assignment['UserID']) })
+  var userName = user ? (user['Tên nhân viên'] || user['Email']) : assignment['UserID']
+
   deleteRow(SHEETS.PHAN_BO, assignmentId)
   _syncUsersFromStructure()
 
-  logAudit(session, 'Xóa phân bổ', 'Bộ máy', String(assignment['UserID']), assignment['Chức vụ'])
+  var rmTarget = userName + ' khỏi vị trí ' + assignment['Chức vụ']
+  if (assignment['PhongBanID']) {
+    var depts = getSheetData(SHEETS.PHONG_BAN)
+    var dept = depts.find(function(d) { return String(d['ID']) === String(assignment['PhongBanID']) })
+    if (dept) rmTarget += ' — ' + dept['Tên phòng ban']
+  }
+  logAudit(session, 'Xóa', 'Bộ máy', rmTarget, '')
   return { success: true }
 }
 

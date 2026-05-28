@@ -193,7 +193,12 @@ export default function UserManager() {
     return (assignments || []).some(a => String(a['UserID']) === String(u.ID) && a['Chức vụ'] === 'admin')
   }
 
+  function isOwnerRow(u) {
+    return session.isOwner && String(u.ID) === String(session.userId)
+  }
+
   function canEditUser(u) {
+    if (isOwnerRow(u)) return true
     if (session.isOwner) return true
     if (String(u.ID) === String(session.userId)) return false
     return !isProtectedUser(u)
@@ -297,7 +302,7 @@ export default function UserManager() {
               {filtered.map(u => (
                 <tr key={u.ID} className={`hover:bg-surface-container-low transition-colors ${selectedIds.has(u.ID) ? 'bg-primary/5' : ''}`}>
                   <td className="pl-4 pr-2 py-3">
-                    {canEditUser(u) ? (
+                    {canEditUser(u) && !isOwnerRow(u) ? (
                     <input type="checkbox"
                       className="rounded border-outline-variant"
                       checked={selectedIds.has(u.ID)}
@@ -356,6 +361,7 @@ export default function UserManager() {
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => startEdit(u)} title="Sửa"
                         className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+                      {!isOwnerRow(u) && <>
                       <button onClick={() => handleResetPassword(u.ID)} title="Reset mật khẩu"
                         className="text-xs px-2.5 py-1 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors font-medium">Reset</button>
                       <button onClick={() => handleLock(u.ID, u['Trạng thái'] === 'Locked')}
@@ -367,6 +373,7 @@ export default function UserManager() {
                         }`}>
                         {u['Trạng thái'] === 'Locked' ? 'Mở khóa' : 'Khóa'}
                       </button>
+                      </>}
                     </div>
                     ) : <span className="text-xs text-on-surface-variant">—</span>}
                   </td>
@@ -406,9 +413,10 @@ export default function UserManager() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-1.5">Email *</label>
-                  <input type="email" value={formData['Email']} autoFocus
+                  <input type="email" value={formData['Email']} autoFocus={!(editId && String(editId) === String(session.userId))}
                     onChange={e => setFormData(f => ({ ...f, 'Email': e.target.value }))}
-                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+                    disabled={editId && String(editId) === String(session.userId) && session.isOwner}
+                    className="w-full px-3 py-2.5 rounded-xl bg-surface-container-low border-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition disabled:opacity-50"
                     placeholder="vd: huyenvv@gmail.com" />
                 </div>
                 <div>
