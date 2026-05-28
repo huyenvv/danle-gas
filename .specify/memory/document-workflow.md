@@ -1,63 +1,35 @@
-# Document Workflow Reference
+# Document Workflow
 
 ## Status Flow
 
-```
-Chờ duyệt → (GĐ giao việc) → Chờ xử lý → (Phụ trách nhận việc) → Đang xử lý → (Phụ trách hoàn thành) → Hoàn thành
-```
+Chờ duyệt →(GĐ giao việc)→ Chờ xử lý →(PT nhận việc)→ Đang xử lý →(PT hoàn thành)→ Hoàn thành
 
-## Role-Based Transitions
+## Role Actions
 
-### Văn thư (Secretary)
-- Creates docs (file required). Two status options on create:
-  - "Chờ duyệt" → button "Trình duyệt" → emails Giám Đốc
-  - "Hoàn thành" → button "Lưu tài liệu" → confirmation → emails GĐ + audit log
-- Cannot edit or delete after submitting
-- Fields: Nhà cung cấp, Dự án (Phòng ban), Ghi chú — no Phụ trách/Phối hợp
+**Văn thư:** Create doc (file required). Status on create: "Chờ duyệt" (→emails GĐ) or "Hoàn thành" (→confirm→emails GĐ+audit). Cannot edit/delete after submit. No Phụ trách/Phối hợp fields.
 
-### Giám Đốc (Director)
-- Opens "Chờ duyệt" docs via "Giao việc" button
-- Assigns Người phụ trách (1, required) + Người phối hợp (multi, optional)
-- After Duyệt: status → "Chờ xử lý"; notify Phụ trách + Phối hợp
-- While Phụ trách has not accepted: can edit or recall (→ "Chờ duyệt")
+**Giám Đốc:** "Giao việc" on Chờ duyệt docs. Assigns Phụ trách (1, required) + Phối hợp (multi, optional). →"Chờ xử lý", notify PT+PH. Can edit/recall while PT hasn't accepted.
 
-### Người phụ trách (Assignee)
-- "Nhận việc" → "Đang xử lý"; notify Giám Đốc
-- "Hoàn thành" → "Hoàn thành"; notify Giám Đốc; doc locked
-- Can add Phối hợp members (system notifies new members)
+**Phụ trách:** "Nhận việc"→"Đang xử lý" (notify GĐ). "Hoàn thành"→locked (notify GĐ). Can add Phối hợp.
 
-### Người phối hợp (Collaborator)
-- View doc and comment. Cannot: nhận việc, sửa, hoàn thành.
+**Phối hợp:** View + comment only.
 
-### Admin
-- Full access across all statuses. Only role that can delete documents.
+**Admin:** Full access all statuses. Only role that deletes docs.
 
-## Notification System
+## Notifications
 
-`_Đã Đọc` stores UNREAD records (inverted: has record = unread, delete = mark read).
+`_Đã Đọc`: has record=unread, delete=read.
 
 | Trigger | Unread for | Email to |
 |---|---|---|
-| trinhDuyet | All Giám đốc | All Giám đốc |
-| giaoViec | Phụ trách + Phối hợp | Phụ trách + Phối hợp |
-| nhanViec (new Phối hợp) | Newly added only | Newly added only |
+| trinhDuyet | All GĐ | All GĐ |
+| giaoViec | PT+PH | PT+PH |
+| nhanViec (new PH) | New PH only | New PH only |
 
-## "Công việc của tôi" Filter
+## "Công việc của tôi"
 
-| Role | Shows |
-|---|---|
-| Giám đốc | Docs with status "Chờ duyệt" |
-| Văn thư | Docs created by self |
-| Nhân viên / Trưởng phòng | Docs where user is Phụ trách or Phối hợp |
-
-Hidden for admin/Quản trị viên.
+GĐ→Chờ duyệt docs. VT→own docs. NV/TP→Phụ trách or Phối hợp docs. Hidden for admin.
 
 ## Search
 
-Server-side keyword search on Enter. Vietnamese diacritics-insensitive
-(NFD + strip combining marks + đ→d). Searches: Tên hồ sơ, Số hồ sơ,
-Dự án, Nhà cung cấp, Ghi chú, Phụ trách. Other filters client-side.
-
-## Background Polling
-
-Single `api_pollUpdates` call every 60s. Paused during server-search.
+Server-side on Enter, NFD diacritics-insensitive. Fields: Tên hồ sơ, Số hồ sơ, Dự án, NCC, Ghi chú, Phụ trách. Other filters client-side. `api_pollUpdates` every 60s, paused during search.

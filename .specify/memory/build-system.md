@@ -1,31 +1,20 @@
-# Build System Reference
+# Build System
 
 ## Pipeline
 
 ```
-Client:   Vite → dist/gas/index.html (single-file bundle)
-          sync-icons.js runs in build:client (auto-updates Material Symbols URL)
-
-Server:   bundle-server.js
-            → concat gas-core (fixed order) + app server files
-            → inject .env vars as encoded placeholders
-            → dist/gas/Code.js
-
-Obfusc:   obfuscate.js → variable rename only (hexadecimal)
-            → overwrite Code.js
-
-Deploy:   deploy.js → npm run build → clasp push --force → update deployment
+Client: Vite → dist/gas/index.html (sync-icons.js in build:client)
+Server: bundle-server.js → concat gas-core+app → env inject → dist/gas/Code.js
+Obfusc: variable rename only (hexadecimal) → overwrite Code.js
+Deploy: deploy.js → build → clasp push → update deployment (DEPLOYMENT_ID from .env)
 ```
 
-## Gas-Core Concat Order (fixed)
+## Concat Order
 
-`config-base → cache → utils → sheets-crud → auth-core → access-token
-→ refresh-token → session-epoch → handoff → sso → drive-io → license`
+gas-core: `config-base→cache→utils→sheets-crud→auth-core→access-token→refresh-token→session-epoch→handoff→sso→drive-io→license`
+App: auto-sorted `config→sheets→auth→others→main` (main last).
 
-App server files auto-sorted: `config → sheets → auth → others → main`
-(main always last).
-
-## Env Var Injection
+## Env Injection
 
 | Placeholder | Source |
 |---|---|
@@ -34,46 +23,20 @@ App server files auto-sorted: `config → sheets → auth → others → main`
 | `__APP_ID__` | APP_ID |
 | `__APP_VERSION__` | APP_VERSION |
 
-Encode = base64 then reverse. Decoded at runtime by `_decode()`.
+Encode=base64→reverse. Decode at runtime via `_decode()`.
 
-## Obfuscation Constraints (GAS V8 + Vietnamese)
+## Obfuscation
 
-Only variable renaming is safe. Incompatible transforms:
+Variable rename only. Incompatible: stringArray (corrupts Vietnamese), splitStrings, transformObjectKeys, controlFlowFlattening, deadCodeInjection. `reservedNames: ['^api_', '^doGet$']`.
 
-| Transform | Problem |
-|---|---|
-| `stringArray` + encoding | Corrupts Vietnamese Unicode |
-| `splitStrings` | Splits Vietnamese property keys |
-| `transformObjectKeys` | Breaks computed property access |
-| `controlFlowFlattening` | Indirect property chains fail on GAS V8 |
-| `deadCodeInjection` | Crashes on GAS V8 runtime |
+## Deploy
 
-`reservedNames: ['^api_', '^doGet$']` preserves GAS entry points.
-
-## Deploy Commands
-
-```bash
-npm run deploy:sso        # SSO Portal
-npm run deploy:docmgr     # Doc Manager
-npm run deploy:workmgr    # Work Manager
-npm run deploy:license    # License Server
-```
-
-Never use bare `clasp push` — it uploads source but `/exec` URL stays old.
-`deploy.js` reads `DEPLOYMENT_ID` from `.env` to update live deployment.
+`npm run deploy:<app>` — never bare `clasp push` (/exec stays old). deploy.js reads DEPLOYMENT_ID from .env.
 
 ## API Consolidation
 
-| Call | Replaces | When |
-|---|---|---|
-| `api_getInitialData` | getAllData + getDocuments + getStats + getUnreadIds + getConfig | Page load (1 call) |
-| `api_pollUpdates` | getDocuments + unreadIds + optionally lookups | Background every 60s |
-
-Search is server-side (Enter). All other filters are client-side.
+`api_getInitialData` (1 call on load). `api_pollUpdates` (60s background). Search server-side on Enter, other filters client-side.
 
 ## Icon Sync
 
-`scripts/sync-icons.js` auto-scans client source for Material Symbols
-icon names and updates the Google Fonts URL in `index.html`.
-Hooked into `build:client`. Standalone: `node scripts/sync-icons.js --app <name>`.
-Max ~71 icons in URL — exceeding returns HTTP 400, breaks ALL icons.
+`sync-icons.js` auto-scans client → updates icon_names in index.html. Max ~71 icons (HTTP 400 if exceeded). Hooked into build, standalone: `node scripts/sync-icons.js --app <name>`.

@@ -1,63 +1,38 @@
-# SSO Architecture Reference
+# SSO Architecture
 
-## Pattern
+Auth in Portal (parent). Authz in child apps. Children never login.
 
-Authentication in SSO Portal (parent). Authorization in each child app.
-Child apps never handle login — only local roles.
-
-## Token Types
+## Tokens
 
 | Token | TTL | Storage | Purpose |
 |---|---|---|---|
-| Access Token | 30 min | CacheService + `_Người Dùng` sheet | API auth; cross-script via sheet |
-| Refresh Token | 30 days sliding | `_Người Dùng` sheet (JSON array per device) | Silent resume. No rotation on resume |
-| Global Epoch | permanent | `_Người Dùng.LastLogoutAt` | Kick ALL devices (admin-lock) |
-| Per-device Epoch | permanent | `_Người Dùng.LogoutEpochs` JSON `{desktop, mobile}` | Kick one device type only |
+| Access | 30min | CacheService + `_Người Dùng` sheet | API auth; cross-script via sheet |
+| Refresh | 30d sliding | `_Người Dùng` JSON array per device | Resume. No rotation |
+| Global Epoch | permanent | `_Người Dùng.LastLogoutAt` | Kick ALL devices |
+| Device Epoch | permanent | `_Người Dùng.LogoutEpochs` `{desktop,mobile}` | Kick one device |
 
-Multi-device: 1 desktop + 1 mobile per user. Per-device epoch invalidation.
+Multi-device: 1 desktop + 1 mobile. Per-device epoch invalidation.
 
-## Login Flow
+## Login
 
-```
-User submits email + password
-  → SHA-256(username + password) — username is salt, NOT email
-  → label = (deviceType === 'mobile') ? 'mobile' : 'desktop'
-  → Revoke previous AT for same label
-  → bumpEpochDevice(label) — invalidates child-app RTs of same label
-  → mintRefreshToken(label) — replaces entry with same label
-  → mintAccessToken() — CacheService + sheet
-  → Client stores: access_token, refresh_token, user, parent_sheet_id
-```
+SHA-256(username+password) → label=desktop|mobile → revoke prev AT → bumpEpochDevice(label) → mintRefreshToken(label) → mintAccessToken → client stores AT+RT+user+parentSheetId.
 
-## Child App SSO Flow
+## Child SSO
 
-```
-Portal opens child via iframe: ?token=ACCESS_TOKEN&parent=PARENT_SHEET_ID
-  → doGet injects __SSO_TOKEN__ + __SSO_PARENT__ (no cross-script in doGet)
-  → Client: api_ssoLogin(parent, token)
-    → validateAccessTokenCrossScript reads parent sheet
-    → Auto-assigns 'Nhân viên' on first visit (owner → 'admin')
-    → Child mints OWN AT/RT — independent refresh from here
-  → Epoch checks still go cross-script (parent alive? user locked?)
-```
+Portal iframe: `?token=AT&parent=PARENT_SHEET_ID` → doGet injects `__SSO_TOKEN__`+`__SSO_PARENT__` (no cross-script in doGet) → client `api_ssoLogin` → `validateAccessTokenCrossScript` reads parent sheet → auto-assign 'Nhân viên' first visit → child mints own AT/RT.
 
-## Token Refresh (no rotation)
+After SSO: child refreshes independently. Epoch checks still cross-script (parent alive? locked?).
 
-RT does NOT rotate on resume — `touchRefreshToken` only updates `lastUsedAt`.
-Prevents cross-tab race: two tabs resuming simultaneously both get same RT.
-AT still rotates on every resume (previous AT explicitly revoked via cache).
+## Token Refresh
 
-## Client Auth Mount
+RT no rotation — `touchRefreshToken` updates `lastUsedAt` only. Prevents 2-tab race. AT rotates on every resume (prev AT revoked via cache).
 
-Both portal and child wait for server validation before rendering auth UI.
-No optimistic cached UI — prevents stale-AT races on hard reload.
+## Auth Modules
 
-## Gas-Core Auth Modules
-
-| Module | Key Functions |
+| Module | Functions |
 |---|---|
-| `auth-core.js` | `requireAuth`, `requireAdmin`, `_verifyPassword` |
-| `access-token.js` | `mintAccessToken`, `validateAccessToken`, `validateAccessTokenCrossScript` |
-| `refresh-token.js` | `mintRefreshToken`, `lookupRefreshToken`, `touchRefreshToken`, `revokeRefreshToken` |
-| `session-epoch.js` | `bumpEpoch`, `bumpEpochDevice`, `isBeforeEpoch`, `isBeforeEpochCrossScript` |
-| `sso.js` | `ssoStoreParentSheetId`, `ssoGetParentSheetId` |
+| `auth-core.js` | requireAuth, requireAdmin, _verifyPassword |
+| `access-token.js` | mint/validate/validateCrossScript/revoke AT |
+| `refresh-token.js` | mint/lookup/touch/revoke RT (per-label) |
+| `session-epoch.js` | bumpEpoch (global), bumpEpochDevice (label), isBeforeEpoch, isBeforeEpochCrossScript |
+| `sso.js` | ssoStoreParentSheetId, ssoGetParentSheetId |
