@@ -214,7 +214,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const isVanThuRole = role === 'Văn thư'
   const canPublish = isAdminRole || isVanThuRole || session?.canPublish
   const isHoanThanh = status === 'Hoàn thành'
-  const showPublishBtn = canPublish && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
+  const isTuChoi = status === 'Từ chối'
+  const showPublishBtn = canPublish && !isTuChoi && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
   const publishHistory = (() => {
     const raw = doc['Lịch sử phát hành']
     if (!raw) return []
