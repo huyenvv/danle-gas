@@ -612,7 +612,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   {uploading ? 'Đang lưu…' : 'Phát hành'}
                 </button>
                 )}
-                {(isAdminRole || isVanThu) && (
+                {(isAdminRole || isVanThu) && !isTuChoiDoc && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
@@ -620,7 +620,30 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   }}
                   className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
-                  {uploading ? 'Đang lưu…' : isTuChoiDoc ? 'Trình duyệt lại' : 'Trình duyệt'}
+                  {uploading ? 'Đang lưu…' : 'Trình duyệt'}
+                </button>
+                )}
+                {isTuChoiDoc && isVanThuOwnDoc && (
+                <button type="button" disabled={uploading}
+                  onClick={async () => {
+                    if (!await confirm('Có chắc gửi Trình duyệt lại tới Giám đốc?')) return
+                    setUploading(true)
+                    try {
+                      // Save edits first, then transition
+                      const fileInfos = []; const keepFileIds = []
+                      const submitForm = { ...form }
+                      await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, null)
+                      const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {})
+                      onSaved(res.data)
+                    } catch (err) {
+                      setError(err.message)
+                    } finally {
+                      setUploading(false)
+                    }
+                  }}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
+                  {uploading ? 'Đang lưu…' : 'Trình duyệt lại'}
                 </button>
                 )}
               </>
