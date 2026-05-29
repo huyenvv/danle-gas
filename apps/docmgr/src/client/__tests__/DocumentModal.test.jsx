@@ -118,4 +118,102 @@ describe('DocumentModal', () => {
 
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(updatedDoc)
   })
+
+  // Test 5: VT trình duyệt lại calls single api_transitionDocument with updateData
+  it('VT trình duyệt lại sends edits + transition in one API call', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: false,
+    }
+    const rejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'vanthu',
+    }
+    const transitionResult = { ...rejectedDoc, 'Tình trạng': 'Chờ duyệt', 'Lý do từ chối': '' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_transitionDocument') return Promise.resolve({ data: transitionResult })
+      return Promise.resolve({})
+    })
+
+    renderModal({ mode: 'edit', doc: rejectedDoc, session: vanThuSession })
+
+    const input = screen.getByPlaceholderText('Nhập tên hồ sơ...')
+    fireEvent.change(input, { target: { value: 'HĐ Đã Sửa' } })
+
+    const btn = screen.getByRole('button', { name: /trình duyệt lại/i })
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      const confirmBtn = screen.getByRole('button', { name: /đồng ý|xác nhận|có/i })
+      fireEvent.click(confirmBtn)
+    })
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_transitionDocument',
+        MOCK_TOKEN,
+        rejectedDoc.ID,
+        'trinhDuyetLai',
+        {},
+        expect.objectContaining({
+          formData: expect.objectContaining({ 'Tên hồ sơ': 'HĐ Đã Sửa' }),
+          fileInfos: expect.any(Array),
+          keepFileIds: expect.any(Array),
+        }),
+      )
+    })
+
+    expect(gasCall).not.toHaveBeenCalledWith('api_updateDocument', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
+    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(transitionResult)
+  })
+
+  // Test 6: VT editing Từ chối doc — only "Trình duyệt lại", no "Lưu tài liệu" or "Phát hành"
+  it('VT editing Từ chối doc sees only Trình duyệt lại button', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const rejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'vanthu',
+    }
+    renderModal({ mode: 'edit', doc: rejectedDoc, session: vanThuSession })
+
+    expect(screen.getByRole('button', { name: /trình duyệt lại/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^lưu tài liệu$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /phát hành/i })).not.toBeInTheDocument()
+  })
+
+  // Test 6: VT editing normal doc — sees all 3 buttons
+  it('VT editing normal doc sees Lưu tài liệu + Trình duyệt', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const normalDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ duyệt',
+      'Người tạo': 'vanthu',
+    }
+    renderModal({ mode: 'edit', doc: normalDoc, session: vanThuSession })
+
+    expect(screen.getByRole('button', { name: /lưu tài liệu/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /trình duyệt$/i })).toBeInTheDocument()
+  })
 })

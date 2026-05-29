@@ -151,6 +151,83 @@ describe('transitionDocument', () => {
   })
 })
 
+describe('transitionDocument — tuChoi', () => {
+  let vanThuToken
+
+  beforeEach(() => {
+    seedUser(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    vanThuToken = createSession(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    createDocument(vanThuToken, {
+      'Tên hồ sơ': 'Reject Test Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('GĐ tuChoi changes status to Từ chối and saves reason', () => {
+    const result = transitionDocument(directorToken, 1, 'tuChoi', {
+      lyDoTuChoi: 'Thiếu chữ ký'
+    })
+    expect(result.data['Tình trạng']).toBe('Từ chối')
+    expect(result.data['Lý do từ chối']).toBe('Thiếu chữ ký')
+  })
+
+  test('tuChoi without reason throws error', () => {
+    expect(() => transitionDocument(directorToken, 1, 'tuChoi', {})).toThrow('Vui lòng nhập lý do từ chối')
+    expect(() => transitionDocument(directorToken, 1, 'tuChoi', null)).toThrow('Vui lòng nhập lý do từ chối')
+  })
+
+  test('tuChoi marks unread for doc creator', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai thông tin' })
+    invalidateSheetCache(SHEETS.DA_DOC)
+    const unread = getSheetData(SHEETS.DA_DOC)
+    expect(unread.length).toBeGreaterThan(0)
+    // Creator is 'vanthu' — should have unread record
+    const creatorUnread = unread.find(r => String(r['DocID']) === '1')
+    expect(creatorUnread).toBeTruthy()
+  })
+
+  test('VT trinhDuyetLai changes status back to Chờ duyệt and clears reason', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Thiếu file' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(vanThuToken, 1, 'trinhDuyetLai', {})
+    expect(result.data['Tình trạng']).toBe('Chờ duyệt')
+    expect(result.data['Lý do từ chối']).toBe('')
+  })
+
+  test('VT trinhDuyetLai with updateData saves edits and transitions in one call', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Thiếu file' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(vanThuToken, 1, 'trinhDuyetLai', {}, {
+      formData: { 'Ghi chú': 'Đã bổ sung file' },
+      fileInfos: [],
+      keepFileIds: [],
+    })
+    expect(result.data['Tình trạng']).toBe('Chờ duyệt')
+    expect(result.data['Lý do từ chối']).toBe('')
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Ghi chú']).toBe('Đã bổ sung file')
+  })
+
+  test('VT cannot tuChoi (wrong role)', () => {
+    expect(() => transitionDocument(vanThuToken, 1, 'tuChoi', { lyDoTuChoi: 'test' })).toThrow('không có quyền')
+  })
+
+  test('VT cannot publish Từ chối doc via updateDocument', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => updateDocument(vanThuToken, 1, { 'Ghi chú': 'fix' }, null, null, 'publish')).toThrow('phát hành')
+  })
+
+  test('VT cannot set Hoàn thành on Từ chối doc via updateDocument', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => updateDocument(vanThuToken, 1, { 'Tình trạng': 'Hoàn thành' }, null)).toThrow('lưu tài liệu')
+  })
+})
+
 describe('deleteDocument', () => {
   let adminToken
 

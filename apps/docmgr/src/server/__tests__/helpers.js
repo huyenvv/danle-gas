@@ -8,7 +8,7 @@ var DOC_HEADERS = [
   'File ID', 'Tên file', 'Loại file', 'Kích thước',
   'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
   'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng',
-  'Ngày cập nhật', 'Người tạo', 'Người cập nhật'
+  'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối'
 ]
 var CAT_HEADERS = ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha', 'Người được xem', 'Nhóm được xem', 'Nơi lưu hồ sơ cứng']
 var NHOM_HEADERS = ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên']

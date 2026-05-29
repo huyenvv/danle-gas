@@ -37,6 +37,7 @@ export function statusColor(status) {
     'Chờ xử lý':     'bg-violet-100 text-violet-800',
     'Đang xử lý':    'bg-blue-100 text-blue-800',
     'Hoàn thành':     'bg-emerald-100 text-emerald-800',
+    'Từ chối':        'bg-red-100 text-red-800',
   }
   return map[status] || 'bg-surface-container text-on-surface-variant'
 }

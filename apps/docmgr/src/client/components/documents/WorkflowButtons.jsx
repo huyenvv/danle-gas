@@ -6,6 +6,7 @@ const COLOR_MAP = {
   blue:    'bg-blue-600 text-white hover:bg-blue-700',
   emerald: 'bg-emerald-600 text-white hover:bg-emerald-700',
   amber:   'bg-amber-500 text-white hover:bg-amber-600',
+  red:     'bg-red-600 text-white hover:bg-red-700',
 }
 
 export default function WorkflowButtons({ doc, session, onAction, disabled, filter }) {

@@ -92,9 +92,9 @@ describe('getAvailableActions — Văn thư', () => {
 })
 
 describe('getAvailableActions — Giám đốc', () => {
-  test('returns ["giaoViec"] when status="Chờ duyệt"', () => {
+  test('returns ["giaoViec", "tuChoi"] when status="Chờ duyệt"', () => {
     const actions = getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Giám đốc' }))
-    expect(actions.map(a => a.key)).toEqual(['giaoViec'])
+    expect(actions.map(a => a.key)).toEqual(['giaoViec', 'tuChoi'])
   })
 
   test('returns ["thuHoi"] when status="Chờ xử lý" — does NOT include "nhanViec" even if assigned', () => {
@@ -141,9 +141,9 @@ describe('getAvailableActions — Phụ trách (non-admin, non-Giám đốc)', (
 })
 
 describe('getAvailableActions — admin / Quản trị viên', () => {
-  test('admin sees giaoViec when status="Chờ duyệt"', () => {
+  test('admin sees giaoViec and tuChoi when status="Chờ duyệt"', () => {
     expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'admin' })).map(a => a.key))
-      .toEqual(['giaoViec'])
+      .toEqual(['giaoViec', 'tuChoi'])
   })
 
   test('admin sees both thuHoi and nhanViec when status="Chờ xử lý"', () => {
@@ -161,6 +161,29 @@ describe('getAvailableActions — admin / Quản trị viên', () => {
     const adminA = getAvailableActions(d, session({ role: 'admin' })).map(a => a.key)
     const qtv = getAvailableActions(d, session({ role: 'Quản trị viên' })).map(a => a.key)
     expect(qtv).toEqual(adminA)
+  })
+})
+
+describe('getAvailableActions — Văn thư', () => {
+  test('VT sees ["trinhDuyetLai"] when status="Từ chối"', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối' }), session({ role: 'Văn thư' }))
+    expect(actions.map(a => a.key)).toEqual(['trinhDuyetLai'])
+  })
+
+  test('VT sees [] when status="Chờ duyệt" (no workflow actions for VT)', () => {
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Văn thư' }))).toEqual([])
+  })
+})
+
+describe('getAvailableActions — Từ chối status', () => {
+  test('admin sees ["trinhDuyetLai"] when status="Từ chối"', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối' }), session({ role: 'admin' }))
+    expect(actions.map(a => a.key)).toEqual(['trinhDuyetLai'])
+  })
+
+  test('NV/PT/PH cannot tuChoi — no actions on "Chờ duyệt" for non-GĐ non-admin', () => {
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Nhân viên' }))).toEqual([])
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Trưởng phòng' }))).toEqual([])
   })
 })
 

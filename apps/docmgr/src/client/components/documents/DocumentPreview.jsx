@@ -47,6 +47,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const [transitioning, setTransitioning] = useState(false)
   const [transitionLabel, setTransitionLabel] = useState('')
   const [giaoViecForm, setGiaoViecForm] = useState(null) // null | { phuTrach, phoiHop[] }
+  const [tuChoiForm, setTuChoiForm] = useState(null) // null | { lyDo: '' }
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [showPublishHistory, setShowPublishHistory] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -147,21 +148,14 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   const canComment = COMMENT_ROLES.includes(role) || isPhuTrach || isPhoiHop
   const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
+  const isVanThuOwnerRejected = role === 'Văn thư' && status === 'Từ chối' && doc['Người tạo'] === session?.username
   const canEditDoc = role === 'Giám đốc'
     ? status === 'Chờ duyệt'
-    : isFullAdmin
+    : isFullAdmin || isVanThuOwnerRejected
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = action === 'giaoViec'
-      ? 'Giao việc'
-      : action === 'thuHoi'
-        ? 'Thu hồi'
-        : action === 'nhanViec'
-          ? 'Nhận việc'
-          : action === 'hoanThanh'
-            ? 'Hoàn thành'
-            : action
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', tuChoi: 'Từ chối', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
     if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)
@@ -204,6 +198,12 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     })
   }
 
+  async function submitTuChoi() {
+    if (!tuChoiForm?.lyDo?.trim()) { showToast('Vui lòng nhập lý do từ chối', 'error'); return }
+    await handleTransition('tuChoi', { lyDoTuChoi: tuChoiForm.lyDo.trim() })
+    setTuChoiForm(null)
+  }
+
   const availableActions = getAvailableActions(doc, session)
   const primaryGiaoViecAction = role === 'Giám đốc' && status === 'Chờ duyệt'
     ? availableActions.find(a => a.key === 'giaoViec')
@@ -215,7 +215,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const isVanThuRole = role === 'Văn thư'
   const canPublish = isAdminRole || isVanThuRole || session?.canPublish
   const isHoanThanh = status === 'Hoàn thành'
-  const showPublishBtn = canPublish && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
+  const isTuChoi = status === 'Từ chối'
+  const showPublishBtn = canPublish && !isTuChoi && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
   const publishHistory = (() => {
     const raw = doc['Lịch sử phát hành']
     if (!raw) return []
@@ -372,9 +373,16 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 )}
                 {showPublishBtn && (
                 <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1${!primaryGiaoViecAction && !canDelete ? ' col-span-2' : ''}`}>
                   <Icon name="send" size={18} />
                   Phát hành
+                </button>
+                )}
+                {isVanThuOwnerRejected && (
+                <button onClick={() => handleTransition('trinhDuyetLai')} disabled={transitioning}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-accent text-white hover:bg-accent-hover transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name="send" size={18} />
+                  Trình duyệt lại
                 </button>
                 )}
                 {canDelete ? (
@@ -383,7 +391,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     <Icon name="delete" size={18} />
                     Xóa
                   </button>
-                ) : (canEditDoc || primaryGiaoViecAction) ? <div /> : null}
+                ) : (canEditDoc || primaryGiaoViecAction) && !isVanThuOwnerRejected ? <div /> : null}
               </div>
 
               {/* Workflow action buttons */}
@@ -391,10 +399,16 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 doc={doc}
                 session={session}
                 disabled={transitioning}
-                filter={primaryGiaoViecAction ? (a => a.key !== primaryGiaoViecAction.key) : null}
+                filter={a => {
+                  if (primaryGiaoViecAction && a.key === primaryGiaoViecAction.key) return false
+                  if (isVanThuOwnerRejected && a.key === 'trinhDuyetLai') return false
+                  return true
+                }}
                 onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
                   ? openGiaoViec(key)
-                  : handleTransition(key)}
+                  : key === 'tuChoi'
+                    ? setTuChoiForm({ lyDo: '' })
+                    : handleTransition(key)}
               />
 
 
@@ -443,7 +457,42 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 </div>
                 )
               })()}
+
+              {/* Từ chối reason dialog */}
+              {tuChoiForm && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 mt-2">
+                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Từ chối hồ sơ</p>
+                  <textarea
+                    value={tuChoiForm.lyDo}
+                    onChange={e => setTuChoiForm({ lyDo: e.target.value })}
+                    placeholder="Nhập lý do từ chối…"
+                    rows={3}
+                    className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-red-200 focus:border-red-400 focus:outline-none resize-none"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setTuChoiForm(null)}
+                      className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
+                    <button onClick={submitTuChoi} disabled={transitioning}
+                      className="px-4 py-1.5 text-xs bg-red-600 text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1">
+                      {transitioning ? 'Đang xử lý…' : 'Xác nhận từ chối'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+            )}
+
+            {/* Rejection reason banner */}
+            {doc['Lý do từ chối'] && status === 'Từ chối' && (
+              <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <div className="flex items-start gap-2">
+                  <Icon name="info" size={16} className="text-red-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-700 mb-1">Lý do từ chối</p>
+                    <p className="text-sm text-red-800 whitespace-pre-wrap">{doc['Lý do từ chối']}</p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Classification */}

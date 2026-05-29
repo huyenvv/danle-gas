@@ -386,8 +386,8 @@ function api_getDocumentStats(token) {
   return _wrap(function() { return getDocumentStats(token) })
 }
 
-function api_transitionDocument(token, id, action, data) {
-  return _wrap(function() { return transitionDocument(token, id, action, data) })
+function api_transitionDocument(token, id, action, data, updateData) {
+  return _wrap(function() { return transitionDocument(token, id, action, data, updateData) })
 }
 
 function api_publishDocument(token, docId, toUserIds, ccUserIds) {

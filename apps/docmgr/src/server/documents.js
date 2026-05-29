@@ -47,6 +47,10 @@ var _DEFAULT_MAIL_TEMPLATES = {
   phatHanh: {
     subject: '[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi: {tênNgườiNhận}\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}" {linkTàiLiệu}\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
+  },
+  tuChoi: {
+    subject: '[Từ chối] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và trình duyệt lại:\n{linkHệThống}'
   }
 }
 
@@ -201,7 +205,8 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       '{linkTàiLiệu}': fileLinks,
       '{ngàyBanHành}': ngayBanHanh,
       '{ngàyKếtThúc}': ngayKetThuc,
-      '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : ''
+      '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : '',
+      '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
     var body = _applyTemplate(tpl.body, vars)
@@ -507,6 +512,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   // Permission: viewer/dept user can only edit docs they are assigned to
   // Văn thư editing own doc is allowed (checked above)
   var isVanThuOwnDoc = session.role === 'Văn thư' && doc['Người tạo'] === session.username
+  if (isVanThuOwnDoc && doc['Tình trạng'] === 'Từ chối') {
+    if (notifyTarget === 'publish') throw new Error('Không thể phát hành hồ sơ đang bị từ chối')
+    if (data['Tình trạng'] === 'Hoàn thành') throw new Error('Không thể lưu tài liệu khi hồ sơ đang bị từ chối')
+  }
   if (!isVanThuOwnDoc && session.role !== 'Quản trị viên' &&
       session.role !== 'admin' && session.role !== 'Giám đốc') {
     var existingAssignees = _parseAssignees(doc['Phụ trách'])
@@ -667,7 +676,7 @@ function getDocumentStats(token) {
 // ── private helpers ──────────────────────────────────────────────────────────
 
 // Normalize legacy status values to the 4-status workflow
-var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
+var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối']
 var STATUS_MIGRATION_MAP = {
   'Có hiệu lực':   'Hoàn thành',
   'Hết hiệu lực':  'Hoàn thành',
@@ -743,6 +752,8 @@ function _buildAssignees(input, defaultUserId) {
  *   Văn thư:   trinhDuyet (→ Chờ duyệt), luuTaiLieu (→ Hoàn thành)
  *   Giám đốc:  giaoViec (Chờ duyệt → Chờ xử lý), thuHoi (Chờ xử lý → Chờ duyệt)
  *   Phụ trách: nhanViec (Chờ xử lý → Đang xử lý), hoanThanh (Đang xử lý → Hoàn thành)
+ *   Giám đốc:  tuChoi (Chờ duyệt → Từ chối)
+ *   Văn thư:   trinhDuyetLai (Từ chối → Chờ duyệt)
  *   Admin:     all
  */
 var WORKFLOW_ACTIONS = {
@@ -750,11 +761,19 @@ var WORKFLOW_ACTIONS = {
   luuTaiLieu: { from: null, to: 'Hoàn thành', roles: ['Văn thư'] },
   giaoViec:   { from: 'Chờ duyệt', to: 'Chờ xử lý', roles: ['Giám đốc'] },
   thuHoi:     { from: 'Chờ xử lý', to: 'Chờ duyệt', roles: ['Giám đốc'] },
-  nhanViec:   { from: 'Chờ xử lý', to: 'Đang xử lý', roles: ['_phuTrach'] },
-  hoanThanh:  { from: 'Đang xử lý', to: 'Hoàn thành', roles: ['_phuTrach'] },
+  nhanViec:       { from: 'Chờ xử lý', to: 'Đang xử lý', roles: ['_phuTrach'] },
+  hoanThanh:      { from: 'Đang xử lý', to: 'Hoàn thành', roles: ['_phuTrach'] },
+  tuChoi:         { from: 'Chờ duyệt', to: 'Từ chối', roles: ['Giám đốc'] },
+  trinhDuyetLai:  { from: 'Từ chối', to: 'Chờ duyệt', roles: ['Văn thư'] },
 }
 
-function transitionDocument(token, id, action, data) {
+function transitionDocument(token, id, action, data, updateData) {
+  // If updateData provided, save doc edits first (reuse updateDocument)
+  if (updateData && updateData.formData) {
+    updateDocument(token, id, updateData.formData, updateData.fileInfos || [], updateData.keepFileIds || [], null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  }
+
   var session = requireAuth(token)
   var rule = WORKFLOW_ACTIONS[action]
   if (!rule) throw new Error('Hành động không hợp lệ: ' + action)
@@ -807,6 +826,18 @@ function transitionDocument(token, id, action, data) {
     updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
   }
 
+  // tuChoi: require rejection reason
+  if (action === 'tuChoi') {
+    data = data || {}
+    if (!data['lyDoTuChoi']) throw new Error('Vui lòng nhập lý do từ chối')
+    updates['Lý do từ chối'] = data['lyDoTuChoi']
+  }
+
+  // trinhDuyetLai: clear rejection reason
+  if (action === 'trinhDuyetLai') {
+    updates['Lý do từ chối'] = ''
+  }
+
   updateRow(SHEETS.HO_SO, id, updates)
   var updated = Object.assign({}, doc, updates)
 
@@ -821,6 +852,24 @@ function transitionDocument(token, id, action, data) {
     var toList = _getRecipientsByUsernames(phuTrachUsers)
     var ccList = _getRecipientsByUsernames(phoiHopUsers)
     _sendNotificationEmails(toList, updated, 'giaoViec', session, ccList)
+  } else if (action === 'tuChoi') {
+    // tuChoi: notify doc creator
+    var creator = doc['Người tạo']
+    if (creator) {
+      _markUnreadForUsers([creator], id)
+      var toRecipients = _getRecipientsByUsernames([creator])
+      _sendNotificationEmails(toRecipients, updated, 'tuChoi', session)
+    }
+  } else if (action === 'trinhDuyetLai') {
+    // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var dirUserIds = []
+    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    if (dirUserIds.length > 0) {
+      _markUnreadForUsers(dirUserIds, id)
+      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+      _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
+    }
   } else if (action === 'nhanViec' && updates['Người phối hợp']) {
     // nhanViec: chỉ đánh dấu unread cho người phối hợp mới, không gửi email
     var oldPhoiHop = _parseAssignees(doc['Người phối hợp'])
