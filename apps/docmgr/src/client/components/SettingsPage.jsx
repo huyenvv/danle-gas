@@ -19,6 +19,10 @@ const DEFAULT_TEMPLATES = {
     subject: '[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi {tênNgườiNhận},\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}". {linkTàiLiệu}\n\n{ghiChú}\n\nVui lòng đăng nhập hệ thống để xem tại đây:\n{linkHệThống}',
   },
+  tuChoi: {
+    subject: '[Từ chối] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và trình duyệt lại:\n{linkHệThống}',
+  },
 }
 
 const TEMPLATE_VARS = [
@@ -33,6 +37,7 @@ const TEMPLATE_VARS = [
   { key: '{ngàyBanHành}', desc: 'Ngày ban hành (dd/mm/yyyy)' },
   { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc (dd/mm/yyyy)' },
   { key: '{ghiChú}', desc: 'Ghi chú của hồ sơ' },
+  { key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' },
 ]
 
 const TOP_TABS = [
@@ -278,6 +283,7 @@ const MAIL_TABS = [
   { key: 'trinhDuyet', label: 'Trình duyệt', icon: 'send', desc: 'Gửi cho Giám đốc khi có hồ sơ cần duyệt' },
   { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
   { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
+  { key: 'tuChoi', label: 'Từ chối', icon: 'cancel', desc: 'Gửi cho Văn thư khi Giám đốc từ chối hồ sơ (kèm lý do)' },
 ]
 
 function MailTabs({ templates, onSetTpl }) {

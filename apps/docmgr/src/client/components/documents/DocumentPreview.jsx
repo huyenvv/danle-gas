@@ -47,6 +47,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const [transitioning, setTransitioning] = useState(false)
   const [transitionLabel, setTransitionLabel] = useState('')
   const [giaoViecForm, setGiaoViecForm] = useState(null) // null | { phuTrach, phoiHop[] }
+  const [tuChoiForm, setTuChoiForm] = useState(null) // null | { lyDo: '' }
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [showPublishHistory, setShowPublishHistory] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -153,15 +154,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = action === 'giaoViec'
-      ? 'Giao việc'
-      : action === 'thuHoi'
-        ? 'Thu hồi'
-        : action === 'nhanViec'
-          ? 'Nhận việc'
-          : action === 'hoanThanh'
-            ? 'Hoàn thành'
-            : action
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', tuChoi: 'Từ chối', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
     if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)
@@ -202,6 +195,12 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       'Phụ trách': giaoViecForm.phuTrach,
       'Người phối hợp': giaoViecForm.phoiHop,
     })
+  }
+
+  async function submitTuChoi() {
+    if (!tuChoiForm?.lyDo?.trim()) { showToast('Vui lòng nhập lý do từ chối', 'error'); return }
+    await handleTransition('tuChoi', { lyDoTuChoi: tuChoiForm.lyDo.trim() })
+    setTuChoiForm(null)
   }
 
   const availableActions = getAvailableActions(doc, session)
@@ -394,7 +393,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 filter={primaryGiaoViecAction ? (a => a.key !== primaryGiaoViecAction.key) : null}
                 onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
                   ? openGiaoViec(key)
-                  : handleTransition(key)}
+                  : key === 'tuChoi'
+                    ? setTuChoiForm({ lyDo: '' })
+                    : handleTransition(key)}
               />
 
 
@@ -443,7 +444,42 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 </div>
                 )
               })()}
+
+              {/* Từ chối reason dialog */}
+              {tuChoiForm && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 mt-2">
+                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Từ chối hồ sơ</p>
+                  <textarea
+                    value={tuChoiForm.lyDo}
+                    onChange={e => setTuChoiForm({ lyDo: e.target.value })}
+                    placeholder="Nhập lý do từ chối…"
+                    rows={3}
+                    className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-red-200 focus:border-red-400 focus:outline-none resize-none"
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setTuChoiForm(null)}
+                      className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
+                    <button onClick={submitTuChoi} disabled={transitioning}
+                      className="px-4 py-1.5 text-xs bg-red-600 text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1">
+                      {transitioning ? 'Đang xử lý…' : 'Xác nhận từ chối'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+            )}
+
+            {/* Rejection reason banner */}
+            {doc['Lý do từ chối'] && status === 'Từ chối' && (
+              <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <div className="flex items-start gap-2">
+                  <Icon name="info" size={16} className="text-red-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-red-700 mb-1">Lý do từ chối</p>
+                    <p className="text-sm text-red-800 whitespace-pre-wrap">{doc['Lý do từ chối']}</p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Classification */}

@@ -153,6 +153,43 @@ describe('Trình duyệt email notification', () => {
   })
 })
 
+describe('Từ chối email notification', () => {
+  test('tuChoi sends email to doc creator with rejection reason', () => {
+    setupSSOParent()
+
+    createDocument(vanthuToken, {
+      'Tên hồ sơ': 'HĐ Bị từ chối',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Thiếu chữ ký giám đốc' })
+
+    expect(GmailApp._sent).toHaveLength(1)
+    expect(GmailApp._sent[0].to).toBe('vanthu@test.com')
+    expect(GmailApp._sent[0].subject).toContain('HĐ Bị từ chối')
+    expect(GmailApp._sent[0].body).toContain('Thiếu chữ ký giám đốc')
+  })
+
+  test('tuChoi email contains {lyDoTuChoi} in body', () => {
+    setupSSOParent()
+
+    createDocument(vanthuToken, {
+      'Tên hồ sơ': 'HĐ Lý Do',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai số hợp đồng' })
+
+    const sent = GmailApp._sent[0]
+    expect(sent.body).toContain('Sai số hợp đồng')
+    expect(sent.body).not.toContain('{lyDoTuChoi}')
+  })
+})
+
 describe('Phát hành email notification', () => {
   test('publishDocument sends email to specified users', () => {
     setupSSOParent()
