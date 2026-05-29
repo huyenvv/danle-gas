@@ -164,6 +164,29 @@ describe('getAvailableActions — admin / Quản trị viên', () => {
   })
 })
 
+describe('getAvailableActions — Văn thư', () => {
+  test('VT sees ["trinhDuyetLai"] when status="Từ chối"', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối' }), session({ role: 'Văn thư' }))
+    expect(actions.map(a => a.key)).toEqual(['trinhDuyetLai'])
+  })
+
+  test('VT sees [] when status="Chờ duyệt" (no workflow actions for VT)', () => {
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Văn thư' }))).toEqual([])
+  })
+})
+
+describe('getAvailableActions — Từ chối status', () => {
+  test('admin sees ["trinhDuyetLai"] when status="Từ chối"', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối' }), session({ role: 'admin' }))
+    expect(actions.map(a => a.key)).toEqual(['trinhDuyetLai'])
+  })
+
+  test('NV/PT/PH cannot tuChoi — no actions on "Chờ duyệt" for non-GĐ non-admin', () => {
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Nhân viên' }))).toEqual([])
+    expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Trưởng phòng' }))).toEqual([])
+  })
+})
+
 describe('getAvailableActions — empty/missing inputs', () => {
   test('returns [] when session is null', () => {
     expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ xử lý' }), null)).toEqual([])
