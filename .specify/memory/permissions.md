@@ -29,3 +29,9 @@ From SSO `_Phân Bổ` highest: GĐ(6)>PGĐ(5)>VT(4)>admin(3)>TP(2)>PP(1)>NV(0).
 
 Admin/GĐ/VT: all docs. Others: only PT or PH docs. Category: `Người/Nhóm được xem` (empty=all).
 Comment: Admin/GĐ/VT/PT/PH can. NV/TP cannot.
+
+## Từ chối Constraints
+
+VT creator on Từ chối: can edit + "Trình duyệt lại" only. MUST NOT see "Lưu tài liệu" / "Phát hành". Server blocks publish + Hoàn thành on Từ chối.
+VT non-creator on Từ chối: no edit, no actions.
+Publish button hidden on Từ chối for all roles.

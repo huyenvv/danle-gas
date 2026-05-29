@@ -18,7 +18,7 @@
 **`Nhóm`** (NHOM): ID, Tên, Mô tả, Thành viên(JSON)
 **`Dự Án`** (DU_AN): ID, Tên viết tắt, Tên đầy đủ, Địa chỉ
 **`Nhà Cung Cấp`** (NHA_CUNG_CAP): ID, Tên viết tắt/đầy đủ, Địa chỉ, MST, ĐT, Người đại diện, STK, Ngân hàng, Lĩnh vực
-**`Hồ Sơ`** (HO_SO): ID, Tên, Danh mục, Ngày ban hành/kết thúc, File ID(JSON), Số hồ sơ, Dự án(Phòng ban), NCC(Nơi ban hành), Giá trị HĐ, Tình trạng, PT(JSON), PH(JSON), Ghi chú, Người tạo/cập nhật
+**`Hồ Sơ`** (HO_SO): ID, Tên, Danh mục, Ngày ban hành/kết thúc, File ID(JSON), Số hồ sơ, Dự án(Phòng ban), NCC(Nơi ban hành), Giá trị HĐ, Tình trạng, PT(JSON), PH(JSON), Ghi chú, Người tạo/cập nhật, Lịch sử phát hành, Lý do từ chối
 **`_Nhật Ký`** (NHAT_KY): ID, Thời gian, Người dùng, Email, Hành động, Loại, Đối tượng, Chi tiết
 **`_Đã Đọc`** (DA_DOC): ID, UserID, DocID, Thời gian — has record=unread
 **`_Bình Luận`** (COMMENTS): ID, DocID, UserID, Tên người dùng, Nội dung, Thời gian

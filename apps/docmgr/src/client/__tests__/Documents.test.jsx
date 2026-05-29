@@ -52,6 +52,26 @@ beforeEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+const MOCK_VT_SESSION = {
+  userId: 3,
+  username: 'vanthu',
+  role: 'Văn thư',
+  email: 'vt@test.com',
+  name: 'Văn Thư',
+  permissions: {
+    hoSo:       { c: true, r: true, u: true, d: false },
+    danhMuc:    { c: false, r: true, u: false, d: false },
+    nhom:       { c: false, r: true, u: false, d: false },
+    nhaCungCap: { c: false, r: true, u: false, d: false },
+    duAn:       { c: false, r: true, u: false, d: false },
+    user:       { c: false, r: false, u: false, d: false },
+    caiDat:     { c: false, r: false, u: false, d: false },
+  },
+  canCreate: true,
+  canCreateSubCat: false,
+  departments: [],
+}
+
 describe('Documents page — MainApp', () => {
   test('renders document list with names and statuses', async () => {
     renderMainApp()
@@ -122,5 +142,51 @@ describe('Documents page — MainApp', () => {
         { keyword: 'Hợp đồng' }
       )
     })
+  })
+
+  test('VT creator sees edit in context menu for Từ chối doc', async () => {
+    const rejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'vanthu',
+    }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [rejectedDoc],
+      stats: { total: 1, byStatus: { 'Từ chối': 1 }, totalValue: 0 },
+    }))
+    useAuth.mockReturnValue({ session: MOCK_VT_SESSION, loading: false, logout: jest.fn() })
+
+    renderMainApp()
+    expect(await screen.findByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
+
+    const menuBtn = screen.getByText('more_vert').closest('button')
+    fireEvent.click(menuBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('Chỉnh sửa')).toBeInTheDocument()
+    })
+  })
+
+  test('VT non-creator does NOT see edit in context menu for Từ chối doc', async () => {
+    const rejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'othervanthu',
+    }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [rejectedDoc],
+      stats: { total: 1, byStatus: { 'Từ chối': 1 }, totalValue: 0 },
+    }))
+    useAuth.mockReturnValue({ session: MOCK_VT_SESSION, loading: false, logout: jest.fn() })
+
+    renderMainApp()
+    expect(await screen.findByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
+
+    // No menu button — no actions available for non-creator VT on rejected doc without files
+    expect(screen.queryByText('more_vert')).not.toBeInTheDocument()
   })
 })

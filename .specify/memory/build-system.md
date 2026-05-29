@@ -26,7 +26,7 @@ Variable rename only. stringArray/splitStrings/transformObjectKeys/controlFlowFl
 
 ## API
 
-`api_getInitialData`(1 call load), `api_pollUpdates`(60s). Search server-side Enter, other filters client-side.
+`api_getInitialData`(1 call load), `api_pollUpdates`(60s). `api_transitionDocument(token, id, action, data, updateData)` — optional 5th param `updateData({formData, fileInfos, keepFileIds})` saves edits before transitioning (single call). Search server-side Enter, other filters client-side.
 
 ## Icons
 

@@ -146,7 +146,8 @@ and SBM company branding.
 ## Governance
 
 Non-negotiable constraints. SemVer versioning. Consult `CLAUDE.md` +
-wiki for runtime guidance. Document workflow (Chờ duyệt → Chờ xử lý →
-Đang xử lý → Hoàn thành) defined in wiki `document-workflow`.
+wiki for runtime guidance. Document workflow (5 statuses: Chờ duyệt →
+Chờ xử lý → Đang xử lý → Hoàn thành, plus Từ chối loop) defined in
+memory `document-workflow.md`. SCHEMA_V = 4.
 
-**Version**: 1.2.0 | **Ratified**: 2026-05-28 | **Last Amended**: 2026-05-28
+**Version**: 1.3.0 | **Ratified**: 2026-05-28 | **Last Amended**: 2026-05-29

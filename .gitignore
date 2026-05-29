@@ -22,3 +22,5 @@ licenses.json
 apps/*/.clasp.json
 
 tmp_app/
+apps/docmgr/test-results/.last-run.json
+apps/sso-portal/test-results/.last-run.json
