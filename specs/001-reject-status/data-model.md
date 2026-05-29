@@ -67,6 +67,13 @@ Add `{lyDoTuChoi}` to template variables (from `doc['Lý do từ chối']`).
 
 ## Client changes
 
+### DocumentPreview.jsx
+- `canEditDoc`: thêm `isVanThuOwnerRejected` — VT creator thấy "Chỉnh sửa" khi doc ở "Từ chối"
+- `showPublishBtn`: ẩn khi status="Từ chối"
+- Rejection reason banner: hiện khi `doc['Lý do từ chối']` && status="Từ chối"
+- tuChoiForm: dialog textarea lý do (required) → `api_transitionDocument('tuChoi', {lyDoTuChoi})`
+- workflowPermissions.js: tuChoi(GĐ, Chờ duyệt), trinhDuyetLai(VT, Từ chối)
+
 ### DocumentModal.jsx
 - Status "Chờ duyệt" + role GĐ: show "Từ chối" button (red/error style)
 - Click → dialog with textarea "Lý do từ chối" (required) + Xác nhận/Hủy
