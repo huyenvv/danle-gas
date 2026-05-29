@@ -373,7 +373,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 )}
                 {showPublishBtn && (
                 <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1${!primaryGiaoViecAction && !canDelete ? ' col-span-2' : ''}`}>
                   <Icon name="send" size={18} />
                   Phát hành
                 </button>
