@@ -767,7 +767,13 @@ var WORKFLOW_ACTIONS = {
   trinhDuyetLai:  { from: 'Từ chối', to: 'Chờ duyệt', roles: ['Văn thư'] },
 }
 
-function transitionDocument(token, id, action, data) {
+function transitionDocument(token, id, action, data, updateData) {
+  // If updateData provided, save doc edits first (reuse updateDocument)
+  if (updateData && updateData.formData) {
+    updateDocument(token, id, updateData.formData, updateData.fileInfos || [], updateData.keepFileIds || [], null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  }
+
   var session = requireAuth(token)
   var rule = WORKFLOW_ACTIONS[action]
   if (!rule) throw new Error('Hành động không hợp lệ: ' + action)

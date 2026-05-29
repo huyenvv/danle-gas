@@ -119,8 +119,8 @@ describe('DocumentModal', () => {
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(updatedDoc)
   })
 
-  // Test 5: VT trình duyệt lại calls api_updateDocument then api_transitionDocument
-  it('VT trình duyệt lại saves edits then transitions status', async () => {
+  // Test 5: VT trình duyệt lại calls single api_transitionDocument with updateData
+  it('VT trình duyệt lại sends edits + transition in one API call', async () => {
     const vanThuSession = {
       ...MOCK_ADMIN_SESSION,
       userId: 3,
@@ -136,40 +136,22 @@ describe('DocumentModal', () => {
       'Người tạo': 'vanthu',
     }
     const transitionResult = { ...rejectedDoc, 'Tình trạng': 'Chờ duyệt', 'Lý do từ chối': '' }
-    let callOrder = []
     gasCall.mockImplementation((fn) => {
-      callOrder.push(fn)
-      if (fn === 'api_updateDocument') return Promise.resolve(rejectedDoc)
       if (fn === 'api_transitionDocument') return Promise.resolve({ data: transitionResult })
       return Promise.resolve({})
     })
 
     renderModal({ mode: 'edit', doc: rejectedDoc, session: vanThuSession })
 
-    // Edit a field
     const input = screen.getByPlaceholderText('Nhập tên hồ sơ...')
     fireEvent.change(input, { target: { value: 'HĐ Đã Sửa' } })
 
-    // Click Trình duyệt lại
     const btn = screen.getByRole('button', { name: /trình duyệt lại/i })
     fireEvent.click(btn)
 
-    // Confirm dialog
     await waitFor(() => {
       const confirmBtn = screen.getByRole('button', { name: /đồng ý|xác nhận|có/i })
       fireEvent.click(confirmBtn)
-    })
-
-    await waitFor(() => {
-      expect(gasCall).toHaveBeenCalledWith(
-        'api_updateDocument',
-        MOCK_TOKEN,
-        rejectedDoc.ID,
-        expect.objectContaining({ 'Tên hồ sơ': 'HĐ Đã Sửa' }),
-        expect.any(Array),
-        expect.any(Array),
-        null,
-      )
     })
 
     await waitFor(() => {
@@ -179,14 +161,15 @@ describe('DocumentModal', () => {
         rejectedDoc.ID,
         'trinhDuyetLai',
         {},
+        expect.objectContaining({
+          formData: expect.objectContaining({ 'Tên hồ sơ': 'HĐ Đã Sửa' }),
+          fileInfos: expect.any(Array),
+          keepFileIds: expect.any(Array),
+        }),
       )
     })
 
-    // Verify order: update first, then transition
-    const updateIdx = callOrder.indexOf('api_updateDocument')
-    const transIdx = callOrder.indexOf('api_transitionDocument')
-    expect(updateIdx).toBeLessThan(transIdx)
-
+    expect(gasCall).not.toHaveBeenCalledWith('api_updateDocument', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(transitionResult)
   })
 

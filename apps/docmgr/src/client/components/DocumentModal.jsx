@@ -639,8 +639,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                       )
                       const keepFileIds = existingFiles.map(f => f.fileId)
                       const submitForm = { ...form }
-                      await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, null)
-                      const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {})
+                      const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
+                        formData: submitForm, fileInfos, keepFileIds,
+                      })
                       onSaved(res.data)
                     } catch (err) {
                       setError(err.message)

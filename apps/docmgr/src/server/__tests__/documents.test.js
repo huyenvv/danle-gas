@@ -196,6 +196,21 @@ describe('transitionDocument — tuChoi', () => {
     expect(result.data['Lý do từ chối']).toBe('')
   })
 
+  test('VT trinhDuyetLai with updateData saves edits and transitions in one call', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Thiếu file' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(vanThuToken, 1, 'trinhDuyetLai', {}, {
+      formData: { 'Ghi chú': 'Đã bổ sung file' },
+      fileInfos: [],
+      keepFileIds: [],
+    })
+    expect(result.data['Tình trạng']).toBe('Chờ duyệt')
+    expect(result.data['Lý do từ chối']).toBe('')
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Ghi chú']).toBe('Đã bổ sung file')
+  })
+
   test('VT cannot tuChoi (wrong role)', () => {
     expect(() => transitionDocument(vanThuToken, 1, 'tuChoi', { lyDoTuChoi: 'test' })).toThrow('không có quyền')
   })
