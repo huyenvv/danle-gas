@@ -148,9 +148,10 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   const canComment = COMMENT_ROLES.includes(role) || isPhuTrach || isPhoiHop
   const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
+  const isVanThuOwnerRejected = role === 'Văn thư' && status === 'Từ chối' && doc['Người tạo'] === session?.username
   const canEditDoc = role === 'Giám đốc'
     ? status === 'Chờ duyệt'
-    : isFullAdmin
+    : isFullAdmin || isVanThuOwnerRejected
 
   async function handleTransition(action, data) {
     if (transitioning) return

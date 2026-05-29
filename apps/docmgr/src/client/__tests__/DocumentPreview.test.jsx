@@ -129,6 +129,50 @@ describe('<DocumentPreview />', () => {
     })
   })
 
+  test('Edit - VT (creator) sees edit button on Từ chối doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: false,
+    }
+    const rejectedDoc = {
+      ...MOCK_DOC,
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'vanthu',
+    }
+    renderPreview({ doc: rejectedDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => {
+      expect(screen.getByText('Từ chối')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Chỉnh sửa')).toBeInTheDocument()
+  })
+
+  test('Edit - VT (not creator) does not see edit button on Từ chối doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: false,
+    }
+    const rejectedDoc = {
+      ...MOCK_DOC,
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'othervanthu',
+    }
+    renderPreview({ doc: rejectedDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => {
+      expect(screen.getByText('Từ chối')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument()
+  })
+
   test('Publish - VT does not see publish button on Từ chối doc', async () => {
     const vanThuSession = {
       ...MOCK_ADMIN_SESSION,
