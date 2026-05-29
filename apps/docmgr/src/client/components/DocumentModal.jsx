@@ -626,11 +626,18 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 {isTuChoiDoc && isVanThuOwnDoc && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
+                    if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
+                    if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
                     if (!await confirm('Có chắc gửi Trình duyệt lại tới Giám đốc?')) return
                     setUploading(true)
                     try {
-                      // Save edits first, then transition
-                      const fileInfos = []; const keepFileIds = []
+                      const fileInfos = await Promise.all(
+                        files.map(async ({ file: f }) => {
+                          const base64 = await toBase64(f)
+                          return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
+                        })
+                      )
+                      const keepFileIds = existingFiles.map(f => f.fileId)
                       const submitForm = { ...form }
                       await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, null)
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {})
