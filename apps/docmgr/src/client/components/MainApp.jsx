@@ -472,6 +472,7 @@ export default function MainApp() {
                 selectedIds={selectedIds}
                 rootDisplayCounts={rootDisplayCounts}
                 role={session.role}
+                username={session.username}
                 onToggleCat={catId => setCollapsed(c => ({ ...c, [catId]: !c[catId] }))}
                 onLoadMoreRoot={rootKey => setRootDisplayCounts(prev => ({
                   ...prev,
@@ -603,7 +604,7 @@ export default function MainApp() {
 }
 
 // ── Grouped document table (by category tree) with per-root load more ──────
-function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
+function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, username, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
   // Build docs-by-category map for ALL filtered docs (filters stay offline)
   const docsMap = {}
   docs.forEach(doc => {
@@ -713,7 +714,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
                     indexMap={rootVisibleIndexMap[rootKey] || {}}
                     selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
                     isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-                    role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
+                    role={role} username={username} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
                   />
                   {visibleCount < total && (
                     <tr>
@@ -743,7 +744,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
                 {!collapsed['__uncat__'] && uncategorizedVisible.map(doc => (
                   <DocRow key={doc.ID} doc={doc} depth={0} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
                     rowIndex={uncategorizedIndexMap[String(doc.ID)]}
-                    onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
+                    onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} username={username} />
                 ))}
                 {!collapsed['__uncat__'] && uncategorizedVisible.length < uncategorizedTotal && (
                   <tr>
@@ -775,7 +776,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
   )
 }
 
-function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role, subtreeDocCount, visibleSubtreeDocCount }) {
+function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role, username, subtreeDocCount, visibleSubtreeDocCount }) {
   const total = subtreeDocCount(cat.ID)
   const visibleTotal = visibleSubtreeDocCount(cat.ID, rootId)
   if (depth > 0 && visibleTotal === 0) return null
@@ -804,19 +805,19 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocId
           indexMap={indexMap}
           selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
           isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-          role={role} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
+          role={role} username={username} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
         />
       ))}
       {!isCollapsed && directDocs.map(doc => (
         <DocRow key={doc.ID} doc={doc} depth={depth + 1} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
           rowIndex={indexMap[String(doc.ID)]}
-          onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} />
+          onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} username={username} />
         ))}
     </Fragment>
   )
 }
 
-function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role }) {
+function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role, username }) {
   const isRead = !unreadDocIds.has(String(doc.ID))
   const isSelected = selectedIds.has(String(doc.ID))
   const indent = depth * 16 + 16
@@ -831,9 +832,10 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
     if (!raw) return []
     try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch (_) { return [] }
   })()
+  const isVanThuOwnerRejected = role === 'Văn thư' && doc['Tình trạng'] === 'Từ chối' && doc['Người tạo'] === username
   const canEditDoc = role === 'Giám đốc'
     ? doc['Tình trạng'] === 'Chờ duyệt'
-    : role === 'admin' || role === 'Quản trị viên'
+    : role === 'admin' || role === 'Quản trị viên' || isVanThuOwnerRejected
 
   const fileInfos = (() => {
     const raw = doc['File ID']
