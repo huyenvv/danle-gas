@@ -118,4 +118,48 @@ describe('DocumentModal', () => {
 
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(updatedDoc)
   })
+
+  // Test 5: VT editing Từ chối doc — only "Trình duyệt lại", no "Lưu tài liệu" or "Phát hành"
+  it('VT editing Từ chối doc sees only Trình duyệt lại button', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const rejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'vanthu',
+    }
+    renderModal({ mode: 'edit', doc: rejectedDoc, session: vanThuSession })
+
+    expect(screen.getByRole('button', { name: /trình duyệt lại/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^lưu tài liệu$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /phát hành/i })).not.toBeInTheDocument()
+  })
+
+  // Test 6: VT editing normal doc — sees all 3 buttons
+  it('VT editing normal doc sees Lưu tài liệu + Trình duyệt', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const normalDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ duyệt',
+      'Người tạo': 'vanthu',
+    }
+    renderModal({ mode: 'edit', doc: normalDoc, session: vanThuSession })
+
+    expect(screen.getByRole('button', { name: /lưu tài liệu/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /trình duyệt$/i })).toBeInTheDocument()
+  })
 })
