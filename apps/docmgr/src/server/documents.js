@@ -512,6 +512,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   // Permission: viewer/dept user can only edit docs they are assigned to
   // Văn thư editing own doc is allowed (checked above)
   var isVanThuOwnDoc = session.role === 'Văn thư' && doc['Người tạo'] === session.username
+  if (isVanThuOwnDoc && doc['Tình trạng'] === 'Từ chối') {
+    if (notifyTarget === 'publish') throw new Error('Không thể phát hành hồ sơ đang bị từ chối')
+    if (data['Tình trạng'] === 'Hoàn thành') throw new Error('Không thể lưu tài liệu khi hồ sơ đang bị từ chối')
+  }
   if (!isVanThuOwnDoc && session.role !== 'Quản trị viên' &&
       session.role !== 'admin' && session.role !== 'Giám đốc') {
     var existingAssignees = _parseAssignees(doc['Phụ trách'])

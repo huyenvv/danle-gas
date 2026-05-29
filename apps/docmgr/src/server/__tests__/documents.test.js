@@ -199,6 +199,18 @@ describe('transitionDocument — tuChoi', () => {
   test('VT cannot tuChoi (wrong role)', () => {
     expect(() => transitionDocument(vanThuToken, 1, 'tuChoi', { lyDoTuChoi: 'test' })).toThrow('không có quyền')
   })
+
+  test('VT cannot publish Từ chối doc via updateDocument', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => updateDocument(vanThuToken, 1, { 'Ghi chú': 'fix' }, null, null, 'publish')).toThrow('phát hành')
+  })
+
+  test('VT cannot set Hoàn thành on Từ chối doc via updateDocument', () => {
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => updateDocument(vanThuToken, 1, { 'Tình trạng': 'Hoàn thành' }, null)).toThrow('lưu tài liệu')
+  })
 })
 
 describe('deleteDocument', () => {
