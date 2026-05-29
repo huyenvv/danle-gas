@@ -378,13 +378,20 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   Phát hành
                 </button>
                 )}
+                {isVanThuOwnerRejected && (
+                <button onClick={() => handleTransition('trinhDuyetLai')} disabled={transitioning}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-accent text-white hover:bg-accent-hover transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name="send" size={18} />
+                  Trình duyệt lại
+                </button>
+                )}
                 {canDelete ? (
                   <button onClick={onDelete} disabled={transitioning}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
                     <Icon name="delete" size={18} />
                     Xóa
                   </button>
-                ) : (canEditDoc || primaryGiaoViecAction) ? <div /> : null}
+                ) : (canEditDoc || primaryGiaoViecAction) && !isVanThuOwnerRejected ? <div /> : null}
               </div>
 
               {/* Workflow action buttons */}
@@ -392,7 +399,11 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 doc={doc}
                 session={session}
                 disabled={transitioning}
-                filter={primaryGiaoViecAction ? (a => a.key !== primaryGiaoViecAction.key) : null}
+                filter={a => {
+                  if (primaryGiaoViecAction && a.key === primaryGiaoViecAction.key) return false
+                  if (isVanThuOwnerRejected && a.key === 'trinhDuyetLai') return false
+                  return true
+                }}
                 onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
                   ? openGiaoViec(key)
                   : key === 'tuChoi'
