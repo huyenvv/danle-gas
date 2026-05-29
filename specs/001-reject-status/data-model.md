@@ -59,6 +59,12 @@ In `trinhDuyetLai` handler:
 
 Add `{lyDoTuChoi}` to template variables (from `doc['Lý do từ chối']`).
 
+## SettingsPage TEMPLATE_VARS — add entry
+
+```js
+{ key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' }
+```
+
 ## Client changes
 
 ### DocumentModal.jsx
