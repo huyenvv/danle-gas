@@ -35,6 +35,10 @@ function _isRetryableError(msg) {
   )
 }
 
+function _isReadOnly(fnName) {
+  return /^api_(get|poll|check|browse|resume)/.test(fnName)
+}
+
 function _getRetryPolicy(fnName) {
   if (fnName === 'api_getInitialData' || fnName === 'api_getDocuments' || fnName === 'api_getDocumentStats') {
     return { retries: 5, baseDelayMs: 1500 }
@@ -140,7 +144,8 @@ function _processQueue() {
         return
       }
 
-      if (retries > 0 && _isRetryableError(errMsg)) {
+      const canRetry = _isRetryableError(errMsg) || (!res && _isReadOnly(fnName))
+      if (retries > 0 && canRetry) {
         requeue()
       } else {
         reject(new Error(errMsg))
@@ -150,7 +155,7 @@ function _processQueue() {
     .withFailureHandler(err => {
       _activeCount--
       const msg = err.message || String(err)
-      if (retries > 0 && !_isSessionExpired(msg) && _isRetryableError(msg)) {
+      if (retries > 0 && !_isSessionExpired(msg) && (_isRetryableError(msg) || _isReadOnly(fnName))) {
         requeue()
       } else {
         reject(new Error(msg))

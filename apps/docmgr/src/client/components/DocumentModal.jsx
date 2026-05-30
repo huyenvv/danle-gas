@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import gasCall from '../gasClient.js'
 import { dataCache } from '../utils/dataCache.js'
+import { retryWithVerify } from '../utils/gasRetry.js'
 import { formatCurrency } from '../utils/format.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
@@ -126,6 +127,19 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const { showToast } = useToast()
   const confirm = useConfirm()
 
+  function _makeVerify(expectedStatus) {
+    return async () => {
+      try {
+        const result = await gasCall('api_getDocuments', token, {})
+        const freshDoc = (result.data || []).find(d => String(d.ID) === String(doc?.ID))
+        if (freshDoc && (!expectedStatus || freshDoc['Tình trạng'] === expectedStatus)) {
+          return freshDoc
+        }
+      } catch (_) {}
+      return null
+    }
+  }
+
   // Role-based UI
   const role = session?.role || ''
   const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
@@ -222,28 +236,28 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     setError('')
     setUploading(true)
 
+    let fileInfos = [], keepFileIds = [], submitForm, notifyTarget
     try {
-      const fileInfos = await Promise.all(
+      fileInfos = await Promise.all(
         files.map(async ({ file: f }) => {
           const base64 = await toBase64(f)
           return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
         })
       )
-      const keepFileIds = existingFiles.map(f => f.fileId)
+      keepFileIds = existingFiles.map(f => f.fileId)
 
-      const submitForm = {
+      submitForm = {
         ...form,
         'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : form['Tình trạng'],
         'Phụ trách': phuTrach || '',
         'Người phối hợp': collaborators.length ? collaborators : [],
       }
-      // Add publish recipients if publishing
       if (publishDataRef.current) {
         submitForm._publishTo = publishDataRef.current.to
         submitForm._publishCc = publishDataRef.current.cc
         publishDataRef.current = null
       }
-      const notifyTarget = notifyTargetRef.current
+      notifyTarget = notifyTargetRef.current
       statusOverrideRef.current = null
       notifyTargetRef.current = null
       if (isEdit) {
@@ -256,7 +270,24 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         onSaved(created)
       }
     } catch (err) {
-      setError(err.message)
+      if (err.message === 'Lỗi không xác định' && isEdit) {
+        const r = await retryWithVerify({
+          fn: () => gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, notifyTarget),
+          verify: _makeVerify(),
+          onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
+        })
+        if (r.ok) {
+          showToast('Đã lưu hồ sơ', 'success')
+          onSaved(r.data)
+        } else {
+          setError(r.error)
+        }
+      } else if (err.message === 'Lỗi không xác định') {
+        showToast('Đã lưu hồ sơ — đang cập nhật', 'warning')
+        onSaved(null)
+      } else {
+        setError(err.message)
+      }
     } finally {
       setUploading(false)
     }
@@ -640,21 +671,38 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
                     if (!await confirm('Có chắc gửi Trình duyệt lại tới Giám đốc?')) return
                     setUploading(true)
+                    let fileInfos = [], keepFileIds = []
                     try {
-                      const fileInfos = await Promise.all(
+                      fileInfos = await Promise.all(
                         files.map(async ({ file: f }) => {
                           const base64 = await toBase64(f)
                           return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
                         })
                       )
-                      const keepFileIds = existingFiles.map(f => f.fileId)
-                      const submitForm = { ...form }
+                      keepFileIds = existingFiles.map(f => f.fileId)
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
-                        formData: submitForm, fileInfos, keepFileIds,
+                        formData: { ...form }, fileInfos, keepFileIds,
                       })
+                      showToast('Đã trình duyệt lại', 'success')
                       onSaved(res.data)
                     } catch (err) {
-                      setError(err.message)
+                      if (err.message === 'Lỗi không xác định') {
+                        const r = await retryWithVerify({
+                          fn: () => gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
+                            formData: { ...form }, fileInfos, keepFileIds,
+                          }).then(res => res.data),
+                          verify: _makeVerify('Chờ duyệt'),
+                          onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
+                        })
+                        if (r.ok) {
+                          showToast('Đã trình duyệt lại', 'success')
+                          onSaved(r.data)
+                        } else {
+                          setError(r.error)
+                        }
+                      } else {
+                        setError(err.message)
+                      }
                     } finally {
                       setUploading(false)
                     }
