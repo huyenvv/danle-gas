@@ -81,7 +81,7 @@ Admin có thể chỉnh nội dung email thông báo từ chối trong Settings.
 - **FR-003**: Submit từ chối MUST chuyển trạng thái → "Từ chối" + lưu lý do.
 - **FR-004**: VT MUST nhận email kèm lý do từ chối.
 - **FR-005**: VT MUST nhận unread notification cho document bị từ chối.
-- **FR-006**: VT (creator) MUST có thể sửa document ở trạng thái "Từ chối" và trình duyệt lại. VT khác (không phải creator) MUST NOT thấy nút chỉnh sửa. Khi edit doc Từ chối, VT chỉ thấy nút "Trình duyệt lại" — MUST NOT thấy "Lưu tài liệu" hoặc "Phát hành".
+- **FR-006**: VT (creator) MUST có thể sửa document ở trạng thái "Từ chối" và trình duyệt lại. VT khác (không phải creator) MUST NOT thấy nút "Trình duyệt lại" ở cả Preview lẫn Edit modal, và MUST NOT thấy nút chỉnh sửa. Khi edit doc Từ chối, VT chỉ thấy nút "Trình duyệt lại" — MUST NOT thấy "Lưu tài liệu" hoặc "Phát hành".
 - **FR-007**: Trình duyệt lại MUST chuyển trạng thái → "Chờ duyệt".
 - **FR-008**: Admin MUST có thể cài đặt email template từ chối trong Settings.
 
