@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { groupUsersByDept } from '../../utils/groupUsers.js'
 
-export default function UserPickerDropdown({ users, phongBan, assignments, value, onChange, placeholder = '-- Chọn --', exclude = [], multiple = false }) {
+export default function UserPickerDropdown({ users, phongBan, assignments, value, onChange, placeholder = '-- Chọn --', exclude = [], multiple = false, excludeGroups }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const ref = useRef(null)
@@ -28,7 +28,7 @@ export default function UserPickerDropdown({ users, phongBan, assignments, value
   const filteredUsers = allUsers.filter(u => !excludeSet.has(u['Tên đăng nhập']))
 
   const q = search.toLowerCase()
-  const groups = groupUsersByDept(filteredUsers, phongBan, assignments).map(g => {
+  const groups = groupUsersByDept(filteredUsers, phongBan, assignments, excludeGroups).map(g => {
     if (!q) return g
     const matched = g.users.filter(u => {
       const name = (u['Tên nhân viên'] || '').toLowerCase()

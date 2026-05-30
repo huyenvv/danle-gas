@@ -443,6 +443,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       onChange={v => setGiaoViecForm(f => ({ ...f, phoiHop: v }))}
                       placeholder="+ Thêm..."
                       exclude={giaoViecForm.phuTrach ? [giaoViecForm.phuTrach] : []}
+                      excludeGroups={isNhanViec ? ['Ban Giám Đốc', 'Văn thư & Quản trị'] : undefined}
                       multiple
                     />
                   </div>

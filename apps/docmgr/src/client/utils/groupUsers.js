@@ -1,7 +1,7 @@
 const LEADERSHIP_ROLES = new Set(['Giám đốc', 'Phó GĐ'])
 const SUPPORT_ROLES = new Set(['Văn thư', 'admin'])
 
-export function groupUsersByDept(users, phongBan, assignments) {
+export function groupUsersByDept(users, phongBan, assignments, excludeGroups) {
   const allUsers = users || []
   const depts = phongBan || []
   const allAssignments = assignments || []
@@ -54,5 +54,9 @@ export function groupUsersByDept(users, phongBan, assignments) {
     groups.push({ name: 'Chưa phân phòng', users: unassigned, dept: null })
   }
 
+  if (excludeGroups && excludeGroups.length > 0) {
+    const exc = new Set(excludeGroups)
+    return groups.filter(g => !exc.has(g.name))
+  }
   return groups
 }
