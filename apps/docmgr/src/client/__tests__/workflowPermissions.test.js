@@ -204,6 +204,34 @@ describe('getAvailableActions — Từ chối status', () => {
   })
 })
 
+describe('getAvailableActions — acceptance gate statuses', () => {
+  test('GĐ sees xacNhanHT + tuChoiKetQua on Chờ xác nhận HT', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Chờ xác nhận HT' }), session({ role: 'Giám đốc' }))
+    expect(actions.map(a => a.key)).toEqual(['xacNhanHT', 'tuChoiKetQua'])
+  })
+
+  test('admin sees xacNhanHT + tuChoiKetQua on Chờ xác nhận HT', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Chờ xác nhận HT' }), session({ role: 'admin' }))
+    expect(actions.map(a => a.key)).toEqual(['xacNhanHT', 'tuChoiKetQua'])
+  })
+
+  test('PT sees hoanThanhLai on Từ chối kết quả (when assigned)', () => {
+    const d = doc({ 'Tình trạng': 'Từ chối kết quả', 'Phụ trách': '["alice"]' })
+    const actions = getAvailableActions(d, session({ role: 'Nhân viên', username: 'alice' }))
+    expect(actions.map(a => a.key)).toEqual(['hoanThanhLai'])
+  })
+
+  test('PT sees nothing on Chờ xác nhận HT (not assigned action)', () => {
+    const d = doc({ 'Tình trạng': 'Chờ xác nhận HT', 'Phụ trách': '["alice"]' })
+    expect(getAvailableActions(d, session({ role: 'Nhân viên', username: 'alice' }))).toEqual([])
+  })
+
+  test('admin sees hoanThanhLai on Từ chối kết quả', () => {
+    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối kết quả' }), session({ role: 'admin' }))
+    expect(actions.map(a => a.key)).toEqual(['hoanThanhLai'])
+  })
+})
+
 describe('getAvailableActions — empty/missing inputs', () => {
   test('returns [] when session is null', () => {
     expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ xử lý' }), null)).toEqual([])

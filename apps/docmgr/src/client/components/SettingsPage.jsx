@@ -289,7 +289,7 @@ const MAIL_TABS = [
   { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
   { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
   { key: 'tuChoi', label: 'Từ chối', icon: 'cancel', desc: 'Gửi cho Văn thư khi Giám đốc từ chối hồ sơ (kèm lý do)' },
-  { key: 'tuChoiKetQua', label: 'Từ chối kết quả', icon: 'unpublished', desc: 'Gửi cho Phụ trách khi Giám đốc từ chối kết quả xử lý' },
+  { key: 'tuChoiKetQua', label: 'Từ chối kết quả', icon: 'unpublished', desc: 'Gửi cho Phụ trách khi Giám đốc từ chối kết quả xử lý (kèm lý do)' },
 ]
 
 function MailTabs({ templates, onSetTpl }) {

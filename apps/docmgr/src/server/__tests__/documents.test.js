@@ -256,6 +256,83 @@ describe('transitionDocument — tuChoi', () => {
   })
 })
 
+describe('transitionDocument — acceptance gate', () => {
+  let staffToken
+
+  beforeEach(() => {
+    seedUser(3, 'staff1', 's@test.com', 'Nhân viên')
+    staffToken = createSession(3, 'staff1', 's@test.com', 'Nhân viên')
+
+    // Create doc, giao viec, nhan viec → Đang xử lý
+    createDocument(directorToken, { 'Tên hồ sơ': 'Gate Doc', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Người phối hợp': [] })
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(staffToken, 1, 'nhanViec', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('hoanThanh changes status to Chờ xác nhận HT (not Hoàn thành)', () => {
+    const result = transitionDocument(staffToken, 1, 'hoanThanh', {})
+    expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
+  })
+
+  test('xacNhanHT changes status to Hoàn thành (no notification)', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(directorToken, 1, 'xacNhanHT', {})
+    expect(result.data['Tình trạng']).toBe('Hoàn thành')
+  })
+
+  test('tuChoiKetQua changes status to Từ chối kết quả and saves reason', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(directorToken, 1, 'tuChoiKetQua', { lyDoTuChoi: 'Chưa đủ' })
+    expect(result.data['Tình trạng']).toBe('Từ chối kết quả')
+    expect(result.data['Lý do từ chối']).toBe('Chưa đủ')
+  })
+
+  test('tuChoiKetQua without reason throws', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => transitionDocument(directorToken, 1, 'tuChoiKetQua', {})).toThrow('lý do')
+  })
+
+  test('hoanThanhLai from Từ chối kết quả → Chờ xác nhận HT and clears reason', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(directorToken, 1, 'tuChoiKetQua', { lyDoTuChoi: 'Thiếu' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(staffToken, 1, 'hoanThanhLai', {})
+    expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
+    expect(result.data['Lý do từ chối']).toBe('')
+  })
+
+  test('hoanThanhLai with updateData saves edits + transitions', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(directorToken, 1, 'tuChoiKetQua', { lyDoTuChoi: 'Sai' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(staffToken, 1, 'hoanThanhLai', {}, {
+      formData: { 'Ghi chú': 'Đã sửa' }, fileInfos: [], keepFileIds: [],
+    })
+    expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)[0]['Ghi chú']).toBe('Đã sửa')
+  })
+
+  test('full loop: PT hoanThanh → GĐ tuChoiKetQua → PT hoanThanhLai → GĐ xacNhanHT', () => {
+    transitionDocument(staffToken, 1, 'hoanThanh', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(directorToken, 1, 'tuChoiKetQua', { lyDoTuChoi: 'Chưa xong' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(staffToken, 1, 'hoanThanhLai', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(directorToken, 1, 'xacNhanHT', {})
+    expect(result.data['Tình trạng']).toBe('Hoàn thành')
+  })
+})
+
 describe('transitionDocument — luuTru', () => {
   beforeEach(() => {
     createDocument(directorToken, {

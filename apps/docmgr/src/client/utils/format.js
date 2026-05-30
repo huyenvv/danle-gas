@@ -37,9 +37,18 @@ export function statusColor(status) {
     'Chờ xử lý':     'bg-violet-100 text-violet-800',
     'Đang xử lý':    'bg-blue-100 text-blue-800',
     'Hoàn thành':     'bg-emerald-100 text-emerald-800',
-    'Từ chối':        'bg-red-100 text-red-800',
+    'Từ chối':            'bg-red-100 text-red-800',
+    'Chờ xác nhận HT':   'bg-teal-100 text-teal-800',
+    'Từ chối kết quả':    'bg-rose-100 text-rose-800',
   }
   return map[status] || 'bg-surface-container text-on-surface-variant'
+}
+
+const STATUS_TOOLTIPS = {
+  'Chờ xác nhận HT': 'Chờ xác nhận hoàn thành',
+}
+export function statusTooltip(status) {
+  return STATUS_TOOLTIPS[status] || ''
 }
 
 export function cn(...classes) {

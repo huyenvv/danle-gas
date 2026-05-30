@@ -216,6 +216,105 @@ describe('<DocumentPreview />', () => {
     expect(screen.getByText('Phát hành')).toBeInTheDocument()
   })
 
+  test('PT does NOT see edit button on Từ chối kết quả doc', async () => {
+    const ptSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 5,
+      username: 'staff1',
+      role: 'Nhân viên',
+      canCreate: false,
+      canPublish: false,
+    }
+    const rejectedResultDoc = {
+      ...MOCK_DOC,
+      'Tình trạng': 'Từ chối kết quả',
+      'Lý do từ chối': 'Chưa đủ',
+      'Phụ trách': JSON.stringify(['staff1']),
+    }
+    renderPreview({ doc: rejectedResultDoc, session: ptSession, isAdmin: false, canDelete: false })
+    await waitFor(() => {
+      expect(screen.getByText('Từ chối kết quả')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument()
+    // But should see Hoàn thành button
+    expect(screen.getByText('Hoàn thành')).toBeInTheDocument()
+  })
+
+  test('PT sees rejection banner on Từ chối kết quả doc', async () => {
+    const ptSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 5,
+      username: 'staff1',
+      role: 'Nhân viên',
+    }
+    const rejectedResultDoc = {
+      ...MOCK_DOC,
+      'Tình trạng': 'Từ chối kết quả',
+      'Lý do từ chối': 'Thiếu báo cáo',
+      'Phụ trách': JSON.stringify(['staff1']),
+    }
+    renderPreview({ doc: rejectedResultDoc, session: ptSession, isAdmin: false, canDelete: false })
+    await waitFor(() => {
+      expect(screen.getByText('Thiếu báo cáo')).toBeInTheDocument()
+    })
+  })
+
+  test('tuChoiKetQua reason dialog preserves action key when typing', async () => {
+    // GĐ on Chờ xác nhận HT → click Từ chối → type reason → submit should send tuChoiKetQua not tuChoi
+    const gdSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 2,
+      username: 'giamdoc',
+      role: 'Giám đốc',
+    }
+    const pendingDoc = {
+      ...MOCK_DOC,
+      'Tình trạng': 'Chờ xác nhận HT',
+    }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_transitionDocument') return Promise.resolve({ data: { ...pendingDoc, 'Tình trạng': 'Từ chối kết quả' } })
+      return Promise.resolve({})
+    })
+
+    renderPreview({ doc: pendingDoc, session: gdSession, isAdmin: false, canDelete: false })
+
+    // Find and click Từ chối button (tuChoiKetQua action)
+    await waitFor(() => {
+      expect(screen.getByText('Từ chối')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByText('Từ chối'))
+
+    // Type reason (this used to overwrite action key)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Nhập lý do từ chối…')).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByPlaceholderText('Nhập lý do từ chối…'), { target: { value: 'Chưa đạt yêu cầu' } })
+
+    // Click submit
+    fireEvent.click(screen.getByText('Xác nhận từ chối'))
+
+    // Confirm dialog — use the confirm context's "Xác nhận" button (exact match to avoid collision with "Xác nhận HT" and "Xác nhận từ chối")
+    await waitFor(() => {
+      const allBtns = screen.getAllByRole('button')
+      const confirmBtn = allBtns.find(b => b.textContent.trim() === 'Xác nhận')
+      expect(confirmBtn).toBeTruthy()
+      fireEvent.click(confirmBtn)
+    })
+
+    // Should call tuChoiKetQua, NOT tuChoi
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_transitionDocument',
+        expect.any(String),
+        expect.anything(),
+        'tuChoiKetQua',
+        { lyDoTuChoi: 'Chưa đạt yêu cầu' },
+      )
+    })
+  })
+
   test('Workflow - renders at least one action button for admin + Chờ duyệt', async () => {
     renderPreview()
     // Admin with 'Chờ duyệt' status → canEditDoc is true (admin role) → "Chỉnh sửa" button visible

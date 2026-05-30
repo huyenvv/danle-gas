@@ -146,6 +146,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const isVanThu = role === 'Văn thư'
   const isVanThuOwnDoc = isVanThu && isEdit && doc?.['Người tạo'] === session?.username
   const isTuChoiDoc = isEdit && doc?.['Tình trạng'] === 'Từ chối'
+  const isTuChoiKetQuaDoc = isEdit && doc?.['Tình trạng'] === 'Từ chối kết quả'
   const isNvTpCreate = !isEdit && !isAdminRole && !isVanThu && session?.canCreate
   const canEditStatus = isAdminRole || isVanThu
   const statusOptions = isVanThu ? ['Chờ duyệt', 'Hoàn thành'] : STATUS_OPTIONS
@@ -628,9 +629,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
               Hủy
             </button>
-            {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc ? (
+            {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc || (isTuChoiKetQuaDoc && isPhuTrachOfDoc) ? (
               <>
-                {!isTuChoiDoc && (
+                {!isTuChoiDoc && !isTuChoiKetQuaDoc && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc chỉ lưu trữ, không gửi thông báo tới Giám đốc?')) return
@@ -641,7 +642,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
                 )}
-                {canPublish && !isTuChoiDoc && (
+                {canPublish && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
                 <button type="button" disabled={uploading}
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
@@ -653,7 +654,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   {uploading ? 'Đang lưu…' : 'Phát hành'}
                 </button>
                 )}
-                {(isAdminRole || isVanThu) && !isTuChoiDoc && (
+                {(isAdminRole || isVanThu) && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
                 <button type="button" disabled={uploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
@@ -710,6 +711,37 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
                   <span className="material-symbols-outlined" style={{ fontSize: 18 }}>send</span>
                   {uploading ? 'Đang lưu…' : 'Trình duyệt lại'}
+                </button>
+                )}
+                {isTuChoiKetQuaDoc && isPhuTrachOfDoc && (
+                <button type="button" disabled={uploading}
+                  onClick={async () => {
+                    if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
+                    if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
+                    if (!await confirm('Có chắc gửi Hoàn thành lại?')) return
+                    setUploading(true)
+                    try {
+                      const fileInfos = await Promise.all(
+                        files.map(async ({ file: f }) => {
+                          const base64 = await toBase64(f)
+                          return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
+                        })
+                      )
+                      const keepFileIds = existingFiles.map(f => f.fileId)
+                      const submitForm = { ...form }
+                      const res = await gasCall('api_transitionDocument', token, doc.ID, 'hoanThanhLai', {}, {
+                        formData: submitForm, fileInfos, keepFileIds,
+                      })
+                      onSaved(res.data)
+                    } catch (err) {
+                      setError(err.message)
+                    } finally {
+                      setUploading(false)
+                    }
+                  }}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white rounded-full text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 transition-colors shadow-md3-2">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>task_alt</span>
+                  {uploading ? 'Đang lưu…' : 'Hoàn thành'}
                 </button>
                 )}
               </>

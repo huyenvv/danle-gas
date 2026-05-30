@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import gasCall from '../../gasClient.js'
-import { formatCurrency, formatDate, formatDateTime, statusColor } from '../../utils/format.js'
+import { formatCurrency, formatDate, formatDateTime, statusColor, statusTooltip } from '../../utils/format.js'
 import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -149,13 +149,14 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const canComment = COMMENT_ROLES.includes(role) || isPhuTrach || isPhoiHop
   const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
   const isVanThuOwnerRejected = role === 'Văn thư' && status === 'Từ chối' && doc['Người tạo'] === session?.username
+  const isPhuTrachRejectedResult = isPhuTrach && status === 'Từ chối kết quả'
   const canEditDoc = role === 'Giám đốc'
     ? status === 'Chờ duyệt'
     : isFullAdmin || isVanThuOwnerRejected
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', tuChoi: 'Từ chối', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', hoanThanhLai: 'Hoàn thành', tuChoi: 'Từ chối', tuChoiKetQua: 'Từ chối kết quả', xacNhanHT: 'Xác nhận HT', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
     if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)
@@ -200,7 +201,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   async function submitTuChoi() {
     if (!tuChoiForm?.lyDo?.trim()) { showToast('Vui lòng nhập lý do từ chối', 'error'); return }
-    await handleTransition('tuChoi', { lyDoTuChoi: tuChoiForm.lyDo.trim() })
+    await handleTransition(tuChoiForm.action || 'tuChoi', { lyDoTuChoi: tuChoiForm.lyDo.trim() })
     setTuChoiForm(null)
   }
 
@@ -216,7 +217,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const canPublish = isAdminRole || isVanThuRole || session?.canPublish
   const isHoanThanh = status === 'Hoàn thành'
   const isTuChoi = status === 'Từ chối'
-  const showPublishBtn = canPublish && !isTuChoi && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
+  const isTuChoiKetQua = status === 'Từ chối kết quả'
+  const isRejectedStatus = isTuChoi || isTuChoiKetQua
+  const showPublishBtn = canPublish && !isRejectedStatus && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
   const publishHistory = (() => {
     const raw = doc['Lịch sử phát hành']
     if (!raw) return []
@@ -388,13 +391,20 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   Trình duyệt lại
                 </button>
                 )}
+                {isPhuTrachRejectedResult && (
+                <button onClick={() => handleTransition('hoanThanhLai')} disabled={transitioning}
+                  className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name="task_alt" size={18} />
+                  Hoàn thành
+                </button>
+                )}
                 {canDelete ? (
                   <button onClick={onDelete} disabled={transitioning}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
                     <Icon name="delete" size={18} />
                     Xóa
                   </button>
-                ) : (canEditDoc || primaryGiaoViecAction) && !isVanThuOwnerRejected ? <div /> : null}
+                ) : (canEditDoc || primaryGiaoViecAction) && !isVanThuOwnerRejected && !isPhuTrachRejectedResult ? <div /> : null}
               </div>
 
               {/* Workflow action buttons */}
@@ -405,12 +415,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 filter={a => {
                   if (primaryGiaoViecAction && a.key === primaryGiaoViecAction.key) return false
                   if (isVanThuOwnerRejected && a.key === 'trinhDuyetLai') return false
+                  if (isPhuTrachRejectedResult && a.key === 'hoanThanhLai') return false
                   return true
                 }}
                 onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
                   ? openGiaoViec(key)
-                  : key === 'tuChoi'
-                    ? setTuChoiForm({ lyDo: '' })
+                  : (key === 'tuChoi' || key === 'tuChoiKetQua')
+                    ? setTuChoiForm({ lyDo: '', action: key })
                     : handleTransition(key)}
               />
 
@@ -468,7 +479,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Từ chối hồ sơ</p>
                   <textarea
                     value={tuChoiForm.lyDo}
-                    onChange={e => setTuChoiForm({ lyDo: e.target.value })}
+                    onChange={e => setTuChoiForm(prev => ({ ...prev, lyDo: e.target.value }))}
                     placeholder="Nhập lý do từ chối…"
                     rows={3}
                     className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-red-200 focus:border-red-400 focus:outline-none resize-none"
@@ -487,7 +498,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
             )}
 
             {/* Rejection reason banner */}
-            {doc['Lý do từ chối'] && status === 'Từ chối' && (
+            {doc['Lý do từ chối'] && (status === 'Từ chối' || status === 'Từ chối kết quả') && (
               <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
                 <div className="flex items-start gap-2">
                   <Icon name="info" size={16} className="text-red-600 mt-0.5 shrink-0" />
@@ -514,7 +525,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 <div>
                   <p className="text-xs text-on-surface-variant mb-1">Tình trạng</p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}>
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColor(doc['Tình trạng'])}`}
+                      title={statusTooltip(doc['Tình trạng'])}>
                       {doc['Tình trạng'] || '—'}
                     </span>
                     {publishHistory.length > 0 ? (

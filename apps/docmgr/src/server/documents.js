@@ -522,6 +522,11 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
     if (notifyTarget === 'publish') throw new Error('Không thể phát hành hồ sơ đang bị từ chối')
     if (data['Tình trạng'] === 'Hoàn thành') throw new Error('Không thể lưu tài liệu khi hồ sơ đang bị từ chối')
   }
+  // PT on Từ chối kết quả: block publish + Hoàn thành
+  if (doc['Tình trạng'] === 'Từ chối kết quả') {
+    if (notifyTarget === 'publish') throw new Error('Không thể phát hành hồ sơ đang bị từ chối kết quả')
+    if (data['Tình trạng'] === 'Hoàn thành') throw new Error('Không thể lưu tài liệu khi hồ sơ đang bị từ chối kết quả')
+  }
   if (!isVanThuOwnDoc && session.role !== 'Quản trị viên' &&
       session.role !== 'admin' && session.role !== 'Giám đốc') {
     var existingAssignees = _parseAssignees(doc['Phụ trách'])
@@ -682,7 +687,7 @@ function getDocumentStats(token) {
 // ── private helpers ──────────────────────────────────────────────────────────
 
 // Normalize legacy status values to the 4-status workflow
-var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối']
+var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối', 'Chờ xác nhận HT', 'Từ chối kết quả']
 var STATUS_MIGRATION_MAP = {
   'Có hiệu lực':   'Hoàn thành',
   'Hết hiệu lực':  'Hoàn thành',
@@ -759,7 +764,9 @@ function _buildAssignees(input, defaultUserId) {
  *   Giám đốc:  giaoViec (Chờ duyệt → Chờ xử lý), thuHoi (Chờ xử lý → Chờ duyệt)
  *   Phụ trách: nhanViec (Chờ xử lý → Đang xử lý), hoanThanh (Đang xử lý → Hoàn thành)
  *   Giám đốc:  tuChoi (Chờ duyệt → Từ chối), luuTru (Chờ duyệt → Hoàn thành)
+ *   Giám đốc:  xacNhanHT (Chờ xác nhận HT → Hoàn thành), tuChoiKetQua (Chờ xác nhận HT → Từ chối kết quả)
  *   Văn thư:   trinhDuyetLai (Từ chối → Chờ duyệt)
+ *   Phụ trách: hoanThanhLai (Từ chối kết quả → Chờ xác nhận HT)
  *   Admin:     all
  */
 var WORKFLOW_ACTIONS = {
@@ -768,9 +775,12 @@ var WORKFLOW_ACTIONS = {
   giaoViec:   { from: 'Chờ duyệt', to: 'Chờ xử lý', roles: ['Giám đốc'] },
   thuHoi:     { from: 'Chờ xử lý', to: 'Chờ duyệt', roles: ['Giám đốc'] },
   nhanViec:       { from: 'Chờ xử lý', to: 'Đang xử lý', roles: ['_phuTrach'] },
-  hoanThanh:      { from: 'Đang xử lý', to: 'Hoàn thành', roles: ['_phuTrach'] },
+  hoanThanh:      { from: 'Đang xử lý', to: 'Chờ xác nhận HT', roles: ['_phuTrach'] },
+  hoanThanhLai:   { from: 'Từ chối kết quả', to: 'Chờ xác nhận HT', roles: ['_phuTrach'] },
   tuChoi:         { from: 'Chờ duyệt', to: 'Từ chối', roles: ['Giám đốc'] },
   luuTru:         { from: 'Chờ duyệt', to: 'Hoàn thành', roles: ['Giám đốc'] },
+  xacNhanHT:      { from: 'Chờ xác nhận HT', to: 'Hoàn thành', roles: ['Giám đốc'] },
+  tuChoiKetQua:   { from: 'Chờ xác nhận HT', to: 'Từ chối kết quả', roles: ['Giám đốc'] },
   trinhDuyetLai:  { from: 'Từ chối', to: 'Chờ duyệt', roles: ['Văn thư'] },
 }
 
@@ -833,15 +843,15 @@ function transitionDocument(token, id, action, data, updateData) {
     updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
   }
 
-  // tuChoi: require rejection reason
-  if (action === 'tuChoi') {
+  // tuChoi / tuChoiKetQua: require rejection reason
+  if (action === 'tuChoi' || action === 'tuChoiKetQua') {
     data = data || {}
     if (!data['lyDoTuChoi']) throw new Error('Vui lòng nhập lý do từ chối')
     updates['Lý do từ chối'] = data['lyDoTuChoi']
   }
 
-  // trinhDuyetLai: clear rejection reason
-  if (action === 'trinhDuyetLai') {
+  // trinhDuyetLai / hoanThanh / hoanThanhLai: clear rejection reason
+  if (action === 'trinhDuyetLai' || action === 'hoanThanh' || action === 'hoanThanhLai') {
     updates['Lý do từ chối'] = ''
   }
 
@@ -867,6 +877,24 @@ function transitionDocument(token, id, action, data, updateData) {
       var toRecipients = _getRecipientsByUsernames([creator])
       _sendNotificationEmails(toRecipients, updated, 'tuChoi', session)
     }
+  } else if (action === 'tuChoiKetQua') {
+    // tuChoiKetQua: notify PT (assigned)
+    var assignees = _parseAssignees(doc['Phụ trách'])
+    if (assignees.length > 0) {
+      _markUnreadForUsers(assignees, id)
+      var ptRecipients = _getRecipientsByUsernames(assignees)
+      _sendNotificationEmails(ptRecipients, updated, 'tuChoiKetQua', session)
+    }
+  } else if (action === 'hoanThanh' || action === 'hoanThanhLai') {
+    // hoanThanh/hoanThanhLai: notify all GĐ
+    var roles2 = getSheetData(SHEETS.APP_ROLES)
+    var dirIds = []
+    roles2.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    if (dirIds.length > 0) {
+      _markUnreadForUsers(dirIds, id)
+      var dirList = _getRecipientsByUsernames(dirIds)
+      _sendNotificationEmails(dirList, updated, 'trinhDuyet', session)
+    }
   } else if (action === 'trinhDuyetLai') {
     // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
     var roles = getSheetData(SHEETS.APP_ROLES)
@@ -888,6 +916,10 @@ function transitionDocument(token, id, action, data, updateData) {
   }
 
   logAudit(session, action, 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id, from: doc['Tình trạng'], to: rule.to }))
+  // Double-invalidate: updateRow already invalidates, but GAS CacheService
+  // remove() has eventual consistency — re-invalidate before returning to
+  // ensure the next getSheetData call reads fresh data from the sheet.
+  invalidateSheetCache(SHEETS.HO_SO)
   return { data: updated }
 }
 

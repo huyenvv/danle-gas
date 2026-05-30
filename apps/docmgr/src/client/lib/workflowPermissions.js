@@ -26,6 +26,9 @@ const ACTIONS = {
   tuChoi:         { key: 'tuChoi',         label: 'Từ chối',         icon: 'cancel',         color: 'red'     },
   luuTru:         { key: 'luuTru',         label: 'Lưu trữ',         icon: 'archive',        color: 'emerald' },
   trinhDuyetLai:  { key: 'trinhDuyetLai',  label: 'Trình duyệt lại', icon: 'send',           color: 'primary' },
+  xacNhanHT:      { key: 'xacNhanHT',      label: 'Xác nhận HT',     icon: 'verified',       color: 'emerald' },
+  tuChoiKetQua:   { key: 'tuChoiKetQua',    label: 'Từ chối',         icon: 'cancel',         color: 'rose'    },
+  hoanThanhLai:   { key: 'hoanThanhLai',    label: 'Hoàn thành',      icon: 'task_alt',       color: 'emerald' },
 }
 
 const ADMIN_ACTIONS = {
@@ -34,11 +37,14 @@ const ADMIN_ACTIONS = {
   'Chờ xử lý':  ['thuHoi', 'nhanViec'],
   'Đang xử lý': ['hoanThanh'],
   'Từ chối':     ['trinhDuyetLai'],
+  'Chờ xác nhận HT': ['xacNhanHT', 'tuChoiKetQua'],
+  'Từ chối kết quả': ['hoanThanhLai'],
 }
 
 const GIAM_DOC_ACTIONS = {
   'Chờ duyệt': ['giaoViec', 'tuChoi', 'luuTru'],
   'Chờ xử lý': ['thuHoi'],
+  'Chờ xác nhận HT': ['xacNhanHT', 'tuChoiKetQua'],
 }
 
 const VAN_THU_ACTIONS = {
@@ -46,8 +52,9 @@ const VAN_THU_ACTIONS = {
 }
 
 const PHUTRACH_ACTIONS = {
-  'Chờ xử lý':  ['nhanViec'],
-  'Đang xử lý': ['hoanThanh'],
+  'Chờ xử lý':       ['nhanViec'],
+  'Đang xử lý':      ['hoanThanh'],
+  'Từ chối kết quả':  ['hoanThanhLai'],
 }
 
 export function getAvailableActions(doc, session) {
