@@ -51,6 +51,10 @@ var _DEFAULT_MAIL_TEMPLATES = {
   tuChoi: {
     subject: '{hoảTốc}[Từ chối] {tênHồSơ}',
     body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và trình duyệt lại:\n{linkHệThống}'
+  },
+  tuChoiKetQua: {
+    subject: '{hoảTốc}[Từ chối kết quả] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối kết quả xử lý hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và hoàn thành lại:\n{linkHệThống}'
   }
 }
 
@@ -207,7 +211,7 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       '{ngàyKếtThúc}': ngayKetThuc,
       '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : '',
       '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : '',
-      '{hoảTốc}': (typeof doc === 'object' && doc['Khẩn'] === 'TRUE') ? '[HOẢ TỐC] ' : ''
+      '{hoảTốc}': (typeof doc === 'object' && (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true)) ? '[HOẢ TỐC] ' : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
     var body = _applyTemplate(tpl.body, vars)
@@ -622,7 +626,7 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
     _markUnreadForUsers(directorUserIds, id)
     try {
       var directorRecipients = _getRecipientsByUsernames(directorUserIds)
-      _sendNotificationEmails(directorRecipients, updated['Tên hồ sơ'], 'trinhDuyet', session)
+      _sendNotificationEmails(directorRecipients, updated, 'trinhDuyet', session)
     } catch(e) {
       Logger.log('updateDocument trinhDuyet email error: ' + e.message)
       emailError = e.message

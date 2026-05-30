@@ -20,6 +20,7 @@ import ProjectManager from './projects/ProjectManager.jsx'
 import DocumentPreview from './documents/DocumentPreview.jsx'
 import AuditLogPage from './AuditLogPage.jsx'
 import TopHeader from './layout/TopHeader.jsx'
+import { getDeadlineStatus } from '../utils/deadlineStatus.js'
 import Icon from './common/Icon.jsx'
 import PublishHistory from './documents/PublishHistory.jsx'
 
@@ -856,6 +857,8 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
     setMenuOpen(v => !v)
   }
 
+  const dl = doc['Tình trạng'] !== 'Hoàn thành' ? getDeadlineStatus(doc['Ngày kết thúc']) : null
+
   return (
     <tr
       className={`hover:bg-surface-container-low transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
@@ -865,16 +868,31 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(doc.ID)}
           className="w-4 h-4 rounded accent-primary cursor-pointer" />
       </td>
-      <td className="px-3 py-3 text-on-surface-variant text-xs">{rowIndex || '—'}</td>
+      <td className={`px-3 py-3 text-xs ${(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'text-red-500' : 'text-on-surface-variant'}`}>
+        <span className="flex items-center gap-1">
+          {rowIndex || '—'}
+          {(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' && (
+            <span className="material-symbols-outlined text-red-500 cursor-default" style={{ fontSize: 14 }} title="Hoả tốc">rocket_launch</span>
+          )}
+        </span>
+      </td>
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
         {(() => {
           const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
+          const dlNameCls = !isKhan && dl
+            ? { overdue: 'text-red-600', urgent: 'text-amber-600', warning: 'text-blue-600' }[dl.level] || ''
+            : ''
+          const nameCls = isKhan && !isRead ? 'font-semibold text-red-600'
+            : isKhan && isRead ? 'text-red-500'
+            : dlNameCls && !isRead ? `font-semibold ${dlNameCls}`
+            : dlNameCls && isRead ? dlNameCls
+            : isRead ? 'text-on-surface-variant'
+            : 'font-semibold text-on-surface'
           return (
-            <span className={`${isKhan && !isRead ? 'font-semibold text-red-600' : isKhan && isRead ? 'text-red-500' : isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
-              {!isRead && !isKhan && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
+            <span className={nameCls}>
+              {!isRead && !isKhan && !dlNameCls && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
               {isKhan && !isRead && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
               {doc['Tên hồ sơ']}
-              {isKhan && <span className="material-symbols-outlined text-red-500 ml-1.5 align-middle" style={{ fontSize: 16 }}>rocket_launch</span>}
             </span>
           )
         })()}
@@ -940,7 +958,16 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         title={doc['Ghi chú'] || ''}>
         {doc['Ghi chú'] || '—'}
       </td>
-      <td className="px-4 py-3 text-on-surface-variant">{formatDate(doc['Ngày ban hành'])}</td>
+      <td className="px-4 py-3 text-on-surface-variant">
+        <div>{formatDate(doc['Ngày ban hành'])}</div>
+        {dl && (
+          <div className={`text-[10px] mt-0.5 ${
+            { overdue: 'text-red-500', urgent: 'text-amber-500', warning: 'text-blue-500' }[dl.level] || 'text-on-surface-variant'
+          }`}>
+            KT: {formatDate(doc['Ngày kết thúc'])}{dl.label ? ` (${dl.label})` : ''}
+          </div>
+        )}
+      </td>
       <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>
         {hasMenuItems && (
         <button ref={menuBtnRef} onClick={openMenu}

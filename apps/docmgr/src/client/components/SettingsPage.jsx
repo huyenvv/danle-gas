@@ -8,20 +8,24 @@ import { useConfirm } from '../context/ConfirmContext.jsx'
 
 const DEFAULT_TEMPLATES = {
   trinhDuyet: {
-    subject: '[Cần duyệt] {tênHồSơ}',
+    subject: '{hoảTốc}[Cần duyệt] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã trình duyệt hồ sơ "{tênHồSơ}".\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}',
   },
   giaoViec: {
-    subject: '[Giao việc] {tênHồSơ}',
+    subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
   },
   phatHanh: {
-    subject: '[SBM – Phát hành] {tênHồSơ}',
+    subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi {tênNgườiNhận},\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}". {linkTàiLiệu}\n\n{ghiChú}\n\nVui lòng đăng nhập hệ thống để xem tại đây:\n{linkHệThống}',
   },
   tuChoi: {
-    subject: '[Từ chối] {tênHồSơ}',
+    subject: '{hoảTốc}[Từ chối] {tênHồSơ}',
     body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và trình duyệt lại:\n{linkHệThống}',
+  },
+  tuChoiKetQua: {
+    subject: '{hoảTốc}[Từ chối kết quả] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối kết quả xử lý hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và hoàn thành lại:\n{linkHệThống}',
   },
 }
 
@@ -285,6 +289,7 @@ const MAIL_TABS = [
   { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
   { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
   { key: 'tuChoi', label: 'Từ chối', icon: 'cancel', desc: 'Gửi cho Văn thư khi Giám đốc từ chối hồ sơ (kèm lý do)' },
+  { key: 'tuChoiKetQua', label: 'Từ chối kết quả', icon: 'unpublished', desc: 'Gửi cho Phụ trách khi Giám đốc từ chối kết quả xử lý' },
 ]
 
 function MailTabs({ templates, onSetTpl }) {
