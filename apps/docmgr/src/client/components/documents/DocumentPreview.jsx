@@ -155,7 +155,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', tuChoi: 'Từ chối', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', tuChoi: 'Từ chối', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
     if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)

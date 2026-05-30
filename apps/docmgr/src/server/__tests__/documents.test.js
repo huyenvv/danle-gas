@@ -228,6 +228,38 @@ describe('transitionDocument — tuChoi', () => {
   })
 })
 
+describe('transitionDocument — luuTru', () => {
+  beforeEach(() => {
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'Archive Test Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('GĐ luuTru changes status from Chờ duyệt to Hoàn thành', () => {
+    const result = transitionDocument(directorToken, 1, 'luuTru', {})
+    expect(result.data['Tình trạng']).toBe('Hoàn thành')
+  })
+
+  test('VT cannot luuTru (wrong role)', () => {
+    seedUser(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    const vanThuToken = createSession(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    expect(() => transitionDocument(vanThuToken, 1, 'luuTru', {})).toThrow('không có quyền')
+  })
+
+  test('luuTru fails when status is not Chờ duyệt', () => {
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'Wrong Status Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Đang xử lý',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => transitionDocument(directorToken, 2, 'luuTru', {})).toThrow('không thể')
+  })
+})
+
 describe('deleteDocument', () => {
   let adminToken
 

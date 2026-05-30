@@ -752,7 +752,7 @@ function _buildAssignees(input, defaultUserId) {
  *   Văn thư:   trinhDuyet (→ Chờ duyệt), luuTaiLieu (→ Hoàn thành)
  *   Giám đốc:  giaoViec (Chờ duyệt → Chờ xử lý), thuHoi (Chờ xử lý → Chờ duyệt)
  *   Phụ trách: nhanViec (Chờ xử lý → Đang xử lý), hoanThanh (Đang xử lý → Hoàn thành)
- *   Giám đốc:  tuChoi (Chờ duyệt → Từ chối)
+ *   Giám đốc:  tuChoi (Chờ duyệt → Từ chối), luuTru (Chờ duyệt → Hoàn thành)
  *   Văn thư:   trinhDuyetLai (Từ chối → Chờ duyệt)
  *   Admin:     all
  */
@@ -764,6 +764,7 @@ var WORKFLOW_ACTIONS = {
   nhanViec:       { from: 'Chờ xử lý', to: 'Đang xử lý', roles: ['_phuTrach'] },
   hoanThanh:      { from: 'Đang xử lý', to: 'Hoàn thành', roles: ['_phuTrach'] },
   tuChoi:         { from: 'Chờ duyệt', to: 'Từ chối', roles: ['Giám đốc'] },
+  luuTru:         { from: 'Chờ duyệt', to: 'Hoàn thành', roles: ['Giám đốc'] },
   trinhDuyetLai:  { from: 'Từ chối', to: 'Chờ duyệt', roles: ['Văn thư'] },
 }
 

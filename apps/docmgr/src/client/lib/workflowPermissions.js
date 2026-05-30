@@ -24,19 +24,20 @@ const ACTIONS = {
   nhanViec:       { key: 'nhanViec',       label: 'Nhận việc',       icon: 'check_circle',   color: 'blue'    },
   hoanThanh:      { key: 'hoanThanh',      label: 'Hoàn thành',      icon: 'task_alt',       color: 'emerald' },
   tuChoi:         { key: 'tuChoi',         label: 'Từ chối',         icon: 'cancel',         color: 'red'     },
+  luuTru:         { key: 'luuTru',         label: 'Lưu trữ',         icon: 'archive',        color: 'emerald' },
   trinhDuyetLai:  { key: 'trinhDuyetLai',  label: 'Trình duyệt lại', icon: 'send',           color: 'primary' },
 }
 
 const ADMIN_ACTIONS = {
   '':           ['giaoViec'],
-  'Chờ duyệt':  ['giaoViec', 'tuChoi'],
+  'Chờ duyệt':  ['giaoViec', 'tuChoi', 'luuTru'],
   'Chờ xử lý':  ['thuHoi', 'nhanViec'],
   'Đang xử lý': ['hoanThanh'],
   'Từ chối':     ['trinhDuyetLai'],
 }
 
 const GIAM_DOC_ACTIONS = {
-  'Chờ duyệt': ['giaoViec', 'tuChoi'],
+  'Chờ duyệt': ['giaoViec', 'tuChoi', 'luuTru'],
   'Chờ xử lý': ['thuHoi'],
 }
 
