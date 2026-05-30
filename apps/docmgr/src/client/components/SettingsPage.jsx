@@ -38,6 +38,7 @@ const TEMPLATE_VARS = [
   { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc (dd/mm/yyyy)' },
   { key: '{ghiChú}', desc: 'Ghi chú của hồ sơ' },
   { key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' },
+  { key: '{hoảTốc}', desc: 'Tiền tố [HOẢ TỐC] nếu hồ sơ đánh dấu Khẩn' },
 ]
 
 const TOP_TABS = [

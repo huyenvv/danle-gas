@@ -64,6 +64,9 @@ export function getAvailableActions(doc, session) {
     keys = GIAM_DOC_ACTIONS[status] || []
   } else if (role === 'Văn thư') {
     keys = VAN_THU_ACTIONS[status] || []
+    if (keys.includes('trinhDuyetLai') && doc['Người tạo'] !== session.username) {
+      keys = []
+    }
   } else if (isPhuTrach(doc, session)) {
     keys = PHUTRACH_ACTIONS[status] || []
   }

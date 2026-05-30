@@ -217,6 +217,29 @@ describe('DocumentModal', () => {
     expect(screen.getByRole('button', { name: /trình duyệt$/i })).toBeInTheDocument()
   })
 
+  // Test: VT editing Từ chối doc created by someone else — NO Trình duyệt lại
+  it('VT does not see Trình duyệt lại for rejected doc created by another user', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: false,
+    }
+    const otherRejectedDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Từ chối',
+      'Lý do từ chối': 'Thiếu file',
+      'Người tạo': 'admin', // created by someone else
+    }
+    renderModal({ mode: 'edit', doc: otherRejectedDoc, session: vanThuSession })
+
+    expect(screen.queryByRole('button', { name: /trình duyệt lại/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /trình duyệt$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /lưu tài liệu/i })).not.toBeInTheDocument()
+  })
+
   // Test: handleSubmit create mode — shows warning on GAS transport error (can't verify without doc ID)
   it('shows warning on "Lỗi không xác định" in handleSubmit create mode', async () => {
     gasCall.mockRejectedValue(new Error('Lỗi không xác định'))

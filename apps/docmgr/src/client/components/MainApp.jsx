@@ -870,9 +870,9 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         {(() => {
           const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
           return (
-            <span className={`${isKhan ? 'font-semibold text-red-600' : isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
+            <span className={`${isKhan && !isRead ? 'font-semibold text-red-600' : isKhan && isRead ? 'text-red-500' : isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
               {!isRead && !isKhan && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
-              {isKhan && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
+              {isKhan && !isRead && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
               {doc['Tên hồ sơ']}
               {isKhan && <span className="material-symbols-outlined text-red-500 ml-1.5 align-middle" style={{ fontSize: 16 }}>rocket_launch</span>}
             </span>

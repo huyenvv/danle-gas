@@ -175,9 +175,16 @@ describe('getAvailableActions — admin / Quản trị viên', () => {
 })
 
 describe('getAvailableActions — Văn thư', () => {
-  test('VT sees ["trinhDuyetLai"] when status="Từ chối"', () => {
-    const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối' }), session({ role: 'Văn thư' }))
+  test('VT sees ["trinhDuyetLai"] for own rejected doc', () => {
+    const d = doc({ 'Tình trạng': 'Từ chối', 'Người tạo': 'vanthu' })
+    const actions = getAvailableActions(d, session({ role: 'Văn thư', username: 'vanthu' }))
     expect(actions.map(a => a.key)).toEqual(['trinhDuyetLai'])
+  })
+
+  test('VT does NOT see trinhDuyetLai for rejected doc created by another user', () => {
+    const d = doc({ 'Tình trạng': 'Từ chối', 'Người tạo': 'admin' })
+    const actions = getAvailableActions(d, session({ role: 'Văn thư', username: 'vanthu' }))
+    expect(actions).toEqual([])
   })
 
   test('VT sees [] when status="Chờ duyệt" (no workflow actions for VT)', () => {
