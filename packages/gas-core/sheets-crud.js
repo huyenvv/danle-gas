@@ -79,6 +79,12 @@ function getSheetData(sheetName) {
     return []
   }
   var rows = sheet.getDataRange().getValues()
+  // Ensure header row defines the column count (getDataRange may exclude trailing empty columns)
+  var headerCount = sheet.getRange(1, 1, 1, sheet.getMaxColumns()).getValues()[0].filter(function(h) { return h !== '' && h != null }).length
+  if (rows.length > 0 && rows[0].length < headerCount) {
+    var fullHeader = sheet.getRange(1, 1, 1, headerCount).getValues()[0]
+    rows[0] = fullHeader
+  }
   var data = rowsToObjects(rows)
   cachePut('data_' + sheetName, data)
   return data

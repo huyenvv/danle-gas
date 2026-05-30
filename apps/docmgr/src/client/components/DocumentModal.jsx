@@ -100,6 +100,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     'Tình trạng': 'Chờ duyệt',
     'Ghi chú': '',
     'Nơi lưu hồ sơ cứng': '',
+    'Khẩn': '',
   })
   const [phuTrach, setPhuTrach] = useState(initialPhuTrach)
   const [collaborators, setCollaborators] = useState(initialCollaborators)
@@ -283,15 +284,24 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         </div>
 
         {/* Body */}
-        <form id="_docModalForm" onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
+        <form id="_docModalForm" onSubmit={handleSubmit} className={`flex-1 overflow-y-auto transition-colors ${form['Khẩn'] === 'TRUE' || form['Khẩn'] === true ? 'bg-red-50/40' : ''}`}>
           <div className="p-6 grid md:grid-cols-2 gap-x-8 gap-y-5">
 
             {/* ── LEFT COLUMN ── */}
             <div className="space-y-5">
-              {/* Tên hồ sơ */}
-              <Field label="Tên hồ sơ *">
-                <input className={iCls} value={form['Tên hồ sơ']} onChange={e => setField('Tên hồ sơ', e.target.value)} placeholder="Nhập tên hồ sơ..." />
-              </Field>
+              {/* Tên hồ sơ + Khẩn */}
+              <div className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Field label="Tên hồ sơ *">
+                    <input className={iCls} value={form['Tên hồ sơ']} onChange={e => setField('Tên hồ sơ', e.target.value)} placeholder="Nhập tên hồ sơ..." />
+                  </Field>
+                </div>
+                <label className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl cursor-pointer select-none transition-colors ${form['Khẩn'] === 'TRUE' || form['Khẩn'] === true ? 'bg-red-100 text-red-700' : 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container'}`}>
+                  <input type="checkbox" checked={form['Khẩn'] === 'TRUE' || form['Khẩn'] === true} onChange={e => setField('Khẩn', e.target.checked ? 'TRUE' : '')}
+                    className="w-4 h-4 rounded accent-red-600 cursor-pointer" />
+                  <span className="text-sm font-medium whitespace-nowrap">Khẩn</span>
+                </label>
+              </div>
 
               {/* Danh mục */}
               <Field label="Danh mục *">

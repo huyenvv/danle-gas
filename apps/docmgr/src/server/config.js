@@ -21,10 +21,11 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '4') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '6') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
-  props.setProperty('SCHEMA_V', '4')
+  invalidateSheetCache(SHEETS.HO_SO)
+  props.setProperty('SCHEMA_V', '6')
   _initDone = true
 }
 
@@ -35,7 +36,7 @@ function _ensureAllTabsExist(ss) {
     { name: SHEETS.NHOM,          headers: ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên'] },
     { name: SHEETS.DU_AN,         headers: ['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ'] },
     { name: SHEETS.NHA_CUNG_CAP,  headers: ['ID', 'Tên NCC viết tắt', 'Tên NCC đầy đủ', 'Địa chỉ', 'Mã số thuế', 'Điện thoại', 'Người đại diện', 'Số tài khoản', 'Tên ngân hàng', 'Lĩnh vực kinh doanh'] },
-    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ', 'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối'] },
+    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc', 'File ID', 'Tên file', 'Loại file', 'Kích thước', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ', 'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn'] },
     { name: SHEETS.NHAT_KY,       headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
     { name: SHEETS.DA_DOC,        headers: ['ID', 'UserID', 'DocID', 'Thời gian'] },
     { name: SHEETS.COMMENTS,      headers: ['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },

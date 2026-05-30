@@ -867,10 +867,17 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
       </td>
       <td className="px-3 py-3 text-on-surface-variant text-xs">{rowIndex || '—'}</td>
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
-        <span className={`${isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
-          {!isRead && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
-          {doc['Tên hồ sơ']}
-        </span>
+        {(() => {
+          const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
+          return (
+            <span className={`${isKhan ? 'font-semibold text-red-600' : isRead ? 'text-on-surface-variant' : 'font-semibold text-on-surface'}`}>
+              {!isRead && !isKhan && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
+              {isKhan && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
+              {doc['Tên hồ sơ']}
+              {isKhan && <span className="material-symbols-outlined text-red-500 ml-1.5 align-middle" style={{ fontSize: 16 }}>rocket_launch</span>}
+            </span>
+          )
+        })()}
       </td>
       <td className="px-4 py-3 text-on-surface-variant text-xs">{doc['Số hồ sơ'] || '—'}</td>
       <td className="px-4 py-3 text-on-surface-variant max-w-[100px] truncate">{doc['Dự án (Phòng ban)'] || '—'}</td>

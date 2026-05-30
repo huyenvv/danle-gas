@@ -37,19 +37,19 @@ function _getMailConfigFromSSO() {
 
 var _DEFAULT_MAIL_TEMPLATES = {
   trinhDuyet: {
-    subject: '[Cần duyệt] {tênHồSơ}',
+    subject: '{hoảTốc}[Cần duyệt] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã trình duyệt hồ sơ "{tênHồSơ}".\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
   },
   giaoViec: {
-    subject: '[Giao việc] {tênHồSơ}',
+    subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
   },
   phatHanh: {
-    subject: '[SBM – Phát hành] {tênHồSơ}',
+    subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi: {tênNgườiNhận}\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}" {linkTàiLiệu}\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
   },
   tuChoi: {
-    subject: '[Từ chối] {tênHồSơ}',
+    subject: '{hoảTốc}[Từ chối] {tênHồSơ}',
     body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và trình duyệt lại:\n{linkHệThống}'
   }
 }
@@ -206,7 +206,8 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       '{ngàyBanHành}': ngayBanHanh,
       '{ngàyKếtThúc}': ngayKetThuc,
       '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : '',
-      '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : ''
+      '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : '',
+      '{hoảTốc}': (typeof doc === 'object' && doc['Khẩn'] === 'TRUE') ? '[HOẢ TỐC] ' : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
     var body = _applyTemplate(tpl.body, vars)
@@ -464,6 +465,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     'Ngày cập nhật': new Date().toISOString(),
     'Người tạo': session.username,
     'Người cập nhật': session.username,
+    'Khẩn': data['Khẩn'] === true || data['Khẩn'] === 'TRUE' ? 'TRUE' : '',
   }
 
   var added = addRow(SHEETS.HO_SO, record)
@@ -531,7 +533,7 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
   var textFields = [
     'Tên hồ sơ', 'Danh mục', 'Số hồ sơ',
     'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ngày ban hành', 'Ngày kết thúc',
-    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng'
+    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Khẩn'
   ]
   textFields.forEach(function(f) {
     if (data[f] !== undefined) updates[f] = typeof data[f] === 'string' ? data[f].trim() : data[f]

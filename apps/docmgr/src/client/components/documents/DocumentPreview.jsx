@@ -269,12 +269,15 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
         )}
 
         {/* Header */}
-        <div className="bg-surface-container-low px-6 py-4 flex items-center gap-4 border-b border-outline-variant shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-            <Icon name={getCategoryIcon(doc['Danh mục'])} size={22} className="text-primary" />
+        <div className={`px-6 py-4 flex items-center gap-4 border-b shrink-0 ${(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'bg-red-50 border-red-200' : 'bg-surface-container-low border-outline-variant'}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'bg-red-100' : 'bg-primary/10'}`}>
+            <Icon name={getCategoryIcon(doc['Danh mục'])} size={22} className={(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'text-red-500' : 'text-primary'} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-on-surface text-base truncate">{doc['Tên hồ sơ']}</h3>
+            <h3 className={`font-semibold text-base truncate ${(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'text-red-700' : 'text-on-surface'}`}>
+              {doc['Tên hồ sơ']}
+              {(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' && <Icon name="rocket_launch" size={18} className="text-red-500 ml-2 inline-block align-middle" />}
+            </h3>
             <p className="text-xs text-on-surface-variant">{doc['Số hồ sơ'] ? `Số hồ sơ: ${doc['Số hồ sơ']}` : 'Chưa có số hồ sơ'}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

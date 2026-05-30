@@ -41,6 +41,34 @@ describe('createDocument', () => {
     }, null)
     expect(result.data['Tình trạng']).toBe('Chờ duyệt')
   })
+
+  test('saves Khẩn=TRUE when provided', () => {
+    const result = createDocument(directorToken, {
+      'Tên hồ sơ': 'Urgent Doc',
+      'Danh mục': 1,
+      'Khẩn': 'TRUE',
+    }, null)
+    expect(result.data['Khẩn']).toBe('TRUE')
+  })
+
+  test('Khẩn defaults to empty when not provided', () => {
+    const result = createDocument(directorToken, {
+      'Tên hồ sơ': 'Normal Doc',
+      'Danh mục': 1,
+    }, null)
+    expect(result.data['Khẩn']).toBe('')
+  })
+})
+
+describe('updateDocument — Khẩn', () => {
+  test('can toggle Khẩn on existing document', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc A', 'Danh mục': 1 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    updateDocument(directorToken, 1, { 'Khẩn': 'TRUE' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Khẩn']).toBe('TRUE')
+  })
 })
 
 describe('getDocuments', () => {
