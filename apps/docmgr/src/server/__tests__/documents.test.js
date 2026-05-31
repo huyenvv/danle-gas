@@ -401,6 +401,233 @@ describe('deleteDocument', () => {
   })
 })
 
+describe('uploadFileEager', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('no draftId creates Nháp row and returns draftId + fileInfo', () => {
+    const result = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'test.pdf', 1, null)
+    expect(result.draftId).toBe(1)
+    expect(result.fileInfo.fileName).toBe('test.pdf')
+    expect(result.fileInfo.fileId).toBeTruthy()
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Tình trạng']).toBe('Nháp')
+    expect(docs[0]['Người tạo']).toBe('director')
+  })
+
+  test('with draftId appends file to existing Nháp row', () => {
+    const r1 = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'file1.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const r2 = uploadFileEager(directorToken, 'AQID', 'image/png', 'file2.png', 1, r1.draftId)
+    expect(r2.draftId).toBeUndefined()
+    expect(r2.fileInfo.fileName).toBe('file2.png')
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    const files = JSON.parse(docs[0]['File ID'])
+    expect(files).toHaveLength(2)
+  })
+
+  test('draftId=edit uploads file only, no row changes', () => {
+    const result = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'edit.pdf', 1, 'edit')
+    expect(result.fileInfo.fileName).toBe('edit.pdf')
+    expect(result.draftId).toBeUndefined()
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)).toHaveLength(0)
+  })
+
+  test('throws without categoryId', () => {
+    expect(() => uploadFileEager(directorToken, 'AQID', 'application/pdf', 'test.pdf', null, null)).toThrow('Danh mục')
+  })
+})
+
+describe('finalizeDraft', () => {
+  let draftId
+
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'doc.pdf', 1, null)
+    draftId = r.draftId
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('updates form data and changes status from Nháp', () => {
+    const result = finalizeDraft(directorToken, draftId, {
+      'Tên hồ sơ': 'Finalized Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    })
+    expect(result.data['Tên hồ sơ']).toBe('Finalized Doc')
+    expect(result.data['Tình trạng']).toBe('Chờ duyệt')
+  })
+
+  test('throws without Tên hồ sơ', () => {
+    expect(() => finalizeDraft(directorToken, draftId, { 'Danh mục': 1 })).toThrow('bắt buộc')
+  })
+
+  test('throws on non-draft document', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Normal', 'Danh mục': 1 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => finalizeDraft(directorToken, 2, { 'Tên hồ sơ': 'X' })).toThrow('Nháp')
+  })
+
+  test('moves files when category changes', () => {
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
+      [2, 'Công văn', '', '', '', '', '']
+    )
+    invalidateSheetCache(SHEETS.DANH_MUC)
+    finalizeDraft(directorToken, draftId, {
+      'Tên hồ sơ': 'Cat Change',
+      'Danh mục': 2,
+    })
+    // moveFile was called (mock doesn't track, but no error = pass)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(String(docs[0]['Danh mục'])).toBe('2')
+  })
+})
+
+describe('cancelDraft', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('deletes files and row', () => {
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'temp.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = cancelDraft(directorToken, r.draftId)
+    expect(result.success).toBe(true)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)).toHaveLength(0)
+  })
+
+  test('throws on non-draft', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Normal', 'Danh mục': 1 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => cancelDraft(directorToken, 1)).toThrow('Nháp')
+  })
+
+  test('throws if not the creator', () => {
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'temp.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    seedUser(3, 'other', 'other@test.com', 'Giám đốc')
+    const otherToken = createSession(3, 'other', 'other@test.com', 'Giám đốc')
+    expect(() => cancelDraft(otherToken, r.draftId)).toThrow('người tạo')
+  })
+})
+
+describe('deleteFiles', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('trashes files without error', () => {
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'del.pdf', 1, 'edit')
+    const result = deleteFiles(directorToken, [r.fileInfo.fileId])
+    expect(result.success).toBe(true)
+  })
+
+  test('handles empty array', () => {
+    const result = deleteFiles(directorToken, [])
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('updateDocument — eagerFileInfos', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('merges eager files with kept files, no re-upload', () => {
+    createDocument(directorToken, {
+      'Tên hồ sơ': 'Eager Edit',
+      'Danh mục': 1,
+    }, [{ base64Data: 'AQID', mimeType: 'application/pdf', fileName: 'old.pdf', size: 100 }])
+    invalidateSheetCache(SHEETS.HO_SO)
+    const docs = getSheetData(SHEETS.HO_SO)
+    const oldFiles = JSON.parse(docs[0]['File ID'])
+    const keepIds = oldFiles.map(function(f) { return f.fileId })
+
+    const eagerInfos = [{ fileId: 'eager-123', fileName: 'eager.pdf', mimeType: 'application/pdf', size: 200 }]
+    updateDocument(directorToken, 1, { 'Ghi chú': 'Updated' }, [], keepIds, null, eagerInfos)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const updated = getSheetData(SHEETS.HO_SO)
+    const allFiles = JSON.parse(updated[0]['File ID'])
+    expect(allFiles).toHaveLength(2)
+    expect(allFiles[1].fileId).toBe('eager-123')
+    expect(updated[0]['Ghi chú']).toBe('Updated')
+  })
+})
+
+describe('getDocuments — Nháp visibility', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('creator sees own Nháp doc', () => {
+    uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = getDocuments(directorToken, {})
+    expect(result.data.some(d => d['Tình trạng'] === 'Nháp')).toBe(true)
+  })
+
+  test('other user does not see Nháp doc', () => {
+    uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    seedUser(2, 'staff', 'staff@test.com', 'Nhân viên')
+    const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
+    const result = getDocuments(staffToken, {})
+    expect(result.data.some(d => d['Tình trạng'] === 'Nháp')).toBe(false)
+  })
+
+  test('filter by tinhTrang=Nháp returns only own drafts', () => {
+    uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = getDocuments(directorToken, { tinhTrang: 'Nháp' })
+    expect(result.data).toHaveLength(1)
+    expect(result.data[0]['Tình trạng']).toBe('Nháp')
+  })
+})
+
+describe('finalizeDraft — save as Nháp', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+  })
+
+  test('allows saving without Tên hồ sơ when status is Nháp', () => {
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'doc.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = finalizeDraft(directorToken, r.draftId, {
+      'Tình trạng': 'Nháp',
+      'Ghi chú': 'work in progress',
+    })
+    expect(result.data['Tình trạng']).toBe('Nháp')
+    expect(result.data['Ghi chú']).toBe('work in progress')
+  })
+
+  test('requires Tên hồ sơ when finalizing to non-Nháp status', () => {
+    const r = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'doc.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => finalizeDraft(directorToken, r.draftId, {
+      'Tình trạng': 'Chờ duyệt',
+    })).toThrow('bắt buộc')
+  })
+})
+
+describe('_normalizeStatus — Nháp preserved', () => {
+  test('Nháp status is not migrated away', () => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+    uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = getDocuments(directorToken, {})
+    const draft = result.data.find(d => d['Tình trạng'] === 'Nháp')
+    expect(draft).toBeTruthy()
+    expect(draft['Tình trạng']).toBe('Nháp')
+  })
+})
+
 describe('getDocumentStats', () => {
   test('returns correct totals and breakdown', () => {
     createDocument(directorToken, {

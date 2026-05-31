@@ -113,6 +113,7 @@ describe('DocumentModal', () => {
         expect.any(Array),  // fileInfos
         expect.any(Array),  // keepFileIds
         null,               // notifyTarget (ref starts as null)
+        expect.any(Array),  // eagerFileInfos
       )
     })
 
@@ -239,6 +240,100 @@ describe('DocumentModal', () => {
     expect(screen.queryByRole('button', { name: /trình duyệt$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /lưu tài liệu/i })).not.toBeInTheDocument()
   })
+
+  // ── Draft edit tests ──────────────────────────────────────────────────────
+
+  it('draft edit shows create-mode buttons (Lưu tài liệu, Trình duyệt), hides Tình trạng dropdown', () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const draftDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Nháp',
+      'Người tạo': 'vanthu',
+    }
+    renderModal({ mode: 'edit', doc: draftDoc, session: vanThuSession })
+
+    expect(screen.getByRole('button', { name: /lưu tài liệu/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /trình duyệt$/i })).toBeInTheDocument()
+    // Tình trạng dropdown should NOT be visible for draft edit
+    const selects = screen.getAllByRole('combobox')
+    const statusSelect = selects.find(s => Array.from(s.options || []).some(o => o.text === 'Hoàn thành'))
+    expect(statusSelect).toBeUndefined()
+  })
+
+  it('draft edit calls api_finalizeDraft (not api_updateDocument) with Chờ duyệt status', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3,
+      username: 'vanthu',
+      role: 'Văn thư',
+      canCreate: true,
+      canPublish: true,
+    }
+    const draftDoc = {
+      ...MOCK_DOCS[0],
+      ID: '5',
+      'Tình trạng': 'Nháp',
+      'Người tạo': 'vanthu',
+      'Tên hồ sơ': 'Draft Doc',
+    }
+    const finalizedDoc = { ...draftDoc, 'Tình trạng': 'Chờ duyệt' }
+    gasCall.mockResolvedValue({ data: finalizedDoc })
+
+    renderModal({ mode: 'edit', doc: draftDoc, session: vanThuSession })
+
+    // Click Trình duyệt (no confirm needed for this button path — it submits form)
+    const btn = screen.getByRole('button', { name: /trình duyệt$/i })
+
+    await waitFor(() => {
+      const confirmBtn = screen.queryByRole('button', { name: /đồng ý|xác nhận|có/i })
+      if (confirmBtn) fireEvent.click(confirmBtn)
+    })
+
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      const confirmBtn = screen.queryByRole('button', { name: /đồng ý|xác nhận|có/i })
+      if (confirmBtn) fireEvent.click(confirmBtn)
+    })
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_finalizeDraft',
+        MOCK_TOKEN,
+        '5',
+        expect.objectContaining({ 'Tình trạng': 'Chờ duyệt' }),
+        'directors',
+      )
+    })
+    expect(gasCall).not.toHaveBeenCalledWith('api_updateDocument', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
+  })
+
+  it('NV with canCreate editing own draft sees create-mode buttons', () => {
+    const nvSession = {
+      ...MOCK_VIEWER_SESSION,
+      userId: 2,
+      username: 'nhanvien',
+      role: 'Nhân viên',
+      canCreate: true,
+    }
+    const draftDoc = {
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Nháp',
+      'Người tạo': 'nhanvien',
+    }
+    renderModal({ mode: 'edit', doc: draftDoc, session: nvSession })
+
+    expect(screen.getByRole('button', { name: /lưu tài liệu/i })).toBeInTheDocument()
+  })
+
+  // ── handleSubmit tests ──────────────────────────────────────────────────
 
   // Test: handleSubmit create mode — shows warning on GAS transport error (can't verify without doc ID)
   it('shows warning on "Lỗi không xác định" in handleSubmit create mode', async () => {

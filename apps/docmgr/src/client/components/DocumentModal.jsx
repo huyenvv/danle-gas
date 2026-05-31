@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { flushSync } from 'react-dom'
 import gasCall from '../gasClient.js'
 import { dataCache } from '../utils/dataCache.js'
@@ -71,6 +71,7 @@ function parseSuggestions(raw) {
 
 export default function DocumentModal({ mode, doc, lookups: initialLookups, token, session, onClose, onSaved, docs }) {
   const isEdit = mode === 'edit'
+  const isDraftEdit = isEdit && doc?.['Tình trạng'] === 'Nháp'
 
   // Phụ trách: single person (parse from JSON array)
   const initialPhuTrach = isEdit && doc?.['Phụ trách']
@@ -107,8 +108,11 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const [collaborators, setCollaborators] = useState(initialCollaborators)
   const [currencyTyping, setCurrencyTyping] = useState(null)
 
-  const [files, setFiles]           = useState([])   // new files: [{file: File}]
-  const [existingFiles, setExistingFiles] = useState(  // existing files in edit mode
+  // Eager upload state: [{id, fileName, mimeType, size, status:'uploading'|'done'|'error', fileId?, error?}]
+  const [eagerUploads, setEagerUploads] = useState([])
+  const eagerIdCounter = useRef(0)
+  const [draftId, setDraftId] = useState(isDraftEdit ? doc.ID : null)
+  const [existingFiles, setExistingFiles] = useState(
     isEdit ? _parseFileInfosClient(doc['File ID']) : []
   )
   const [isDragging, setIsDragging] = useState(false)
@@ -169,18 +173,77 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     setDupWarning(dup ? `Số hồ sơ "${soHoSo}" đã tồn tại (${dup['Tên hồ sơ']})` : '')
   }
 
-  function handleFileChange(e) {
-    const newFiles = Array.from(e.target.files || [])
-    const bigFile = newFiles.find(f => f.size > WARN_FILE_MB * 1024 * 1024)
+  const hasUploading = eagerUploads.some(u => u.status === 'uploading')
+
+  async function handleFileChange(e) {
+    const newFiles = Array.from(e.target.files || e.dataTransfer?.files || [])
+    if (e.target?.value) e.target.value = ''
+    if (!newFiles.length) return
+
+    if (!form['Danh mục']) {
+      setError('Vui lòng chọn Danh mục trước')
+      return
+    }
+
+    // Dedup: skip files with same name already in eagerUploads or existingFiles
+    const existingNames = new Set([
+      ...eagerUploads.map(u => u.fileName),
+      ...existingFiles.map(f => f.fileName),
+    ])
+    const unique = newFiles.filter(f => !existingNames.has(f.name))
+    if (!unique.length) return
+
+    const bigFile = unique.find(f => f.size > WARN_FILE_MB * 1024 * 1024)
     if (bigFile) {
       showToast(`File "${bigFile.name}" lớn hơn ${WARN_FILE_MB}MB — upload có thể chậm hoặc thất bại`, 'warning')
     }
-    setFiles(prev => [...prev, ...newFiles.map(f => ({ file: f }))])
-    e.target.value = ''
+
+    // Create placeholder entries
+    const entries = unique.map(f => ({
+      id: ++eagerIdCounter.current,
+      fileName: f.name,
+      mimeType: f.type,
+      size: f.size,
+      status: 'uploading',
+      fileId: null,
+      file: f,
+    }))
+    setEagerUploads(prev => [...prev, ...entries])
+
+    // Sequential upload
+    let currentDraftId = draftId
+    for (const entry of entries) {
+      try {
+        const isFirstUpload = !currentDraftId && !(isEdit && !isDraftEdit)
+        if (isFirstUpload) showToast('Đang tạo hồ sơ nháp + upload file...', 'info')
+
+        const base64 = await toBase64(entry.file)
+        const result = await gasCall('api_uploadFileEager', token, base64, entry.mimeType, entry.fileName, form['Danh mục'], (isEdit && !isDraftEdit) ? 'edit' : (currentDraftId || null))
+        if (result.draftId) {
+          currentDraftId = result.draftId
+          setDraftId(result.draftId)
+          showToast('Đã tạo hồ sơ nháp', 'success')
+        }
+        setEagerUploads(prev => prev.map(u =>
+          u.id === entry.id ? { ...u, status: 'done', fileId: result.fileInfo.fileId } : u
+        ))
+      } catch (err) {
+        setEagerUploads(prev => prev.map(u =>
+          u.id === entry.id ? { ...u, status: 'error', error: err.message } : u
+        ))
+      }
+    }
   }
 
-  function removeNewFile(idx) {
-    setFiles(prev => prev.filter((_, i) => i !== idx))
+  async function removeEagerUpload(uploadId) {
+    const upload = eagerUploads.find(u => u.id === uploadId)
+    if (!upload) return
+    if (upload.status === 'done' && upload.fileId) {
+      try {
+        await gasCall('api_deleteFiles', token, [upload.fileId])
+      } catch (_) {}
+    }
+    setEagerUploads(prev => prev.filter(u => u.id !== uploadId))
   }
 
   async function removeExistingFile(fileId, fileName) {
@@ -229,6 +292,81 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     document.getElementById('_docModalForm')?.requestSubmit()
   }
 
+  function _hasFormChanges() {
+    // Check if any field was filled in beyond initial empty state
+    if (isDraftEdit) {
+      // Compare against doc values
+      const fields = ['Tên hồ sơ', 'Danh mục', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ghi chú', 'Nơi lưu hồ sơ cứng']
+      for (const f of fields) {
+        if (String(form[f] || '') !== String(doc[f] || '')) return true
+      }
+      if (phuTrach !== initialPhuTrach) return true
+      if (eagerUploads.some(u => u.status === 'done')) return true
+      return false
+    }
+    // Create mode: any field filled or files uploaded
+    return !!(form['Tên hồ sơ'] || form['Số hồ sơ'] || form['Ghi chú'] || form['Dự án (Phòng ban)'] || form['Nhà cung cấp (Nơi ban hành)'] || phuTrach || eagerUploads.some(u => u.status === 'done'))
+  }
+
+  async function handleCloseX() {
+    if (!draftId || !_hasFormChanges()) { onClose(); return }
+
+    if (await confirm('Lưu thông tin vừa thay đổi vào hồ sơ nháp?')) {
+      setUploading(true)
+      try {
+        const saveForm = {
+          ...form,
+          'Tình trạng': 'Nháp',
+          'Phụ trách': phuTrach || '',
+          'Người phối hợp': collaborators.length ? collaborators : [],
+        }
+        const result = await gasCall('api_finalizeDraft', token, draftId, saveForm, null)
+        showToast('Đã lưu nháp', 'success')
+        onSaved(result.data)
+      } catch (err) {
+        showToast('Lỗi lưu nháp: ' + err.message, 'error')
+        onClose()
+      } finally {
+        setUploading(false)
+      }
+    } else {
+      onClose()
+    }
+  }
+
+  async function handleCancel() {
+    const doneFiles = eagerUploads.filter(u => u.status === 'done' && u.fileId)
+    const hasDraft = draftId
+    const hasEagerFiles = isEdit && !isDraftEdit && doneFiles.length > 0
+
+    if (!hasDraft && !hasEagerFiles) { onClose(); return }
+
+    const allFileNames = [
+      ...existingFiles.map(f => f.fileName),
+      ...doneFiles.map(u => u.fileName),
+    ].filter(Boolean)
+    const fileList = allFileNames.length > 0 ? ` (${allFileNames.join(', ')})` : ''
+    const msg = hasDraft
+      ? `Bạn có chắc chắn muốn Huỷ?\nHồ sơ nháp và file đã upload${fileList} sẽ bị xoá.`
+      : `Bạn có chắc chắn muốn Huỷ?\nFile mới upload${fileList} sẽ bị xoá.`
+    if (!await confirm(msg)) return
+
+    setUploading(true)
+    try {
+      if (hasDraft) {
+        await gasCall('api_cancelDraft', token, draftId)
+      } else if (hasEagerFiles) {
+        await gasCall('api_deleteFiles', token, doneFiles.map(u => u.fileId))
+      }
+      showToast('Đã xoá hồ sơ nháp và file đính kèm', 'success')
+    } catch (err) {
+      showToast('Lỗi khi xoá: ' + err.message, 'error')
+    } finally {
+      setUploading(false)
+    }
+    onClose()
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
@@ -237,19 +375,15 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     setError('')
     setUploading(true)
 
-    let fileInfos = [], keepFileIds = [], submitForm, notifyTarget
-    try {
-      fileInfos = await Promise.all(
-        files.map(async ({ file: f }) => {
-          const base64 = await toBase64(f)
-          return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
-        })
-      )
-      keepFileIds = existingFiles.map(f => f.fileId)
+    const eagerFileInfos = eagerUploads
+      .filter(u => u.status === 'done' && u.fileId)
+      .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
 
+    let submitForm, notifyTarget
+    try {
       submitForm = {
         ...form,
-        'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : form['Tình trạng'],
+        'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : (isDraftEdit ? 'Chờ duyệt' : form['Tình trạng']),
         'Phụ trách': phuTrach || '',
         'Người phối hợp': collaborators.length ? collaborators : [],
       }
@@ -261,19 +395,27 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       notifyTarget = notifyTargetRef.current
       statusOverrideRef.current = null
       notifyTargetRef.current = null
-      if (isEdit) {
-        const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, notifyTarget)
+
+      if (isEdit && !isDraftEdit) {
+        const keepFileIds = existingFiles.map(f => f.fileId)
+        const updated = await gasCall('api_updateDocument', token, doc.ID, submitForm, [], keepFileIds, notifyTarget, eagerFileInfos)
         showToast(updated?.emailError ? 'Đã cập nhật hồ sơ (gửi email thất bại)' : 'Đã cập nhật hồ sơ', updated?.emailError ? 'warning' : 'success')
         onSaved(updated)
+      } else if (draftId) {
+        const result = await gasCall('api_finalizeDraft', token, draftId, submitForm, notifyTarget)
+        showToast(result?.emailError ? 'Đã thêm hồ sơ (gửi email thất bại)' : 'Đã thêm hồ sơ', result?.emailError ? 'warning' : 'success')
+        onSaved(result.data)
       } else {
-        const created = await gasCall('api_createDocument', token, submitForm, fileInfos, notifyTarget)
+        // No files uploaded — fallback to createDocument
+        const created = await gasCall('api_createDocument', token, submitForm, [], notifyTarget)
         showToast(created?.emailError ? 'Đã thêm hồ sơ (gửi email thất bại)' : 'Đã thêm hồ sơ', created?.emailError ? 'warning' : 'success')
         onSaved(created)
       }
     } catch (err) {
-      if (err.message === 'Lỗi không xác định' && isEdit) {
+      if (err.message === 'Lỗi không xác định' && isEdit && !isDraftEdit) {
+        const keepFileIds = existingFiles.map(f => f.fileId)
         const r = await retryWithVerify({
-          fn: () => gasCall('api_updateDocument', token, doc.ID, submitForm, fileInfos, keepFileIds, notifyTarget),
+          fn: () => gasCall('api_updateDocument', token, doc.ID, submitForm, [], keepFileIds, notifyTarget, eagerFileInfos),
           verify: _makeVerify(),
           onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
         })
@@ -310,7 +452,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
             <h3 className="font-semibold text-on-surface text-base">{isEdit ? 'Chỉnh sửa hồ sơ' : 'Thêm hồ sơ mới'}</h3>
             <p className="text-xs text-on-surface-variant">{isEdit ? 'Cập nhật thông tin hồ sơ' : 'Điền đầy đủ thông tin bên dưới'}</p>
           </div>
-          <button onClick={onClose} disabled={uploading} className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:pointer-events-none">
+          <button onClick={handleCloseX} disabled={uploading || hasUploading} className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:pointer-events-none">
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
           </button>
         </div>
@@ -453,22 +595,41 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   </div>
                 )}
 
-                {/* New files */}
-                {files.length > 0 && (
+                {/* Eager uploads with status */}
+                {eagerUploads.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
-                    {files.map(({ file: f }, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2.5 py-1 rounded-full">
-                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>upload_file</span>
-                        <span className="max-w-[120px] truncate">{f.name}</span>
-                        <span className="opacity-60">({(f.size / 1024 / 1024).toFixed(1)}MB)</span>
-                        <button type="button" onClick={() => removeNewFile(idx)}
-                          className="ml-0.5 hover:text-error transition-colors">
-                          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
-                        </button>
+                    {eagerUploads.map(u => (
+                      <span key={u.id} className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${
+                        u.status === 'error' ? 'bg-red-100 text-red-700' :
+                        u.status === 'done' ? 'bg-emerald-100 text-emerald-700' :
+                        'bg-secondary/10 text-secondary'
+                      }`}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                          {u.status === 'uploading' ? 'sync' : u.status === 'done' ? 'check_circle' : 'error'}
+                        </span>
+                        <span className="max-w-[120px] truncate">{u.fileName}</span>
+                        <span className="opacity-60">({(u.size / 1024 / 1024).toFixed(1)}MB)</span>
+                        {u.status !== 'uploading' && (
+                          <button type="button" onClick={() => removeEagerUpload(u.id)}
+                            className="ml-0.5 hover:text-error transition-colors">
+                            <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
+                          </button>
+                        )}
                       </span>
                     ))}
                   </div>
                 )}
+
+                {hasUploading && (() => {
+                  const done = eagerUploads.filter(u => u.status === 'done').length
+                  const total = eagerUploads.length
+                  return (
+                    <p className="text-xs text-primary font-medium mb-1.5 flex items-center gap-1">
+                      <span className="material-symbols-outlined animate-spin" style={{ fontSize: 14 }}>sync</span>
+                      Đang tải lên... ({done}/{total})
+                    </p>
+                  )
+                })()}
 
                 <div
                   className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-colors ${
@@ -480,8 +641,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   onDragLeave={() => setIsDragging(false)}
                   onDrop={e => {
                     e.preventDefault(); setIsDragging(false)
-                    const dropped = Array.from(e.dataTransfer.files)
-                    handleFileChange({ target: { files: dropped } })
+                    handleFileChange(e)
                   }}
                 >
                   <span className="material-symbols-outlined text-on-surface-variant mb-1" style={{ fontSize: 28 }}>upload_file</span>
@@ -585,9 +745,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               </Field>
 
               {/* Tình trạng + Số hồ sơ */}
-              <div className={`grid ${(isEdit && !isVanThuOwnDoc) || (!isVanThu && !isNvTpCreate) ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
-                {/* Tình trạng — hidden for Văn thư/NV/TP in create mode and Văn thư editing own doc (buttons handle status) */}
-                {((isEdit && !isVanThuOwnDoc) || (!isVanThu && !isNvTpCreate)) && (
+              <div className={`grid ${(isEdit && !isVanThuOwnDoc && !isDraftEdit) || (!isVanThu && !isNvTpCreate) ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
+                {/* Tình trạng — hidden for Văn thư/NV/TP in create mode, Văn thư editing own doc, and draft edit (buttons handle status) */}
+                {((isEdit && !isVanThuOwnDoc && !isDraftEdit) || (!isVanThu && !isNvTpCreate)) && (
                   <Field label="Tình trạng">
                     <select className={iCls} value={form['Tình trạng']} onChange={e => setField('Tình trạng', e.target.value)}
                       disabled={!canEditStatus}>
@@ -625,14 +785,14 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
           {/* Footer */}
           <div className="bg-surface-container-low border-t border-outline-variant px-6 py-4 flex justify-end gap-3 shrink-0">
-            <button type="button" onClick={onClose}
-              className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium">
+            <button type="button" onClick={handleCancel} disabled={uploading || hasUploading}
+              className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium disabled:opacity-40 disabled:pointer-events-none">
               Hủy
             </button>
-            {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc || (isTuChoiKetQuaDoc && isPhuTrachOfDoc) ? (
+            {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc || isDraftEdit || (isTuChoiKetQuaDoc && isPhuTrachOfDoc) ? (
               <>
                 {!isTuChoiDoc && !isTuChoiKetQuaDoc && (
-                <button type="button" disabled={uploading}
+                <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc chỉ lưu trữ, không gửi thông báo tới Giám đốc?')) return
                     statusOverrideRef.current = 'Hoàn thành'; notifyTargetRef.current = 'none'; flushSync(() => {}); document.getElementById('_docModalForm')?.requestSubmit()
@@ -643,7 +803,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </button>
                 )}
                 {canPublish && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
-                <button type="button" disabled={uploading}
+                <button type="button" disabled={uploading || hasUploading}
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
@@ -655,7 +815,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </button>
                 )}
                 {(isAdminRole || isVanThu) && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
-                <button type="button" disabled={uploading}
+                <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
                     notifyTargetRef.current = 'directors'; document.getElementById('_docModalForm')?.requestSubmit()
@@ -666,23 +826,19 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </button>
                 )}
                 {isTuChoiDoc && isVanThuOwnDoc && (
-                <button type="button" disabled={uploading}
+                <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
                     if (!await confirm('Có chắc gửi Trình duyệt lại tới Giám đốc?')) return
                     setUploading(true)
-                    let fileInfos = [], keepFileIds = []
+                    const keepFileIds = existingFiles.map(f => f.fileId)
+                    const eagerInfos = eagerUploads
+                      .filter(u => u.status === 'done' && u.fileId)
+                      .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
                     try {
-                      fileInfos = await Promise.all(
-                        files.map(async ({ file: f }) => {
-                          const base64 = await toBase64(f)
-                          return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
-                        })
-                      )
-                      keepFileIds = existingFiles.map(f => f.fileId)
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
-                        formData: { ...form }, fileInfos, keepFileIds,
+                        formData: { ...form }, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                       })
                       showToast('Đã trình duyệt lại', 'success')
                       onSaved(res.data)
@@ -690,7 +846,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                       if (err.message === 'Lỗi không xác định') {
                         const r = await retryWithVerify({
                           fn: () => gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
-                            formData: { ...form }, fileInfos, keepFileIds,
+                            formData: { ...form }, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                           }).then(res => res.data),
                           verify: _makeVerify('Chờ duyệt'),
                           onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
@@ -714,23 +870,20 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </button>
                 )}
                 {isTuChoiKetQuaDoc && isPhuTrachOfDoc && (
-                <button type="button" disabled={uploading}
+                <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
                     if (!await confirm('Có chắc gửi Hoàn thành lại?')) return
                     setUploading(true)
                     try {
-                      const fileInfos = await Promise.all(
-                        files.map(async ({ file: f }) => {
-                          const base64 = await toBase64(f)
-                          return { base64Data: base64, mimeType: f.type, fileName: f.name, size: f.size }
-                        })
-                      )
                       const keepFileIds = existingFiles.map(f => f.fileId)
+                      const eagerInfos = eagerUploads
+                        .filter(u => u.status === 'done' && u.fileId)
+                        .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
                       const submitForm = { ...form }
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'hoanThanhLai', {}, {
-                        formData: submitForm, fileInfos, keepFileIds,
+                        formData: submitForm, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                       })
                       onSaved(res.data)
                     } catch (err) {
@@ -746,7 +899,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 )}
               </>
             ) : (
-              <button type="submit" disabled={uploading}
+              <button type="submit" disabled={uploading || hasUploading}
                 className="flex items-center gap-2 px-6 py-2.5 bg-accent text-white rounded-full text-sm font-medium hover:bg-accent-hover disabled:opacity-60 transition-colors shadow-md3-2">
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
                   {uploading ? 'sync' : 'save'}

@@ -322,6 +322,11 @@ function getDocuments(token, filters) {
     return normalized !== d['Tình trạng'] ? Object.assign({}, d, { 'Tình trạng': normalized }) : d
   })
 
+  // Nháp: only visible to creator
+  docs = docs.filter(function(d) {
+    return d['Tình trạng'] !== 'Nháp' || d['Người tạo'] === session.username
+  })
+
   // Category visibility filter (admin, Quản trị viên, Giám đốc, Văn thư see everything)
   var CAT_EXEMPT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   Logger.log('[getDocuments] catExempt=' + (CAT_EXEMPT_ROLES.indexOf(session.role) !== -1) + ' totalDocs=' + docs.length)
@@ -504,7 +509,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
   return { data: added, emailError: emailError }
 }
 
-function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
+function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, eagerFileInfos) {
   var session = requireAuth(token)
 
   var docs = getSheetData(SHEETS.HO_SO)
@@ -591,7 +596,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
     })
   }
 
-  var allFiles = keptFiles.concat(newlyUploaded)
+  // Merge pre-uploaded eager files (no base64 re-upload needed)
+  var eagerFiles = Array.isArray(eagerFileInfos) ? eagerFileInfos : []
+
+  var allFiles = keptFiles.concat(newlyUploaded).concat(eagerFiles)
   updates['File ID'] = allFiles.length > 0 ? JSON.stringify(allFiles) : ''
   updates['Tên file'] = allFiles.map(function(f) { return f.fileName }).join(', ')
   if (allFiles.length > 0) updates['Loại file'] = allFiles[0].mimeType
@@ -687,14 +695,13 @@ function getDocumentStats(token) {
 // ── private helpers ──────────────────────────────────────────────────────────
 
 // Normalize legacy status values to the 4-status workflow
-var VALID_STATUSES = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối', 'Chờ xác nhận HT', 'Từ chối kết quả']
+var VALID_STATUSES = ['Nháp', 'Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối', 'Chờ xác nhận HT', 'Từ chối kết quả']
 var STATUS_MIGRATION_MAP = {
   'Có hiệu lực':   'Hoàn thành',
   'Hết hiệu lực':  'Hoàn thành',
   'Đã ký':         'Hoàn thành',
   'Bị hủy':        'Hoàn thành',
   'Hủy':           'Hoàn thành',
-  'Nháp':          'Chờ duyệt',
   'Chờ ký':        'Chờ duyệt',
   'Pending':       'Chờ duyệt',
 }
@@ -756,6 +763,179 @@ function _buildAssignees(input, defaultUserId) {
   return ''
 }
 
+// ── Eager upload ────────────────────────────────────────────────────────────
+
+function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) {
+  Logger.log('[uploadFileEager] START fileName=' + fileName + ' categoryId=' + categoryId + ' draftId=' + draftId + ' base64len=' + (base64Data ? base64Data.length : 0))
+  var session = requireAuth(token)
+
+  // Permission: same as createDocument
+  var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (adminRoles.indexOf(session.role) === -1) {
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var appRole = roles.find(function(r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
+    var allowed = appRole && (appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true)
+    if (!allowed) throw new Error('Bạn không có quyền tạo hồ sơ')
+  }
+
+  if (!categoryId) throw new Error('Danh mục là bắt buộc')
+
+  var catPath = _resolveCategoryPath(categoryId)
+  var result = uploadFile(base64Data, mimeType, fileName, catPath)
+  var fileInfo = { fileId: result.fileId, fileName: result.fileName, mimeType: mimeType, size: result.size || 0 }
+
+  // draftId='edit': upload only, no row changes
+  if (draftId === 'edit') {
+    return { fileInfo: fileInfo }
+  }
+
+  if (draftId) {
+    // Append file to existing draft row
+    var docs = getSheetData(SHEETS.HO_SO)
+    var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+    if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
+    if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
+
+    var existingInfos = _parseFileInfos(draft['File ID'])
+    existingInfos.push(fileInfo)
+    updateRow(SHEETS.HO_SO, draftId, {
+      'File ID': JSON.stringify(existingInfos),
+      'Tên file': existingInfos.map(function(f) { return f.fileName }).join(', '),
+      'Ngày cập nhật': new Date().toISOString(),
+    })
+    invalidateSheetCache(SHEETS.HO_SO)
+    return { fileInfo: fileInfo }
+  }
+
+  // No draftId: create new Nháp row
+  var record = {
+    'Tên hồ sơ': '',
+    'Danh mục': categoryId,
+    'Tình trạng': 'Nháp',
+    'File ID': JSON.stringify([fileInfo]),
+    'Tên file': fileInfo.fileName,
+    'Loại file': fileInfo.mimeType,
+    'Người tạo': session.username,
+    'Người cập nhật': session.username,
+    'Ngày cập nhật': new Date().toISOString(),
+  }
+  var added = addRow(SHEETS.HO_SO, record)
+  invalidateSheetCache(SHEETS.HO_SO)
+  return { draftId: added['ID'], fileInfo: fileInfo }
+}
+
+function finalizeDraft(token, draftId, formData, notifyTarget) {
+  var session = requireAuth(token)
+
+  var docs = getSheetData(SHEETS.HO_SO)
+  var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+  if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
+  if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
+  if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được hoàn tất hồ sơ nháp')
+
+  var targetStatus = formData['Tình trạng'] || 'Chờ duyệt'
+
+  // Tên hồ sơ required only when finalizing (not saving as Nháp)
+  if (targetStatus !== 'Nháp' && !formData['Tên hồ sơ']) throw new Error('Tên hồ sơ là bắt buộc')
+
+  var updates = {
+    'Tên hồ sơ': formData['Tên hồ sơ'],
+    'Số hồ sơ': formData['Số hồ sơ'] || '',
+    'Dự án (Phòng ban)': (formData['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': (formData['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Ngày ban hành': formData['Ngày ban hành'] || '',
+    'Ngày kết thúc': formData['Ngày kết thúc'] || '',
+    'Giá trị HĐ': formData['Giá trị HĐ'] || 0,
+    'Tình trạng': targetStatus,
+    'Ghi chú': formData['Ghi chú'] || '',
+    'Nơi lưu hồ sơ cứng': formData['Nơi lưu hồ sơ cứng'] || '',
+    'Phụ trách': formData['Phụ trách'] ? JSON.stringify([String(formData['Phụ trách'])]) : '',
+    'Người phối hợp': _buildAssignees(formData['Người phối hợp'], null),
+    'Khẩn': formData['Khẩn'] === true || formData['Khẩn'] === 'TRUE' ? 'TRUE' : '',
+    'Người cập nhật': session.username,
+    'Ngày cập nhật': new Date().toISOString(),
+  }
+
+  // Always update Danh mục if provided
+  if (formData['Danh mục']) updates['Danh mục'] = formData['Danh mục']
+
+  // Move files if category changed
+  var oldCatId = String(draft['Danh mục'] || '')
+  var newCatId = String(updates['Danh mục'] || oldCatId)
+  if (oldCatId !== newCatId && oldCatId !== '') {
+    var existingInfos = _parseFileInfos(draft['File ID'])
+    var newCatPath = _resolveCategoryPath(newCatId)
+    Logger.log('[finalizeDraft] moving ' + existingInfos.length + ' files from cat ' + oldCatId + ' to ' + newCatId)
+    existingInfos.forEach(function(f) {
+      try { moveFile(f.fileId, newCatPath) } catch(e) { Logger.log('Move file error: ' + e.message) }
+    })
+  }
+
+  updateRow(SHEETS.HO_SO, draftId, updates)
+  invalidateSheetCache(SHEETS.HO_SO)
+
+  var updated = Object.assign({}, draft, updates)
+  logAudit(session, 'Tạo', 'Hồ sơ', updates['Tên hồ sơ'], JSON.stringify({ draftId: draftId }))
+
+  // Notifications (same logic as createDocument)
+  var emailError = null
+  if (notifyTarget === 'directors') {
+    var roles = getSheetData(SHEETS.APP_ROLES)
+    var dirUserIds = []
+    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    _markUnreadForUsers(dirUserIds, draftId)
+    try {
+      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+      _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
+    } catch(e) {
+      Logger.log('finalizeDraft trinhDuyet email error: ' + e.message)
+      emailError = e.message
+    }
+  }
+  if (notifyTarget === 'publish' && formData._publishTo) {
+    try {
+      publishDocument(token, draftId, formData._publishTo, formData._publishCc || [])
+    } catch(e) {
+      Logger.log('finalizeDraft publish email error: ' + e.message)
+      emailError = e.message
+    }
+  }
+
+  return { data: updated, emailError: emailError }
+}
+
+function cancelDraft(token, draftId) {
+  var session = requireAuth(token)
+
+  var docs = getSheetData(SHEETS.HO_SO)
+  var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+  if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
+  if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
+  if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được huỷ hồ sơ nháp')
+
+  // Delete files from Drive
+  var fileInfos = _parseFileInfos(draft['File ID'])
+  fileInfos.forEach(function(fi) {
+    if (fi.fileId) deleteFile(fi.fileId)
+  })
+
+  // Delete the draft row
+  deleteRow(SHEETS.HO_SO, draftId)
+  invalidateSheetCache(SHEETS.HO_SO)
+
+  logAudit(session, 'Huỷ nháp', 'Hồ sơ', draft['Tên hồ sơ'] || '(nháp)', JSON.stringify({ draftId: draftId }))
+  return { success: true }
+}
+
+function deleteFiles(token, fileIds) {
+  requireAuth(token)
+  if (!Array.isArray(fileIds)) return { success: true }
+  fileIds.forEach(function(fid) {
+    if (fid) deleteFile(fid)
+  })
+  return { success: true }
+}
+
 // ── Workflow transitions ─────────────────────────────────────────────────────
 
 /**
@@ -787,7 +967,7 @@ var WORKFLOW_ACTIONS = {
 function transitionDocument(token, id, action, data, updateData) {
   // If updateData provided, save doc edits first (reuse updateDocument)
   if (updateData && updateData.formData) {
-    updateDocument(token, id, updateData.formData, updateData.fileInfos || [], updateData.keepFileIds || [], null)
+    updateDocument(token, id, updateData.formData, updateData.fileInfos || [], updateData.keepFileIds || [], null, updateData.eagerFileInfos || [])
     invalidateSheetCache(SHEETS.HO_SO)
   }
 

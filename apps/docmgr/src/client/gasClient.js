@@ -520,6 +520,29 @@ async function mockCall(fn, ...args) {
         { id: pid + '_sub1', name: '2024' }, { id: pid + '_sub2', name: '2025' }
       ]}
     }
+    case 'api_uploadFileEager': {
+      const categoryId = args[4]
+      const draftId = args[5]
+      const fileInfo = { fileId: 'mock-file-' + (++_nextId), fileName: args[3], mimeType: args[2], size: 1024 }
+      if (draftId === 'edit') return { fileInfo }
+      if (draftId) return { fileInfo }
+      const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'File ID': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
+      return { draftId: draft.ID, fileInfo }
+    }
+    case 'api_finalizeDraft': {
+      const draftId = args[1]
+      const formData = args[2] || {}
+      const idx = _mockData.docs.findIndex(d => String(d.ID) === String(draftId))
+      if (idx === -1) throw new Error('Không tìm thấy hồ sơ nháp')
+      Object.assign(_mockData.docs[idx], formData, { 'Tình trạng': formData['Tình trạng'] || 'Chờ duyệt', 'Ngày cập nhật': new Date().toISOString() })
+      return { data: { ..._mockData.docs[idx] } }
+    }
+    case 'api_cancelDraft': {
+      const draftId = args[1]
+      return _mockDelete(_mockData.docs, draftId)
+    }
+    case 'api_deleteFiles':
+      return { success: true }
     default:
       throw new Error('Mock không hỗ trợ: ' + fn)
   }

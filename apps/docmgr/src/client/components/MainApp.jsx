@@ -388,6 +388,7 @@ export default function MainApp() {
                   onChange={e => handleFilterChange('tinhTrang', e.target.value)}
                 >
                   <option value="">Tất cả tình trạng</option>
+                  <option>Nháp</option>
                   <option>Chờ duyệt</option>
                   <option>Chờ xử lý</option>
                   <option>Đang xử lý</option>
@@ -837,9 +838,10 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
   const isVanThuOwnerRejected = role === 'Văn thư' && doc['Tình trạng'] === 'Từ chối' && doc['Người tạo'] === username
   const _ptList = (() => { try { const v = doc['Phụ trách']; return (typeof v === 'string' && v.charAt(0) === '[') ? JSON.parse(v).map(String) : (v ? [String(v)] : []) } catch(_) { return [] } })()
   const isPhuTrachRejectedResult = doc['Tình trạng'] === 'Từ chối kết quả' && (_ptList.includes(String(userId)) || _ptList.includes(username))
-  const canEditDoc = role === 'Giám đốc'
-    ? doc['Tình trạng'] === 'Chờ duyệt'
-    : role === 'admin' || role === 'Quản trị viên' || isVanThuOwnerRejected
+  const isOwnDraft = doc['Tình trạng'] === 'Nháp' && doc['Người tạo'] === username
+  const canEditDoc = isOwnDraft
+    || (role === 'Giám đốc' ? doc['Tình trạng'] === 'Chờ duyệt' : false)
+    || role === 'admin' || role === 'Quản trị viên' || isVanThuOwnerRejected
 
   const fileInfos = (() => {
     const raw = doc['File ID']
@@ -865,7 +867,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
   return (
     <tr
       className={`hover:bg-surface-container-low transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
-      onClick={() => onPreview(doc)}
+      onClick={() => isOwnDraft ? onEdit(doc) : onPreview(doc)}
     >
       <td className="px-3 py-3 w-10" onClick={e => e.stopPropagation()}>
         <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(doc.ID)}
@@ -895,7 +897,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
             <span className={nameCls}>
               {!isRead && !isKhan && !dlNameCls && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
               {isKhan && !isRead && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
-              {doc['Tên hồ sơ']}
+              {doc['Tên hồ sơ'] || <span className="italic text-on-surface-variant">(Chưa có tên)</span>}
             </span>
           )
         })()}

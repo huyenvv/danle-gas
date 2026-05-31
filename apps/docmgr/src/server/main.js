@@ -374,8 +374,8 @@ function api_createDocument(token, data, fileInfos, notifyTarget) {
   return _wrap(function() { return createDocument(token, data, fileInfos, notifyTarget) })
 }
 
-function api_updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) {
-  return _wrap(function() { return updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget) })
+function api_updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, eagerFileInfos) {
+  return _wrap(function() { return updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, eagerFileInfos) })
 }
 
 function api_deleteDocument(token, id) {
@@ -388,6 +388,22 @@ function api_getDocumentStats(token) {
 
 function api_transitionDocument(token, id, action, data, updateData) {
   return _wrap(function() { return transitionDocument(token, id, action, data, updateData) })
+}
+
+function api_uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) {
+  return _wrap(function() { return uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) })
+}
+
+function api_finalizeDraft(token, draftId, formData, notifyTarget) {
+  return _wrap(function() { return finalizeDraft(token, draftId, formData, notifyTarget) })
+}
+
+function api_cancelDraft(token, draftId) {
+  return _wrap(function() { return cancelDraft(token, draftId) })
+}
+
+function api_deleteFiles(token, fileIds) {
+  return _wrap(function() { return deleteFiles(token, fileIds) })
 }
 
 function api_publishDocument(token, docId, toUserIds, ccUserIds) {
