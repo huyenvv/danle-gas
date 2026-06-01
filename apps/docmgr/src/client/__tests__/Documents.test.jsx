@@ -217,13 +217,12 @@ describe('Deadline warning badges', () => {
     }])
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const badge = screen.getByText(/Quá hạn 3 ngày/)
-    expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-red-100')
-    expect(badge.className).toContain('text-red-800')
+    expect(screen.getByText(/Quá hạn 3 ngày/)).toBeInTheDocument()
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-red-100')
   })
 
-  test('urgent doc (≤3 days) shows "Còn X ngày" badge with yellow background', async () => {
+  test('urgent doc (≤3 days) shows "Còn X ngày" with yellow row', async () => {
     renderWithDocs([{
       ...MOCK_DOCS[0],
       'Tình trạng': 'Đang xử lý',
@@ -231,13 +230,12 @@ describe('Deadline warning badges', () => {
     }])
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const badge = screen.getByText(/Còn 2 ngày/)
-    expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-yellow-100')
-    expect(badge.className).toContain('text-yellow-800')
+    expect(screen.getByText(/Còn 2 ngày/)).toBeInTheDocument()
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-yellow-50')
   })
 
-  test('today deadline shows "Hết hạn hôm nay" badge with yellow background', async () => {
+  test('today deadline shows "Hết hạn hôm nay" with yellow row', async () => {
     renderWithDocs([{
       ...MOCK_DOCS[0],
       'Tình trạng': 'Đang xử lý',
@@ -245,12 +243,12 @@ describe('Deadline warning badges', () => {
     }])
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const badge = screen.getByText('Hết hạn hôm nay')
-    expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-yellow-100')
+    expect(screen.getByText('Hết hạn hôm nay')).toBeInTheDocument()
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-yellow-50')
   })
 
-  test('warning doc (4-7 days) shows "Còn X ngày" badge with green background', async () => {
+  test('warning doc (4-7 days) shows "Còn X ngày" with green row', async () => {
     renderWithDocs([{
       ...MOCK_DOCS[0],
       'Tình trạng': 'Chờ xử lý',
@@ -258,10 +256,9 @@ describe('Deadline warning badges', () => {
     }])
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const badge = screen.getByText(/Còn 5 ngày/)
-    expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-green-100')
-    expect(badge.className).toContain('text-green-800')
+    expect(screen.getByText(/Còn 5 ngày/)).toBeInTheDocument()
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-green-50')
   })
 
   test('normal doc (>7 days) shows no deadline badge', async () => {
@@ -287,7 +284,7 @@ describe('Deadline warning badges', () => {
     expect(screen.queryByText(/Quá hạn \d+ ngày/)).not.toBeInTheDocument()
   })
 
-  test('Khẩn doc shows orange "Khẩn" badge instead of deadline', async () => {
+  test('Khẩn doc has orange row background and still shows deadline text', async () => {
     renderWithDocs([{
       ...MOCK_DOCS[0],
       'Tình trạng': 'Chờ duyệt',
@@ -296,12 +293,124 @@ describe('Deadline warning badges', () => {
     }])
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const badge = screen.getByText('Khẩn')
-    expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-orange-100')
-    expect(badge.className).toContain('text-orange-800')
-    // Deadline badge should NOT appear — Khẩn takes precedence
+    // "Khẩn" badge appears before doc name
+    const khanBadge = screen.getByText('Khẩn')
+    expect(khanBadge).toBeInTheDocument()
+    expect(khanBadge.className).toContain('bg-red-100')
+    expect(khanBadge.className).toContain('text-red-700')
+    // Overdue takes priority — row has red background, not orange
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-red-100')
+    expect(row.className).not.toContain('bg-orange-100')
+    // Deadline text still shown
+    expect(screen.getByText(/Quá hạn 3 ngày/)).toBeInTheDocument()
+  })
+
+  test('Khẩn without deadline shows orange row, no deadline text', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Khẩn': 'TRUE',
+      'Ngày kết thúc': '',
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-orange-100')
     expect(screen.queryByText(/Quá hạn \d+ ngày/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Còn \d+ ngày/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Hết hạn hôm nay')).not.toBeInTheDocument()
+  })
+
+  test('Khẩn completed doc has no orange row', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Hoàn thành',
+      'Khẩn': 'TRUE',
+      'Ngày kết thúc': daysFromNow(-5),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).not.toContain('bg-orange-100')
+    expect(row.className).not.toContain('bg-red-100')
+  })
+
+  test('Khẩn row color takes priority over deadline color', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ xử lý',
+      'Khẩn': 'TRUE',
+      'Ngày kết thúc': daysFromNow(5),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).toContain('bg-orange-100')
+    expect(row.className).not.toContain('bg-green-50')
+    // Deadline text still shows
+    expect(screen.getByText(/Còn 5 ngày/)).toBeInTheDocument()
+  })
+
+  test('normal doc (>7 days) has no colored row background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Ngày kết thúc': daysFromNow(15),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).not.toContain('bg-red-100')
+    expect(row.className).not.toContain('bg-yellow-50')
+    expect(row.className).not.toContain('bg-green-50')
+    expect(row.className).not.toContain('bg-orange-100')
+  })
+
+  test('doc with 10-day deadline has no colored row background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Ngày kết thúc': daysFromNow(10),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).not.toContain('bg-red-100')
+    expect(row.className).not.toContain('bg-yellow-50')
+    expect(row.className).not.toContain('bg-green-50')
+    expect(row.className).not.toContain('bg-orange-100')
+    expect(screen.queryByText(/Còn \d+ ngày/)).not.toBeInTheDocument()
+  })
+
+  test('doc without deadline has no colored row background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ xử lý',
+      'Ngày kết thúc': '',
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).not.toContain('bg-red-100')
+    expect(row.className).not.toContain('bg-yellow-50')
+    expect(row.className).not.toContain('bg-green-50')
+    expect(row.className).not.toContain('bg-orange-100')
+  })
+
+  test('completed doc has no colored row background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Hoàn thành',
+      'Ngày kết thúc': daysFromNow(-10),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const row = screen.getByText('Hợp đồng mua sắm CNTT').closest('tr')
+    expect(row.className).not.toContain('bg-red-100')
+    expect(row.className).not.toContain('bg-yellow-50')
+    expect(row.className).not.toContain('bg-green-50')
+    expect(row.className).not.toContain('bg-orange-100')
   })
 
   test('badge text does NOT contain "KT:" date prefix', async () => {
@@ -356,9 +465,9 @@ describe('Deadline status filter', () => {
     renderMainApp()
     await screen.findByText('Hợp đồng mua sắm CNTT')
 
-    const select = screen.getByDisplayValue('Tất cả trạng thái')
+    const select = screen.getByDisplayValue('Tất cả hạn')
     const options = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
-    expect(options).toEqual(['Tất cả trạng thái', 'Còn hạn', 'Còn hạn 1 tuần', 'Quá hạn'])
+    expect(options).toEqual(['Tất cả hạn', 'Còn hạn', 'Còn hạn 1 tuần', 'Quá hạn'])
   })
 
   test('"Quá hạn" shows only overdue docs', async () => {
@@ -372,7 +481,7 @@ describe('Deadline status filter', () => {
     renderMainApp()
     await screen.findByText('HĐ Quá hạn')
 
-    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'quaHan' } })
+    fireEvent.change(screen.getByDisplayValue('Tất cả hạn'), { target: { value: 'quaHan' } })
 
     await waitFor(() => {
       expect(screen.getByText('HĐ Quá hạn')).toBeInTheDocument()
@@ -392,7 +501,7 @@ describe('Deadline status filter', () => {
     renderMainApp()
     await screen.findByText('HĐ Gấp')
 
-    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'conHan1Tuan' } })
+    fireEvent.change(screen.getByDisplayValue('Tất cả hạn'), { target: { value: 'conHan1Tuan' } })
 
     await waitFor(() => {
       expect(screen.getByText('HĐ Gấp')).toBeInTheDocument()
@@ -413,7 +522,7 @@ describe('Deadline status filter', () => {
     renderMainApp()
     await screen.findByText('HĐ OK')
 
-    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'conHan' } })
+    fireEvent.change(screen.getByDisplayValue('Tất cả hạn'), { target: { value: 'conHan' } })
 
     await waitFor(() => {
       expect(screen.getByText('HĐ OK')).toBeInTheDocument()

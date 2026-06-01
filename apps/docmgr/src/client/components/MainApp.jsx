@@ -414,7 +414,7 @@ export default function MainApp() {
                   value={filters.deadlineStatus || ''}
                   onChange={e => handleFilterChange('deadlineStatus', e.target.value)}
                 >
-                  <option value="">Tất cả trạng thái</option>
+                  <option value="">Tất cả hạn</option>
                   <option value="conHan">Còn hạn</option>
                   <option value="conHan1Tuan">Còn hạn 1 tuần</option>
                   <option value="quaHan">Quá hạn</option>
@@ -694,7 +694,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
     return direct + children.reduce((s, c) => s + visibleSubtreeDocCount(c.ID, rootId), 0)
   }
 
-  const COL = 13
+  const COL = 12
 
   return (
     <div className="bg-white rounded-2xl shadow-card overflow-hidden">
@@ -702,14 +702,16 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
         <table className="min-w-full text-sm">
           <thead>
             <tr className="bg-surface-container-low border-b border-outline-variant">
-              <th className="px-3 py-3 w-10">
-                <input type="checkbox"
-                  className="w-4 h-4 rounded accent-primary cursor-pointer"
-                  checked={visibleDocIds.length > 0 && visibleDocIds.every(id => selectedIds.has(String(id)))}
-                  onChange={() => onToggleAll(visibleDocIds)}
-                />
+              <th className="px-3 py-3 w-16">
+                <div className="flex items-center gap-2">
+                  <input type="checkbox"
+                    className="w-4 h-4 rounded accent-primary cursor-pointer"
+                    checked={visibleDocIds.length > 0 && visibleDocIds.every(id => selectedIds.has(String(id)))}
+                    onChange={() => onToggleAll(visibleDocIds)}
+                  />
+                  <span className="font-semibold text-on-surface-variant text-xs uppercase tracking-wide">#</span>
+                </div>
               </th>
-              <th className="px-3 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-16">STT</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-64 min-w-[16rem]">Tên hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Số hồ sơ</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Dự án (Nơi nhận)</th>
@@ -818,7 +820,6 @@ function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocId
     <Fragment>
       <tr className="bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
           onClick={() => onToggleCat(cat.ID)}>
-        <td className="px-3 py-2 w-10" onClick={e => e.stopPropagation()}></td>
         <td className="px-3 py-2 w-16" onClick={e => e.stopPropagation()}></td>
         <td colSpan={9} className="px-4 py-2 font-semibold text-primary text-xs" style={{ paddingLeft: indent + 16 }}>
           <span className="mr-2">{isCollapsed ? '▶' : '▼'}</span>
@@ -888,23 +889,24 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
   }
 
   const dl = doc['Tình trạng'] !== 'Hoàn thành' ? getDeadlineStatus(doc['Ngày kết thúc']) : null
+  const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
+  const rowBg = dl && dl.level === 'overdue' ? 'bg-red-100'
+    : isKhan ? 'bg-orange-100'
+    : dl && dl.level === 'urgent' ? 'bg-yellow-50'
+    : dl && dl.level === 'warning' ? 'bg-green-50'
+    : isSelected ? 'bg-primary/5' : ''
 
   return (
     <tr
-      className={`hover:bg-surface-container-low transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : ''}`}
+      className={`hover:bg-surface-container-low transition-colors cursor-pointer ${rowBg}`}
       onClick={() => isOwnDraft ? onEdit(doc) : onPreview(doc)}
     >
-      <td className="px-3 py-3 w-10" onClick={e => e.stopPropagation()}>
-        <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(doc.ID)}
-          className="w-4 h-4 rounded accent-primary cursor-pointer" />
-      </td>
-      <td className={`px-3 py-3 text-xs ${(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' ? 'text-red-500' : 'text-on-surface-variant'}`}>
-        <span className="flex items-center gap-1">
-          {rowIndex || '—'}
-          {(doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành' && (
-            <span className="material-symbols-outlined text-red-500 cursor-default" style={{ fontSize: 14 }} title="Hoả tốc">rocket_launch</span>
-          )}
-        </span>
+      <td className="px-3 py-3 w-16" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <input type="checkbox" checked={isSelected} onChange={() => onToggleSelect(doc.ID)}
+            className="w-4 h-4 rounded accent-primary cursor-pointer" />
+          <span className="text-xs text-on-surface-variant">{rowIndex || '—'}</span>
+        </div>
       </td>
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
         {(() => {
@@ -917,6 +919,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
             <span className={nameCls}>
               {!isRead && !isKhan && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
               {isKhan && !isRead && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
+              {isKhan && <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-semibold bg-red-100 text-red-700 border border-red-300 mr-1.5 align-middle"><span className="material-symbols-outlined" style={{ fontSize: 12 }}>rocket_launch</span>Khẩn</span>}
               {doc['Tên hồ sơ'] || <span className="italic text-on-surface-variant">(Chưa có tên)</span>}
             </span>
           )
@@ -985,20 +988,11 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
       </td>
       <td className="px-4 py-3 text-on-surface-variant">
         <div>{formatDate(doc['Ngày ban hành'])}</div>
-        {(() => {
-          const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
-          const badge = isKhan
-            ? { cls: 'bg-orange-100 text-orange-800', text: 'Khẩn' }
-            : dl && dl.label
-              ? { cls: { overdue: 'bg-red-100 text-red-800', urgent: 'bg-yellow-100 text-yellow-800', warning: 'bg-green-100 text-green-800' }[dl.level] || '', text: dl.label }
-              : null
-          if (!badge) return null
-          return (
-            <span className={`inline-block text-[10px] mt-0.5 px-1.5 py-0.5 rounded font-medium ${badge.cls}`}>
-              {badge.text}
-            </span>
-          )
-        })()}
+        {dl && dl.label && (
+          <div className={`text-[10px] mt-0.5 font-medium ${{ overdue: 'text-red-700', urgent: 'text-yellow-800', warning: 'text-green-700' }[dl.level] || 'text-on-surface-variant'}`}>
+            {dl.label}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>
         {hasMenuItems && (
