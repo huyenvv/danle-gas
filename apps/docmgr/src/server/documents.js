@@ -1039,6 +1039,7 @@ function transitionDocument(token, id, action, data, updateData) {
   var updated = Object.assign({}, doc, updates)
 
   // giaoViec: TO = Phụ trách, CC = Người phối hợp
+  var emailError = null
   if (action === 'giaoViec') {
     var phuTrachUsers = _parseAssignees(updates['Phụ trách'])
     var phoiHopUsers  = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
@@ -1046,24 +1047,30 @@ function transitionDocument(token, id, action, data, updateData) {
     phuTrachUsers = phuTrachUsers.filter(_excludeSelf)
     phoiHopUsers  = phoiHopUsers.filter(_excludeSelf)
     _markUnreadForUsers(phuTrachUsers.concat(phoiHopUsers), id)
-    var toList = _getRecipientsByUsernames(phuTrachUsers)
-    var ccList = _getRecipientsByUsernames(phoiHopUsers)
-    _sendNotificationEmails(toList, updated, 'giaoViec', session, ccList)
+    try {
+      var toList = _getRecipientsByUsernames(phuTrachUsers)
+      var ccList = _getRecipientsByUsernames(phoiHopUsers)
+      _sendNotificationEmails(toList, updated, 'giaoViec', session, ccList)
+    } catch(e) { Logger.log('transitionDocument giaoViec email error: ' + e.message); emailError = e.message }
   } else if (action === 'tuChoi') {
     // tuChoi: notify doc creator
     var creator = doc['Người tạo']
     if (creator) {
       _markUnreadForUsers([creator], id)
-      var toRecipients = _getRecipientsByUsernames([creator])
-      _sendNotificationEmails(toRecipients, updated, 'tuChoi', session)
+      try {
+        var toRecipients = _getRecipientsByUsernames([creator])
+        _sendNotificationEmails(toRecipients, updated, 'tuChoi', session)
+      } catch(e) { Logger.log('transitionDocument tuChoi email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'tuChoiKetQua') {
     // tuChoiKetQua: notify PT (assigned)
     var assignees = _parseAssignees(doc['Phụ trách'])
     if (assignees.length > 0) {
       _markUnreadForUsers(assignees, id)
-      var ptRecipients = _getRecipientsByUsernames(assignees)
-      _sendNotificationEmails(ptRecipients, updated, 'tuChoiKetQua', session)
+      try {
+        var ptRecipients = _getRecipientsByUsernames(assignees)
+        _sendNotificationEmails(ptRecipients, updated, 'tuChoiKetQua', session)
+      } catch(e) { Logger.log('transitionDocument tuChoiKetQua email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'hoanThanh' || action === 'hoanThanhLai') {
     // hoanThanh/hoanThanhLai: notify all GĐ
@@ -1072,8 +1079,10 @@ function transitionDocument(token, id, action, data, updateData) {
     roles2.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
     if (dirIds.length > 0) {
       _markUnreadForUsers(dirIds, id)
-      var dirList = _getRecipientsByUsernames(dirIds)
-      _sendNotificationEmails(dirList, updated, 'trinhDuyet', session)
+      try {
+        var dirList = _getRecipientsByUsernames(dirIds)
+        _sendNotificationEmails(dirList, updated, 'trinhDuyet', session)
+      } catch(e) { Logger.log('transitionDocument hoanThanh email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'trinhDuyetLai') {
     // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
@@ -1082,8 +1091,10 @@ function transitionDocument(token, id, action, data, updateData) {
     roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
     if (dirUserIds.length > 0) {
       _markUnreadForUsers(dirUserIds, id)
-      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
-      _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
+      try {
+        var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+        _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
+      } catch(e) { Logger.log('transitionDocument trinhDuyetLai email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'nhanViec' && updates['Người phối hợp']) {
     // nhanViec: chỉ đánh dấu unread cho người phối hợp mới, không gửi email
@@ -1100,7 +1111,7 @@ function transitionDocument(token, id, action, data, updateData) {
   // remove() has eventual consistency — re-invalidate before returning to
   // ensure the next getSheetData call reads fresh data from the sheet.
   invalidateSheetCache(SHEETS.HO_SO)
-  return { data: updated }
+  return { data: updated, emailError: emailError }
 }
 
 // ── Publish (phát hành) ─────────────────────────────────────────────────────

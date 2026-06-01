@@ -29,16 +29,16 @@ export function getDeadlineStatus(ngayKetThuc) {
   let level, label
   if (diff < 0) {
     level = 'overdue'
-    label = `quá hạn ${Math.abs(diff)} ngày`
+    label = `Quá hạn ${Math.abs(diff)} ngày`
   } else if (diff === 0) {
     level = 'urgent'
-    label = 'hết hạn hôm nay'
+    label = 'Hết hạn hôm nay'
   } else if (diff <= 3) {
     level = 'urgent'
-    label = `còn ${diff} ngày`
+    label = `Còn ${diff} ngày`
   } else if (diff <= 7) {
     level = 'warning'
-    label = `còn ${diff} ngày`
+    label = `Còn ${diff} ngày`
   } else {
     level = 'normal'
     label = ''

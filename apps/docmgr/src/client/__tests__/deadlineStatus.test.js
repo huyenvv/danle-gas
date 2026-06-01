@@ -17,49 +17,49 @@ describe('getDeadlineStatus', () => {
     const r = getDeadlineStatus(daysFromNow(-5))
     expect(r.level).toBe('overdue')
     expect(r.daysLeft).toBe(-5)
-    expect(r.label).toBe('quá hạn 5 ngày')
+    expect(r.label).toBe('Quá hạn 5 ngày')
   })
 
   test('overdue: yesterday', () => {
     const r = getDeadlineStatus(daysFromNow(-1))
     expect(r.level).toBe('overdue')
     expect(r.daysLeft).toBe(-1)
-    expect(r.label).toBe('quá hạn 1 ngày')
+    expect(r.label).toBe('Quá hạn 1 ngày')
   })
 
   test('urgent: today (0 days left)', () => {
     const r = getDeadlineStatus(daysFromNow(0))
     expect(r.level).toBe('urgent')
     expect(r.daysLeft).toBe(0)
-    expect(r.label).toBe('hết hạn hôm nay')
+    expect(r.label).toBe('Hết hạn hôm nay')
   })
 
   test('urgent: 1 day left', () => {
     const r = getDeadlineStatus(daysFromNow(1))
     expect(r.level).toBe('urgent')
     expect(r.daysLeft).toBe(1)
-    expect(r.label).toBe('còn 1 ngày')
+    expect(r.label).toBe('Còn 1 ngày')
   })
 
   test('urgent: 3 days left', () => {
     const r = getDeadlineStatus(daysFromNow(3))
     expect(r.level).toBe('urgent')
     expect(r.daysLeft).toBe(3)
-    expect(r.label).toBe('còn 3 ngày')
+    expect(r.label).toBe('Còn 3 ngày')
   })
 
   test('warning: 4 days left', () => {
     const r = getDeadlineStatus(daysFromNow(4))
     expect(r.level).toBe('warning')
     expect(r.daysLeft).toBe(4)
-    expect(r.label).toBe('còn 4 ngày')
+    expect(r.label).toBe('Còn 4 ngày')
   })
 
   test('warning: 7 days left', () => {
     const r = getDeadlineStatus(daysFromNow(7))
     expect(r.level).toBe('warning')
     expect(r.daysLeft).toBe(7)
-    expect(r.label).toBe('còn 7 ngày')
+    expect(r.label).toBe('Còn 7 ngày')
   })
 
   test('normal: 8 days left', () => {

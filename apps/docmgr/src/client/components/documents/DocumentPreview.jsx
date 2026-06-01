@@ -163,7 +163,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     try {
       const res = await gasCall('api_transitionDocument', token, doc.ID, action, data)
       setDoc(prev => ({ ...prev, ...res.data }))
-      showToast('Đã chuyển trạng thái', 'success')
+      showToast(res.emailError ? 'Đã chuyển trạng thái (gửi email thất bại)' : 'Đã chuyển trạng thái', res.emailError ? 'warning' : 'success')
       setGiaoViecForm(null)
       if (onDocUpdated) onDocUpdated(res.data)
     } catch (err) {

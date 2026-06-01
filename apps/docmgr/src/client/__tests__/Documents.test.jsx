@@ -190,3 +190,235 @@ describe('Documents page — MainApp', () => {
     expect(screen.queryByText('more_vert')).not.toBeInTheDocument()
   })
 })
+
+// ── Deadline warning badge rendering ─────────────────────────────────────────
+
+function daysFromNow(n) {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+function renderWithDocs(docs) {
+  window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+    ...MOCK_INITIAL_DATA,
+    docs,
+    stats: { total: docs.length, byStatus: {}, totalValue: 0 },
+  }))
+  renderMainApp()
+}
+
+describe('Deadline warning badges', () => {
+  test('overdue doc shows "Quá hạn X ngày" badge with red background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ duyệt',
+      'Ngày kết thúc': daysFromNow(-3),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const badge = screen.getByText(/Quá hạn 3 ngày/)
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-red-100')
+    expect(badge.className).toContain('text-red-800')
+  })
+
+  test('urgent doc (≤3 days) shows "Còn X ngày" badge with yellow background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Ngày kết thúc': daysFromNow(2),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const badge = screen.getByText(/Còn 2 ngày/)
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-yellow-100')
+    expect(badge.className).toContain('text-yellow-800')
+  })
+
+  test('today deadline shows "Hết hạn hôm nay" badge with yellow background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Ngày kết thúc': daysFromNow(0),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const badge = screen.getByText('Hết hạn hôm nay')
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-yellow-100')
+  })
+
+  test('warning doc (4-7 days) shows "Còn X ngày" badge with green background', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ xử lý',
+      'Ngày kết thúc': daysFromNow(5),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const badge = screen.getByText(/Còn 5 ngày/)
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-green-100')
+    expect(badge.className).toContain('text-green-800')
+  })
+
+  test('normal doc (>7 days) shows no deadline badge', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Đang xử lý',
+      'Ngày kết thúc': daysFromNow(15),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    expect(screen.queryByText(/Còn \d+ ngày/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Quá hạn \d+ ngày/)).not.toBeInTheDocument()
+  })
+
+  test('completed doc shows no deadline badge even if overdue', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Hoàn thành',
+      'Ngày kết thúc': daysFromNow(-10),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    expect(screen.queryByText(/Quá hạn \d+ ngày/)).not.toBeInTheDocument()
+  })
+
+  test('Khẩn doc shows orange "Khẩn" badge instead of deadline', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ duyệt',
+      'Khẩn': 'TRUE',
+      'Ngày kết thúc': daysFromNow(-3),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const badge = screen.getByText('Khẩn')
+    expect(badge).toBeInTheDocument()
+    expect(badge.className).toContain('bg-orange-100')
+    expect(badge.className).toContain('text-orange-800')
+    // Deadline badge should NOT appear — Khẩn takes precedence
+    expect(screen.queryByText(/Quá hạn \d+ ngày/)).not.toBeInTheDocument()
+  })
+
+  test('badge text does NOT contain "KT:" date prefix', async () => {
+    renderWithDocs([{
+      ...MOCK_DOCS[0],
+      'Tình trạng': 'Chờ duyệt',
+      'Ngày kết thúc': daysFromNow(-2),
+    }])
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    expect(screen.getByText(/Quá hạn 2 ngày/)).toBeInTheDocument()
+    // Old format had "KT: dd/mm/yyyy (quá hạn X ngày)" — verify it's gone
+    expect(screen.queryByText(/KT:/)).not.toBeInTheDocument()
+  })
+})
+
+// ── Filter dropdowns ─────────────────────────────────────────────────────────
+
+describe('Tình trạng filter includes all statuses', () => {
+  test('dropdown has acceptance-gate statuses', async () => {
+    renderMainApp()
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const select = screen.getByDisplayValue('Tất cả tình trạng')
+    const options = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
+    expect(options).toContain('Từ chối')
+    expect(options).toContain('Chờ xác nhận HT')
+    expect(options).toContain('Từ chối kết quả')
+  })
+
+  test('selecting "Từ chối" filters docs', async () => {
+    const rejectedDoc = { ...MOCK_DOCS[0], 'Tình trạng': 'Từ chối' }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [rejectedDoc, MOCK_DOCS[1]],
+      stats: { total: 2, byStatus: {}, totalValue: 0 },
+    }))
+    renderMainApp()
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    fireEvent.change(screen.getByDisplayValue('Tất cả tình trạng'), { target: { value: 'Từ chối' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
+      expect(screen.queryByText('Công văn số 01/2024')).not.toBeInTheDocument()
+    })
+  })
+})
+
+describe('Deadline status filter', () => {
+  test('dropdown renders with all options', async () => {
+    renderMainApp()
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    const select = screen.getByDisplayValue('Tất cả trạng thái')
+    const options = Array.from(select.querySelectorAll('option')).map(o => o.textContent)
+    expect(options).toEqual(['Tất cả trạng thái', 'Còn hạn', 'Còn hạn 1 tuần', 'Quá hạn'])
+  })
+
+  test('"Quá hạn" shows only overdue docs', async () => {
+    const overdueDoc = { ...MOCK_DOCS[0], ID: '10', 'Tên hồ sơ': 'HĐ Quá hạn', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(-5) }
+    const freshDoc = { ...MOCK_DOCS[0], ID: '11', 'Tên hồ sơ': 'HĐ Còn hạn', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(20) }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [overdueDoc, freshDoc],
+      stats: { total: 2, byStatus: {}, totalValue: 0 },
+    }))
+    renderMainApp()
+    await screen.findByText('HĐ Quá hạn')
+
+    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'quaHan' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('HĐ Quá hạn')).toBeInTheDocument()
+      expect(screen.queryByText('HĐ Còn hạn')).not.toBeInTheDocument()
+    })
+  })
+
+  test('"Còn hạn 1 tuần" shows urgent + warning docs only', async () => {
+    const urgentDoc = { ...MOCK_DOCS[0], ID: '10', 'Tên hồ sơ': 'HĐ Gấp', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(2) }
+    const warningDoc = { ...MOCK_DOCS[0], ID: '11', 'Tên hồ sơ': 'HĐ Sắp hạn', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(6) }
+    const farDoc = { ...MOCK_DOCS[0], ID: '12', 'Tên hồ sơ': 'HĐ Xa', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(30) }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [urgentDoc, warningDoc, farDoc],
+      stats: { total: 3, byStatus: {}, totalValue: 0 },
+    }))
+    renderMainApp()
+    await screen.findByText('HĐ Gấp')
+
+    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'conHan1Tuan' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('HĐ Gấp')).toBeInTheDocument()
+      expect(screen.getByText('HĐ Sắp hạn')).toBeInTheDocument()
+      expect(screen.queryByText('HĐ Xa')).not.toBeInTheDocument()
+    })
+  })
+
+  test('"Còn hạn" excludes overdue and completed docs', async () => {
+    const okDoc = { ...MOCK_DOCS[0], ID: '10', 'Tên hồ sơ': 'HĐ OK', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(3) }
+    const overdueDoc = { ...MOCK_DOCS[0], ID: '11', 'Tên hồ sơ': 'HĐ Trễ', 'Tình trạng': 'Đang xử lý', 'Ngày kết thúc': daysFromNow(-2) }
+    const doneDoc = { ...MOCK_DOCS[0], ID: '12', 'Tên hồ sơ': 'HĐ Xong', 'Tình trạng': 'Hoàn thành', 'Ngày kết thúc': daysFromNow(5) }
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA,
+      docs: [okDoc, overdueDoc, doneDoc],
+      stats: { total: 3, byStatus: {}, totalValue: 0 },
+    }))
+    renderMainApp()
+    await screen.findByText('HĐ OK')
+
+    fireEvent.change(screen.getByDisplayValue('Tất cả trạng thái'), { target: { value: 'conHan' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('HĐ OK')).toBeInTheDocument()
+      expect(screen.queryByText('HĐ Trễ')).not.toBeInTheDocument()
+      expect(screen.queryByText('HĐ Xong')).not.toBeInTheDocument()
+    })
+  })
+})

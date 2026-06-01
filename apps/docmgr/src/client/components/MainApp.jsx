@@ -223,6 +223,17 @@ export default function MainApp() {
     if (filters.phuTrach) result = result.filter(d => parseAssignees(d['Phụ trách']).includes(String(filters.phuTrach)))
     if (filters.readStatus === 'unread') result = result.filter(d => unreadDocIds.has(String(d.ID)))
     if (filters.readStatus === 'read')   result = result.filter(d => !unreadDocIds.has(String(d.ID)))
+    if (filters.deadlineStatus) {
+      result = result.filter(d => {
+        if (d['Tình trạng'] === 'Hoàn thành') return false
+        const dl = getDeadlineStatus(d['Ngày kết thúc'])
+        if (!dl) return false
+        if (filters.deadlineStatus === 'quaHan') return dl.level === 'overdue'
+        if (filters.deadlineStatus === 'conHan1Tuan') return dl.level === 'urgent' || dl.level === 'warning'
+        if (filters.deadlineStatus === 'conHan') return dl.daysLeft >= 0
+        return true
+      })
+    }
     if (filters.myWork) {
       const me = session.username
       const meId = String(session.userId)
@@ -392,7 +403,21 @@ export default function MainApp() {
                   <option>Chờ duyệt</option>
                   <option>Chờ xử lý</option>
                   <option>Đang xử lý</option>
+                  <option>Chờ xác nhận HT</option>
                   <option>Hoàn thành</option>
+                  <option>Từ chối</option>
+                  <option>Từ chối kết quả</option>
+                </select>
+
+                <select
+                  className="min-w-0 bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-on-surface"
+                  value={filters.deadlineStatus || ''}
+                  onChange={e => handleFilterChange('deadlineStatus', e.target.value)}
+                >
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="conHan">Còn hạn</option>
+                  <option value="conHan1Tuan">Còn hạn 1 tuần</option>
+                  <option value="quaHan">Quá hạn</option>
                 </select>
 
                 <select
@@ -884,18 +909,13 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
       <td className="px-4 py-3 w-64 min-w-[16rem] max-w-sm" style={{ paddingLeft: indent }}>
         {(() => {
           const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
-          const dlNameCls = !isKhan && dl
-            ? { overdue: 'text-red-600', urgent: 'text-amber-600', warning: 'text-blue-600' }[dl.level] || ''
-            : ''
-          const nameCls = isKhan && !isRead ? 'font-semibold text-red-600'
-            : isKhan && isRead ? 'text-red-500'
-            : dlNameCls && !isRead ? `font-semibold ${dlNameCls}`
-            : dlNameCls && isRead ? dlNameCls
+          const nameCls = isKhan && !isRead ? 'font-semibold text-on-surface'
+            : isKhan && isRead ? 'text-on-surface-variant'
             : isRead ? 'text-on-surface-variant'
             : 'font-semibold text-on-surface'
           return (
             <span className={nameCls}>
-              {!isRead && !isKhan && !dlNameCls && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
+              {!isRead && !isKhan && <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2 align-middle" />}
               {isKhan && !isRead && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-2 align-middle" />}
               {doc['Tên hồ sơ'] || <span className="italic text-on-surface-variant">(Chưa có tên)</span>}
             </span>
@@ -965,13 +985,20 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
       </td>
       <td className="px-4 py-3 text-on-surface-variant">
         <div>{formatDate(doc['Ngày ban hành'])}</div>
-        {dl && (
-          <div className={`text-[10px] mt-0.5 ${
-            { overdue: 'text-red-500', urgent: 'text-amber-500', warning: 'text-blue-500' }[dl.level] || 'text-on-surface-variant'
-          }`}>
-            KT: {formatDate(doc['Ngày kết thúc'])}{dl.label ? ` (${dl.label})` : ''}
-          </div>
-        )}
+        {(() => {
+          const isKhan = (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true) && doc['Tình trạng'] !== 'Hoàn thành'
+          const badge = isKhan
+            ? { cls: 'bg-orange-100 text-orange-800', text: 'Khẩn' }
+            : dl && dl.label
+              ? { cls: { overdue: 'bg-red-100 text-red-800', urgent: 'bg-yellow-100 text-yellow-800', warning: 'bg-green-100 text-green-800' }[dl.level] || '', text: dl.label }
+              : null
+          if (!badge) return null
+          return (
+            <span className={`inline-block text-[10px] mt-0.5 px-1.5 py-0.5 rounded font-medium ${badge.cls}`}>
+              {badge.text}
+            </span>
+          )
+        })()}
       </td>
       <td className="px-4 py-3 w-10" onClick={e => e.stopPropagation()}>
         {hasMenuItems && (
