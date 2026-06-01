@@ -628,6 +628,105 @@ describe('_normalizeStatus — Nháp preserved', () => {
   })
 })
 
+describe('transitionDocument — ycPhatHanh', () => {
+  let vanThuToken
+
+  const PARENT_ID = 'parent-sso-sheet-id'
+
+  function setupSSOParent() {
+    SpreadsheetApp._addExternalSheet(PARENT_ID, '_Hệ Thống', [
+      ['Key', 'Value'],
+      ['MAIL_ENABLED', true],
+      ['MAIL_SENDER_NAME', 'Test System'],
+    ])
+    SpreadsheetApp._addExternalSheet(PARENT_ID, '_Người Dùng', [
+      ['ID', 'Tên đăng nhập', 'Email', 'Tên nhân viên', 'Trạng thái', 'Mật khẩu', 'Quyền'],
+      [3, 'vanthu', 'vt@test.com', 'Nguyễn Văn Thư', 'Active', '', ''],
+      [1, 'director', 'd@test.com', 'Trần Giám Đốc', 'Active', '', ''],
+    ])
+    PropertiesService.getScriptProperties().setProperty('SSO_PARENT_SHEET_ID', PARENT_ID)
+  }
+
+  beforeEach(() => {
+    seedUser(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    vanThuToken = createSession(3, 'vanthu', 'vt@test.com', 'Văn thư')
+    createDocument(vanThuToken, {
+      'Tên hồ sơ': 'YC Phat Hanh Doc',
+      'Danh mục': 1,
+      'Tình trạng': 'Chờ duyệt',
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('GĐ ycPhatHanh changes status to YC Phát hành and saves reason', () => {
+    const result = transitionDocument(directorToken, 1, 'ycPhatHanh', {
+      lyDoTuChoi: 'Cần phát hành gấp'
+    })
+    expect(result.data['Tình trạng']).toBe('YC Phát hành')
+    expect(result.data['Lý do từ chối']).toBe('Cần phát hành gấp')
+  })
+
+  test('ycPhatHanh without reason throws error', () => {
+    expect(() => transitionDocument(directorToken, 1, 'ycPhatHanh', {})).toThrow('lý do')
+    expect(() => transitionDocument(directorToken, 1, 'ycPhatHanh', null)).toThrow('lý do')
+  })
+
+  test('ycPhatHanh marks unread for doc creator', () => {
+    transitionDocument(directorToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'Phát hành ngay' })
+    invalidateSheetCache(SHEETS.DA_DOC)
+    const unread = getSheetData(SHEETS.DA_DOC)
+    const creatorUnread = unread.find(r => String(r['DocID']) === '1')
+    expect(creatorUnread).toBeTruthy()
+  })
+
+  test('VT cannot ycPhatHanh (wrong role)', () => {
+    expect(() => transitionDocument(vanThuToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'test' })).toThrow('không có quyền')
+  })
+
+  test('ycPhatHanh fails when status is not Chờ duyệt', () => {
+    // Transition to Hoàn thành first
+    transitionDocument(directorToken, 1, 'luuTru', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => transitionDocument(directorToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'test' })).toThrow('không thể')
+  })
+
+  test('ycPhatHanh overwrites previous rejection reason', () => {
+    // First reject, then transition back, then ycPhatHanh
+    transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Lý do từ chối cũ' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(vanThuToken, 1, 'trinhDuyetLai', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(directorToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'Phát hành đi' })
+    expect(result.data['Lý do từ chối']).toBe('Phát hành đi')
+  })
+
+  test('publishDocument from YC Phát hành transitions status to Hoàn thành and clears reason', () => {
+    setupSSOParent()
+    transitionDocument(directorToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'Phát hành gấp' })
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    // VT publishes — need recipients
+    publishDocument(vanThuToken, 1, [3], [])
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Tình trạng']).toBe('Hoàn thành')
+    expect(docs[0]['Lý do từ chối']).toBe('')
+  })
+
+  test('publishDocument from Hoàn thành does NOT change status', () => {
+    setupSSOParent()
+    transitionDocument(directorToken, 1, 'luuTru', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    publishDocument(vanThuToken, 1, [3], [])
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(docs[0]['Tình trạng']).toBe('Hoàn thành')
+  })
+})
+
 describe('getDocumentStats', () => {
   test('returns correct totals and breakdown', () => {
     createDocument(directorToken, {

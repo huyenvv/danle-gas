@@ -802,7 +802,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   {uploading ? 'Đang lưu…' : 'Lưu tài liệu'}
                 </button>
                 )}
-                {canPublish && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
+                {canPublish && (!isEdit || doc?.['Tình trạng'] === 'Hoàn thành' || ((doc?.['Tình trạng'] === 'Nháp' || doc?.['Tình trạng'] === 'YC Phát hành') && doc?.['Người tạo'] === session?.username)) && (
                 <button type="button" disabled={uploading || hasUploading}
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }

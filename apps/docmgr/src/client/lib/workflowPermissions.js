@@ -24,6 +24,7 @@ const ACTIONS = {
   nhanViec:       { key: 'nhanViec',       label: 'Nhận việc',       icon: 'check_circle',   color: 'blue'    },
   hoanThanh:      { key: 'hoanThanh',      label: 'Hoàn thành',      icon: 'task_alt',       color: 'emerald' },
   tuChoi:         { key: 'tuChoi',         label: 'Từ chối',         icon: 'cancel',         color: 'red'     },
+  ycPhatHanh:     { key: 'ycPhatHanh',     label: 'YC Phát hành',    icon: 'publish',        color: 'amber'   },
   luuTru:         { key: 'luuTru',         label: 'Lưu trữ',         icon: 'archive',        color: 'emerald' },
   trinhDuyetLai:  { key: 'trinhDuyetLai',  label: 'Trình duyệt lại', icon: 'send',           color: 'primary' },
   xacNhanHT:      { key: 'xacNhanHT',      label: 'Xác nhận HT',     icon: 'verified',       color: 'emerald' },
@@ -33,7 +34,7 @@ const ACTIONS = {
 
 const ADMIN_ACTIONS = {
   '':           ['giaoViec'],
-  'Chờ duyệt':  ['giaoViec', 'tuChoi', 'luuTru'],
+  'Chờ duyệt':  ['giaoViec', 'tuChoi', 'ycPhatHanh', 'luuTru'],
   'Chờ xử lý':  ['thuHoi', 'nhanViec'],
   'Đang xử lý': ['hoanThanh'],
   'Từ chối':     ['trinhDuyetLai'],
@@ -42,7 +43,7 @@ const ADMIN_ACTIONS = {
 }
 
 const GIAM_DOC_ACTIONS = {
-  'Chờ duyệt': ['giaoViec', 'tuChoi', 'luuTru'],
+  'Chờ duyệt': ['giaoViec', 'tuChoi', 'ycPhatHanh', 'luuTru'],
   'Chờ xử lý': ['thuHoi'],
   'Chờ xác nhận HT': ['xacNhanHT', 'tuChoiKetQua'],
 }

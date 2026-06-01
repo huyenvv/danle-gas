@@ -92,9 +92,9 @@ describe('getAvailableActions — Văn thư', () => {
 })
 
 describe('getAvailableActions — Giám đốc', () => {
-  test('returns ["giaoViec", "tuChoi", "luuTru"] when status="Chờ duyệt"', () => {
+  test('returns ["giaoViec", "tuChoi", "ycPhatHanh", "luuTru"] when status="Chờ duyệt"', () => {
     const actions = getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'Giám đốc' }))
-    expect(actions.map(a => a.key)).toEqual(['giaoViec', 'tuChoi', 'luuTru'])
+    expect(actions.map(a => a.key)).toEqual(['giaoViec', 'tuChoi', 'ycPhatHanh', 'luuTru'])
   })
 
   test('returns ["thuHoi"] when status="Chờ xử lý" — does NOT include "nhanViec" even if assigned', () => {
@@ -151,9 +151,9 @@ describe('getAvailableActions — Phụ trách (non-admin, non-Giám đốc)', (
 })
 
 describe('getAvailableActions — admin / Quản trị viên', () => {
-  test('admin sees giaoViec, tuChoi and luuTru when status="Chờ duyệt"', () => {
+  test('admin sees giaoViec, tuChoi, ycPhatHanh and luuTru when status="Chờ duyệt"', () => {
     expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ duyệt' }), session({ role: 'admin' })).map(a => a.key))
-      .toEqual(['giaoViec', 'tuChoi', 'luuTru'])
+      .toEqual(['giaoViec', 'tuChoi', 'ycPhatHanh', 'luuTru'])
   })
 
   test('admin sees both thuHoi and nhanViec when status="Chờ xử lý"', () => {

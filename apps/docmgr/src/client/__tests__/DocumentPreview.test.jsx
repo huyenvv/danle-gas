@@ -326,4 +326,121 @@ describe('<DocumentPreview />', () => {
     // At least the delete button should be present
     expect(screen.getByText('Xóa')).toBeInTheDocument()
   })
+
+  // ── YC Phát hành: publish button visibility ──
+
+  test('Publish - VT (creator) sees publish button on YC Phát hành doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Lý do từ chối': 'Phát hành gấp', 'Người tạo': 'vanthu' }
+    renderPreview({ doc: ycDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('YC Phát hành')).toBeInTheDocument() })
+    expect(screen.getByText('Phát hành')).toBeInTheDocument()
+  })
+
+  test('Publish - VT (non-creator) does NOT see publish button on YC Phát hành doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Lý do từ chối': 'Phát hành gấp', 'Người tạo': 'othervt' }
+    renderPreview({ doc: ycDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('YC Phát hành')).toBeInTheDocument() })
+    expect(screen.queryByText('Phát hành')).not.toBeInTheDocument()
+  })
+
+  test('Publish - admin sees publish button on YC Phát hành doc regardless of creator', async () => {
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Lý do từ chối': 'Gấp', 'Người tạo': 'othervt' }
+    renderPreview({ doc: ycDoc })
+    await waitFor(() => { expect(screen.getByText('YC Phát hành')).toBeInTheDocument() })
+    expect(screen.getByText('Phát hành')).toBeInTheDocument()
+  })
+
+  // ── YC Phát hành: edit button visibility ──
+
+  test('Edit - VT (creator) does NOT see edit button on YC Phát hành doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Người tạo': 'vanthu' }
+    renderPreview({ doc: ycDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('YC Phát hành')).toBeInTheDocument() })
+    expect(screen.queryByText('Chỉnh sửa')).not.toBeInTheDocument()
+  })
+
+  test('Edit - admin sees edit button on YC Phát hành doc', async () => {
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Người tạo': 'othervt' }
+    renderPreview({ doc: ycDoc })
+    await waitFor(() => { expect(screen.getByText('YC Phát hành')).toBeInTheDocument() })
+    expect(screen.getByText('Chỉnh sửa')).toBeInTheDocument()
+  })
+
+  // ── YC Phát hành: reason banner ──
+
+  test('Banner - shows amber reason banner on YC Phát hành doc', async () => {
+    const ycDoc = { ...MOCK_DOC, 'Tình trạng': 'YC Phát hành', 'Lý do từ chối': 'Cần phát hành ngay' }
+    renderPreview({ doc: ycDoc })
+    await waitFor(() => {
+      expect(screen.getByText('Lý do yêu cầu phát hành')).toBeInTheDocument()
+      expect(screen.getByText('Cần phát hành ngay')).toBeInTheDocument()
+    })
+  })
+
+  // ── Publish button: NOT visible on other statuses ──
+
+  test('Publish - VT does NOT see publish button on Chờ duyệt doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const doc = { ...MOCK_DOC, 'Tình trạng': 'Chờ duyệt', 'Người tạo': 'vanthu' }
+    renderPreview({ doc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('Chờ duyệt')).toBeInTheDocument() })
+    expect(screen.queryByText('Phát hành')).not.toBeInTheDocument()
+  })
+
+  test('Publish - VT does NOT see publish button on Đang xử lý doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const doc = { ...MOCK_DOC, 'Tình trạng': 'Đang xử lý', 'Người tạo': 'vanthu' }
+    renderPreview({ doc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('Đang xử lý')).toBeInTheDocument() })
+    expect(screen.queryByText('Phát hành')).not.toBeInTheDocument()
+  })
+
+  // ── Nháp: publish button only for creator ──
+
+  test('Publish - VT (creator) sees publish button on Nháp doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const draftDoc = { ...MOCK_DOC, 'Tình trạng': 'Nháp', 'Người tạo': 'vanthu' }
+    renderPreview({ doc: draftDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('Nháp')).toBeInTheDocument() })
+    expect(screen.getByText('Phát hành')).toBeInTheDocument()
+  })
+
+  test('Publish - VT (non-creator) does NOT see publish button on Nháp doc', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION,
+      userId: 3, username: 'vanthu', role: 'Văn thư',
+      canCreate: true, canPublish: false,
+    }
+    const draftDoc = { ...MOCK_DOC, 'Tình trạng': 'Nháp', 'Người tạo': 'othervt' }
+    renderPreview({ doc: draftDoc, session: vanThuSession, isAdmin: false, canDelete: false })
+    await waitFor(() => { expect(screen.getByText('Nháp')).toBeInTheDocument() })
+    expect(screen.queryByText('Phát hành')).not.toBeInTheDocument()
+  })
 })

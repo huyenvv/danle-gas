@@ -55,6 +55,10 @@ var _DEFAULT_MAIL_TEMPLATES = {
   tuChoiKetQua: {
     subject: '{hoảTốc}[Từ chối kết quả] {tênHồSơ}',
     body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã từ chối kết quả xử lý hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để chỉnh sửa và hoàn thành lại:\n{linkHệThống}'
+  },
+  ycPhatHanh: {
+    subject: '{hoảTốc}[YC Phát hành] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) yêu cầu phát hành hồ sơ "{tênHồSơ}".\n\nLý do: {lyDoTuChoi}\n\nVui lòng đăng nhập hệ thống để phát hành:\n{linkHệThống}'
   }
 }
 
@@ -695,7 +699,7 @@ function getDocumentStats(token) {
 // ── private helpers ──────────────────────────────────────────────────────────
 
 // Normalize legacy status values to the 4-status workflow
-var VALID_STATUSES = ['Nháp', 'Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối', 'Chờ xác nhận HT', 'Từ chối kết quả']
+var VALID_STATUSES = ['Nháp', 'Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành', 'Từ chối', 'YC Phát hành', 'Chờ xác nhận HT', 'Từ chối kết quả']
 var STATUS_MIGRATION_MAP = {
   'Có hiệu lực':   'Hoàn thành',
   'Hết hiệu lực':  'Hoàn thành',
@@ -958,6 +962,7 @@ var WORKFLOW_ACTIONS = {
   hoanThanh:      { from: 'Đang xử lý', to: 'Chờ xác nhận HT', roles: ['_phuTrach'] },
   hoanThanhLai:   { from: 'Từ chối kết quả', to: 'Chờ xác nhận HT', roles: ['_phuTrach'] },
   tuChoi:         { from: 'Chờ duyệt', to: 'Từ chối', roles: ['Giám đốc'] },
+  ycPhatHanh:     { from: 'Chờ duyệt', to: 'YC Phát hành', roles: ['Giám đốc'] },
   luuTru:         { from: 'Chờ duyệt', to: 'Hoàn thành', roles: ['Giám đốc'] },
   xacNhanHT:      { from: 'Chờ xác nhận HT', to: 'Hoàn thành', roles: ['Giám đốc'] },
   tuChoiKetQua:   { from: 'Chờ xác nhận HT', to: 'Từ chối kết quả', roles: ['Giám đốc'] },
@@ -1023,10 +1028,10 @@ function transitionDocument(token, id, action, data, updateData) {
     updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
   }
 
-  // tuChoi / tuChoiKetQua: require rejection reason
-  if (action === 'tuChoi' || action === 'tuChoiKetQua') {
+  // tuChoi / tuChoiKetQua / ycPhatHanh: require reason
+  if (action === 'tuChoi' || action === 'tuChoiKetQua' || action === 'ycPhatHanh') {
     data = data || {}
-    if (!data['lyDoTuChoi']) throw new Error('Vui lòng nhập lý do từ chối')
+    if (!data['lyDoTuChoi']) throw new Error(action === 'ycPhatHanh' ? 'Vui lòng nhập lý do yêu cầu phát hành' : 'Vui lòng nhập lý do từ chối')
     updates['Lý do từ chối'] = data['lyDoTuChoi']
   }
 
@@ -1061,6 +1066,14 @@ function transitionDocument(token, id, action, data, updateData) {
         var toRecipients = _getRecipientsByUsernames([creator])
         _sendNotificationEmails(toRecipients, updated, 'tuChoi', session)
       } catch(e) { Logger.log('transitionDocument tuChoi email error: ' + e.message); emailError = e.message }
+    }
+  } else if (action === 'ycPhatHanh') {
+    // ycPhatHanh: notify doc creator
+    var ycCreator = doc['Người tạo']
+    if (ycCreator) {
+      _markUnreadForUsers([ycCreator], id)
+      var ycRecipients = _getRecipientsByUsernames([ycCreator])
+      _sendNotificationEmails(ycRecipients, updated, 'ycPhatHanh', session)
     }
   } else if (action === 'tuChoiKetQua') {
     // tuChoiKetQua: notify PT (assigned)
@@ -1158,9 +1171,16 @@ function publishDocument(token, docId, toUserIds, ccUserIds) {
     to: toRecipients.map(function(r) { return { id: r.userId, name: r.name, email: r.email } }),
     cc: ccRecipients.map(function(r) { return { id: r.userId, name: r.name, email: r.email } })
   })
-  updateRow(SHEETS.HO_SO, docId, { 'Lịch sử phát hành': JSON.stringify(history) })
+  var publishUpdates = { 'Lịch sử phát hành': JSON.stringify(history) }
+  // YC Phát hành → Hoàn thành after publish
+  if (doc['Tình trạng'] === 'YC Phát hành') {
+    publishUpdates['Tình trạng'] = 'Hoàn thành'
+    publishUpdates['Lý do từ chối'] = ''
+  }
+  updateRow(SHEETS.HO_SO, docId, publishUpdates)
+  var updated = Object.assign({}, doc, publishUpdates)
 
-  return { success: true, lan: history.length }
+  return { success: true, lan: history.length, data: updated }
 }
 
 // ── Comment functions ────────────────────────────────────────────────────────

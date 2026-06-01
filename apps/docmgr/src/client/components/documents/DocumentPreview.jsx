@@ -150,13 +150,16 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const isFullAdmin = role === 'admin' || role === 'Quản trị viên'
   const isVanThuOwnerRejected = role === 'Văn thư' && status === 'Từ chối' && doc['Người tạo'] === session?.username
   const isPhuTrachRejectedResult = isPhuTrach && status === 'Từ chối kết quả'
-  const canEditDoc = role === 'Giám đốc'
-    ? status === 'Chờ duyệt'
-    : isFullAdmin || isVanThuOwnerRejected
+  const isYCPhatHanhStatus = status === 'YC Phát hành'
+  const canEditDoc = isYCPhatHanhStatus
+    ? isFullAdmin
+    : role === 'Giám đốc'
+      ? status === 'Chờ duyệt'
+      : isFullAdmin || isVanThuOwnerRejected
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', hoanThanhLai: 'Hoàn thành', tuChoi: 'Từ chối', tuChoiKetQua: 'Từ chối kết quả', xacNhanHT: 'Xác nhận HT', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại' }[action] || action
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', hoanThanhLai: 'Hoàn thành', tuChoi: 'Từ chối', tuChoiKetQua: 'Từ chối kết quả', xacNhanHT: 'Xác nhận HT', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại', ycPhatHanh: 'YC Phát hành' }[action] || action
     if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)
@@ -200,7 +203,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   }
 
   async function submitTuChoi() {
-    if (!tuChoiForm?.lyDo?.trim()) { showToast('Vui lòng nhập lý do từ chối', 'error'); return }
+    const isYCPH = tuChoiForm?.action === 'ycPhatHanh'
+    if (!tuChoiForm?.lyDo?.trim()) { showToast(isYCPH ? 'Vui lòng nhập lý do yêu cầu phát hành' : 'Vui lòng nhập lý do từ chối', 'error'); return }
     await handleTransition(tuChoiForm.action || 'tuChoi', { lyDoTuChoi: tuChoiForm.lyDo.trim() })
     setTuChoiForm(null)
   }
@@ -209,6 +213,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const primaryGiaoViecAction = role === 'Giám đốc' && status === 'Chờ duyệt'
     ? availableActions.find(a => a.key === 'giaoViec')
     : null
+  const primaryYCPhatHanhAction = availableActions.find(a => a.key === 'ycPhatHanh') || null
   const workflowActions = primaryGiaoViecAction
     ? availableActions.filter(a => a.key !== primaryGiaoViecAction.key)
     : availableActions
@@ -218,8 +223,10 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const isHoanThanh = status === 'Hoàn thành'
   const isTuChoi = status === 'Từ chối'
   const isTuChoiKetQua = status === 'Từ chối kết quả'
+  const isCreator = doc['Người tạo'] === session?.username
   const isRejectedStatus = isTuChoi || isTuChoiKetQua
-  const showPublishBtn = canPublish && !isRejectedStatus && (isAdminRole ? isHoanThanh : (isHoanThanh || session?.canCreate))
+  const isDraft = status === 'Nháp'
+  const showPublishBtn = canPublish && (isAdminRole ? (isHoanThanh || isYCPhatHanhStatus || isDraft) : (isHoanThanh || (isDraft && isCreator) || (isYCPhatHanhStatus && isCreator)))
   const publishHistory = (() => {
     const raw = doc['Lịch sử phát hành']
     if (!raw) return []
@@ -229,17 +236,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   async function handlePublishFromDialog(toIds, ccIds) {
     setPublishing(true)
     try {
-      await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
+      const res = await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
       showToast('Đã phát hành thành công', 'success')
       setShowPublishDialog(false)
-      // Reload doc to update publish history
-      try {
-        const fresh = await gasCall('api_getDocument', token, doc.ID)
-        if (fresh.data) {
-          setDoc(prev => ({ ...prev, ...fresh.data }))
-          if (onDocUpdated) onDocUpdated(fresh.data)
-        }
-      } catch (_) {}
+      if (res.data) {
+        setDoc(prev => ({ ...prev, ...res.data }))
+        if (onDocUpdated) onDocUpdated(res.data)
+      }
     } catch (err) {
       showToast(err.message || 'Lỗi phát hành', 'error')
     } finally {
@@ -247,7 +250,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     }
   }
 
-  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || canDelete || workflowActions.length > 0 || !!giaoViecForm || showPublishBtn
+  const hasSidebarActions = canEditDoc || !!primaryGiaoViecAction || !!primaryYCPhatHanhAction || canDelete || workflowActions.length > 0 || !!giaoViecForm || showPublishBtn
   const noteText = String(doc['Ghi chú'] || '')
   const noteOverflow = noteText.length > NOTE_PREVIEW_LIMIT
   const notePreview = noteOverflow && !noteExpanded
@@ -377,6 +380,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   {primaryGiaoViecAction.label}
                 </button>
                 )}
+                {primaryYCPhatHanhAction && (
+                <button onClick={() => setTuChoiForm({ lyDo: '', action: 'ycPhatHanh' })} disabled={transitioning}
+                  className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-500 text-white hover:bg-amber-600 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
+                  <Icon name="publish" size={18} />
+                  YC Phát hành
+                </button>
+                )}
                 {showPublishBtn && (
                 <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
                   className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1${!primaryGiaoViecAction && !canDelete ? ' col-span-2' : ''}`}>
@@ -414,13 +424,14 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 disabled={transitioning}
                 filter={a => {
                   if (primaryGiaoViecAction && a.key === primaryGiaoViecAction.key) return false
+                  if (primaryYCPhatHanhAction && a.key === 'ycPhatHanh') return false
                   if (isVanThuOwnerRejected && a.key === 'trinhDuyetLai') return false
                   if (isPhuTrachRejectedResult && a.key === 'hoanThanhLai') return false
                   return true
                 }}
                 onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
                   ? openGiaoViec(key)
-                  : (key === 'tuChoi' || key === 'tuChoiKetQua')
+                  : (key === 'tuChoi' || key === 'tuChoiKetQua' || key === 'ycPhatHanh')
                     ? setTuChoiForm({ lyDo: '', action: key })
                     : handleTransition(key)}
               />
@@ -473,38 +484,41 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 )
               })()}
 
-              {/* Từ chối reason dialog */}
-              {tuChoiForm && (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-3 mt-2">
-                  <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Từ chối hồ sơ</p>
+              {/* Từ chối / YC Phát hành reason dialog */}
+              {tuChoiForm && (() => {
+                const isYCPH = tuChoiForm.action === 'ycPhatHanh'
+                return (
+                <div className={`${isYCPH ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'} border rounded-2xl p-4 space-y-3 mt-2`}>
+                  <p className={`text-xs font-semibold ${isYCPH ? 'text-amber-700' : 'text-red-600'} uppercase tracking-wide`}>{isYCPH ? 'Yêu cầu phát hành' : 'Từ chối hồ sơ'}</p>
                   <textarea
                     value={tuChoiForm.lyDo}
                     onChange={e => setTuChoiForm(prev => ({ ...prev, lyDo: e.target.value }))}
-                    placeholder="Nhập lý do từ chối…"
+                    placeholder={isYCPH ? 'Nhập lý do yêu cầu phát hành…' : 'Nhập lý do từ chối…'}
                     rows={3}
-                    className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-red-200 focus:border-red-400 focus:outline-none resize-none"
+                    className={`w-full bg-white rounded-xl px-3 py-2 text-sm border ${isYCPH ? 'border-amber-200 focus:border-amber-400' : 'border-red-200 focus:border-red-400'} focus:outline-none resize-none`}
                   />
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => setTuChoiForm(null)}
                       className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
                     <button onClick={submitTuChoi} disabled={transitioning}
-                      className="px-4 py-1.5 text-xs bg-red-600 text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1">
-                      {transitioning ? 'Đang xử lý…' : 'Xác nhận từ chối'}
+                      className={`px-4 py-1.5 text-xs ${isYCPH ? 'bg-amber-600' : 'bg-red-600'} text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1`}>
+                      {transitioning ? 'Đang xử lý…' : isYCPH ? 'Xác nhận yêu cầu' : 'Xác nhận từ chối'}
                     </button>
                   </div>
                 </div>
-              )}
+                )
+              })()}
             </div>
             )}
 
-            {/* Rejection reason banner */}
-            {doc['Lý do từ chối'] && (status === 'Từ chối' || status === 'Từ chối kết quả') && (
-              <div className="mx-4 mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+            {/* Rejection / YC Phát hành reason banner */}
+            {doc['Lý do từ chối'] && (status === 'Từ chối' || status === 'Từ chối kết quả' || status === 'YC Phát hành') && (
+              <div className={`mx-4 mt-3 p-3 ${status === 'YC Phát hành' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'} border rounded-xl`}>
                 <div className="flex items-start gap-2">
-                  <Icon name="info" size={16} className="text-red-600 mt-0.5 shrink-0" />
+                  <Icon name={status === 'YC Phát hành' ? 'publish' : 'info'} size={16} className={`${status === 'YC Phát hành' ? 'text-amber-600' : 'text-red-600'} mt-0.5 shrink-0`} />
                   <div>
-                    <p className="text-xs font-semibold text-red-700 mb-1">Lý do từ chối</p>
-                    <p className="text-sm text-red-800 whitespace-pre-wrap">{doc['Lý do từ chối']}</p>
+                    <p className={`text-xs font-semibold ${status === 'YC Phát hành' ? 'text-amber-700' : 'text-red-700'} mb-1`}>{status === 'YC Phát hành' ? 'Lý do yêu cầu phát hành' : 'Lý do từ chối'}</p>
+                    <p className={`text-sm ${status === 'YC Phát hành' ? 'text-amber-800' : 'text-red-800'} whitespace-pre-wrap`}>{doc['Lý do từ chối']}</p>
                   </div>
                 </div>
               </div>
