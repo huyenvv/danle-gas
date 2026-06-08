@@ -76,30 +76,6 @@ function touchRefreshToken(sheetName, userId, token) {
   return token
 }
 
-function rotateRefreshToken(sheetName, userId, oldToken) {
-  var users = getSheetData(sheetName)
-  var user = users.find(function(u) { return String(u['ID']) === String(userId) })
-  if (!user) throw new Error('User not found: ' + userId)
-  var tokens = _parseRefreshTokens(user['RefreshTokens'])
-  var idx = -1
-  for (var i = 0; i < tokens.length; i++) {
-    if (tokens[i].token === oldToken) { idx = i; break }
-  }
-  if (idx === -1) throw new Error('TOKEN_NOT_FOUND')
-  var now = new Date().getTime()
-  var newToken = generateUuid()
-  tokens[idx] = {
-    token: newToken,
-    createdAt: tokens[idx].createdAt,
-    lastUsedAt: now,
-    ua: tokens[idx].ua,
-    ipHash: tokens[idx].ipHash,
-    label: tokens[idx].label,
-  }
-  _writeRefreshTokens(sheetName, userId, tokens)
-  return newToken
-}
-
 function revokeRefreshToken(sheetName, userId, token) {
   var users = getSheetData(sheetName)
   var user = users.find(function(u) { return String(u['ID']) === String(userId) })

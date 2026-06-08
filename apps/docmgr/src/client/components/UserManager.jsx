@@ -21,42 +21,12 @@ const ROLE_BADGE = {
   'Xem':            'bg-surface-container text-on-surface-variant',
 }
 
-const MODULES = [
-  { key: 'hoSo',       label: 'Hồ sơ' },
-  { key: 'danhMuc',    label: 'Danh mục' },
-  { key: 'nhom',       label: 'Nhóm' },
-  { key: 'nhaCungCap', label: 'Nhà cung cấp' },
-  { key: 'duAn',       label: 'Dự án' },
-  { key: 'user',       label: 'Người dùng' },
-  { key: 'caiDat',     label: 'Cài đặt' },
-]
-const OPS = [
-  { key: 'c', label: 'Thêm' },
-  { key: 'r', label: 'Xem'  },
-  { key: 'u', label: 'Sửa'  },
-  { key: 'd', label: 'Xóa'  },
-]
-
-function defaultPerms() {
-  return Object.fromEntries(MODULES.map(m => [m.key, { c: false, r: true, u: false, d: false }]))
-}
-function fullPerms() {
-  return Object.fromEntries(MODULES.map(m => [m.key, { c: true, r: true, u: true, d: true }]))
-}
-function parsePermissions(raw, role) {
-  if (role === 'Quản trị viên' || role === 'admin' || role === 'Giám đốc') return fullPerms()
-  try { const p = typeof raw === 'string' ? JSON.parse(raw) : raw; if (p && p.hoSo) return p } catch (_) { /* */ }
-  if (role === 'Văn thư') return Object.fromEntries(MODULES.map(m => [m.key, { c: m.key === 'hoSo', r: true, u: m.key === 'hoSo', d: false }]))
-  return defaultPerms()
-}
-
 export default function UserManager({ token, session, lookups }) {
   const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [modal, setModal]     = useState(null) // null | { user }
   const [role, setRole]       = useState('Nhân viên')
-  const [perms, setPerms]     = useState(defaultPerms())
   const [canCreateDoc, setCanCreateDoc] = useState(false)
   const [canCreateSubCat, setCanCreateSubCat] = useState(false)
   const [canPublish, setCanPublish] = useState(false)
@@ -84,7 +54,6 @@ export default function UserManager({ token, session, lookups }) {
   function openEdit(user) {
     const currentRole = getSsoRole(user) || user['Quyền'] || 'Nhân viên'
     setRole(currentRole)
-    setPerms(parsePermissions(user['Phân quyền chi tiết'], currentRole))
     setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
     setCanCreateSubCat(user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true)
     setCanPublish(user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true)
@@ -93,11 +62,6 @@ export default function UserManager({ token, session, lookups }) {
   }
 
   function closeModal() { setModal(null); setFormError('') }
-
-  function togglePerm(mod, op) {
-    if (role === 'admin' || role === 'Giám đốc' || role === 'Quản trị viên') return
-    setPerms(p => ({ ...p, [mod]: { ...p[mod], [op]: !p[mod][op] } }))
-  }
 
   async function handleSave() {
     setSaving(true); setFormError('')
@@ -415,44 +379,6 @@ export default function UserManager({ token, session, lookups }) {
               </>
             )}
 
-            {/* Permission matrix — hidden, hardcoded per role for now */}
-            {/* <div className="mt-5">
-              <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2 flex items-center gap-1">
-                <Icon name="shield" size={14} />
-                Phân quyền chi tiết
-                {isAdmin && <span className="ml-2 text-primary">(Toàn quyền)</span>}
-              </p>
-              <div className="overflow-x-auto rounded-xl border border-outline-variant">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="bg-surface-container-low">
-                      <th className="px-3 py-2 text-left text-on-surface-variant font-medium">Chức năng</th>
-                      {OPS.map(op => (
-                        <th key={op.key} className="px-3 py-2 text-center text-on-surface-variant font-medium w-16">{op.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-outline-variant/40">
-                    {MODULES.map(mod => (
-                      <tr key={mod.key} className="hover:bg-surface-container-lowest">
-                        <td className="px-3 py-2 font-medium text-on-surface">{mod.label}</td>
-                        {OPS.map(op => (
-                          <td key={op.key} className="px-3 py-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isAdmin ? true : !!(perms[mod.key]?.[op.key])}
-                              disabled={isAdmin}
-                              onChange={() => togglePerm(mod.key, op.key)}
-                              className="w-4 h-4 rounded accent-primary cursor-pointer disabled:cursor-default disabled:opacity-60"
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div> */}
           </>
         )}
       </FormModal>

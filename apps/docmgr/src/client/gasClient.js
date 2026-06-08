@@ -189,9 +189,9 @@ let _nextCommentId = 1
 
 const _mockData = {
   users: [
-    { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '' },
-    { ID: 2, 'Tên đăng nhập': 'editor1', 'Email': 'editor@test.com', 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-10', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
-    { ID: 3, 'Tên đăng nhập': 'truongphong', 'Email': 'tp@test.com', 'Quyền': 'Trưởng phòng', 'Phân quyền chi tiết': '', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-12', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
+    { ID: 1, 'Tên đăng nhập': 'admin', 'Email': 'admin@test.com', 'Quyền': 'admin', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-15', 'Phòng ban': '' },
+    { ID: 2, 'Tên đăng nhập': 'editor1', 'Email': 'editor@test.com', 'Quyền': 'Nhân viên', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-10', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
+    { ID: 3, 'Tên đăng nhập': 'truongphong', 'Email': 'tp@test.com', 'Quyền': 'Trưởng phòng', 'Trạng thái': 'Active', 'Đăng nhập cuối': '2024-01-12', 'Phòng ban': JSON.stringify(['Kỹ thuật']) },
   ],
   danhMuc: [
     { ID: 1, 'Tên danh mục': 'Hợp đồng', Icon: 'contract', 'Mô tả': 'Hợp đồng kinh tế', 'Danh mục cha': '' },
@@ -233,9 +233,9 @@ const _mockData = {
   ],
   docs: [
     // Quá hạn (red row) — overdue 5 days
-    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': _daysFromNow(-5), 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-10T09:00:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }], cc: [{ id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }] }, { lan: 2, ngay: '2024-03-15T14:30:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }, { id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }], cc: [] }]) },
+    { ID: 1, 'Tên hồ sơ': 'Hợp đồng mua sắm CNTT', 'Danh mục': 1, 'Tình trạng': 'Chờ xử lý', 'Dự án (Phòng ban)': 'DA-01', 'Nhà cung cấp (Nơi ban hành)': 'ABC Corp', 'Số hồ sơ': 'HS-001', 'Giá trị HĐ': 100000000, 'Ngày ban hành': '2024-01-15', 'Ngày kết thúc': _daysFromNow(-5), 'Ngày cập nhật': '2024-01-15', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': 'Hợp đồng ưu tiên', 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Tệp đính kèm': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'hop-dong-cntt.pdf', mimeType: 'application/pdf', size: 204800 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-10T09:00:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }], cc: [{ id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }] }, { lan: 2, ngay: '2024-03-15T14:30:00', nguoiGui: 1, to: [{ id: 2, name: 'Nguyễn Văn A', email: 'nva@test.com' }, { id: 3, name: 'Trần Thị Bình', email: 'ttb@test.com' }], cc: [] }]) },
     // Hoàn thành — no badge even though deadline passed
-    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024', 'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': _daysFromNow(-10), 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'File ID': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-20T10:15:00', nguoiGui: 3, to: [{ id: 1, name: 'Admin Hệ thống', email: 'admin@test.com' }], cc: [] }]) },
+    { ID: 2, 'Tên hồ sơ': 'Công văn số 01/2024', 'Danh mục': 2, 'Tình trạng': 'Hoàn thành', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-002', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-02-01', 'Ngày kết thúc': _daysFromNow(-10), 'Ngày cập nhật': '2024-02-01', 'Phụ trách': JSON.stringify(['admin']), 'Người phối hợp': JSON.stringify(['editor1']), 'Ghi chú': '', 'Người tạo': 'admin', 'Người cập nhật': 'editor1', 'Tệp đính kèm': JSON.stringify([{ fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs', fileName: 'cong-van-01.pdf', mimeType: 'application/pdf', size: 102400 }, { fileId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlcs', fileName: 'phu-luc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 }]), 'Lịch sử phát hành': JSON.stringify([{ lan: 1, ngay: '2024-02-20T10:15:00', nguoiGui: 3, to: [{ id: 1, name: 'Admin Hệ thống', email: 'admin@test.com' }], cc: [] }]) },
     // Hết hạn hôm nay (yellow row)
     { ID: 3, 'Tên hồ sơ': 'Báo cáo tài chính Q2', 'Danh mục': 3, 'Tình trạng': 'Đang xử lý', 'Dự án (Phòng ban)': 'DA-02', 'Nhà cung cấp (Nơi ban hành)': '', 'Số hồ sơ': 'HS-003', 'Giá trị HĐ': 0, 'Ngày ban hành': '2024-03-01', 'Ngày kết thúc': _daysFromNow(0), 'Ngày cập nhật': '2024-03-01', 'Phụ trách': JSON.stringify(['editor1']), 'Người phối hợp': '', 'Ghi chú': 'Cần nộp trong ngày', 'Người tạo': 'admin', 'Người cập nhật': 'admin' },
     // Còn 2 ngày — urgent (yellow row)
@@ -294,17 +294,6 @@ function _mockDelete(list, id) {
   return { success: true }
 }
 
-const _ADMIN_PERMS = {
-  hoSo:       { c: true, r: true, u: true, d: true },
-  danhMuc:    { c: true, r: true, u: true, d: true },
-  nhom:       { c: true, r: true, u: true, d: true },
-  nhaCungCap: { c: true, r: true, u: true, d: true },
-  duAn:       { c: true, r: true, u: true, d: true },
-  user:       { c: true, r: true, u: true, d: true },
-  caiDat:     { c: true, r: true, u: true, d: true },
-  allowedCategories: [],
-}
-
 async function mockCall(fn, ...args) {
   await delay(80)
   // eslint-disable-next-line no-console
@@ -316,7 +305,7 @@ async function mockCall(fn, ...args) {
     case 'api_ssoLogin':
     case 'api_resume': {
       if (!_mockSession) {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, departments: [], permissions: _ADMIN_PERMS, canCreate: true, canCreateSubCat: true }
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, canCreate: true, canCreateSubCat: true }
       }
       return {
         accessToken: 'mock-access-' + Date.now(),
@@ -546,7 +535,7 @@ async function mockCall(fn, ...args) {
       const fileInfo = { fileId: 'mock-file-' + (++_nextId), fileName: args[3], mimeType: args[2], size: 1024 }
       if (draftId === 'edit') return { fileInfo }
       if (draftId) return { fileInfo }
-      const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'File ID': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
+      const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
       return { draftId: draft.ID, fileInfo }
     }
     case 'api_finalizeDraft': {

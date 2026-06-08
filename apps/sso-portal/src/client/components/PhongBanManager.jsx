@@ -13,27 +13,15 @@ function Icon({ name, size = 20, className = '', filled = false }) {
   )
 }
 
-function parsePho(val) {
-  if (!val) return []
-  try {
-    const arr = typeof val === 'string' ? JSON.parse(val) : val
-    return Array.isArray(arr) ? arr.map(String) : []
-  } catch (_) { return [] }
-}
-
 export default function PhongBanManager() {
-  const { phongBan, users, sync } = usePortalData()
+  const { phongBan, users, assignments, sync } = usePortalData()
   const { addToast } = useToast()
   const confirm = useConfirm()
 
-  // View mode: open existing dept
   const [selectedDeptId, setSelectedDeptId] = useState(null)
-  // Create mode: new dept with local form state
   const [creating, setCreating] = useState(false)
   const [createData, setCreateData] = useState({ name: '', moTa: '', truong: '', pho: [], nguoiPhuTrach: '', donViQuanLy: [], memberIds: [] })
-
   const [saving, setSaving] = useState(false)
-
 
   function getToken() { return localStorage.getItem('sso_access_token') }
   function getUserById(userId) { return (users || []).find(u => String(u.ID) === String(userId)) }
@@ -44,16 +32,24 @@ export default function PhongBanManager() {
   const activeUsers = (users || []).filter(u => u['Trạng thái'] !== 'Locked')
   const avatar = (name) => (name || '?')[0].toUpperCase()
 
-  // === VIEW MODE data ===
+  // === Derive from assignments ===
+  function getDeptAssignments(deptId) {
+    return (assignments || []).filter(a => String(a['PhongBanID']) === String(deptId))
+  }
+
+  // === VIEW MODE data (derived from assignments) ===
   const selectedDept = selectedDeptId ? (phongBan || []).find(d => d.ID === selectedDeptId) : null
   const viewDeptName = selectedDept ? selectedDept['Tên phòng ban'] : ''
-  const viewMembers = selectedDept ? (users || []).filter(u => u['Phòng ban'] === viewDeptName) : []
-  const viewTruongId = selectedDept ? String(selectedDept['Trưởng'] || '') : ''
-  const viewPhoIds = selectedDept ? parsePho(selectedDept['Phó']) : []
   const viewMoTa = selectedDept ? (selectedDept['Mô tả'] || '') : ''
-  const viewNguoiPhuTrach = selectedDept ? String(selectedDept['Người phụ trách'] || '') : ''
   const viewDonViQuanLy = selectedDept ? (() => { try { const v = selectedDept['Đơn vị thuộc sự quản lý']; return v ? (typeof v === 'string' ? JSON.parse(v) : v) : [] } catch(_) { return [] } })() : []
-  const viewAvailableUsers = activeUsers.filter(u => u['Phòng ban'] !== viewDeptName || !u['Phòng ban'])
+
+  const deptAssigns = selectedDeptId ? getDeptAssignments(selectedDeptId) : []
+  const viewMemberUserIds = deptAssigns.map(a => String(a['UserID']))
+  const viewMembers = selectedDept ? (users || []).filter(u => viewMemberUserIds.includes(String(u.ID))) : []
+  const viewTruongId = (() => { const a = deptAssigns.find(x => x['Chức vụ'] === 'Trưởng phòng'); return a ? String(a['UserID']) : '' })()
+  const viewPhoIds = deptAssigns.filter(a => a['Chức vụ'] === 'Phó phòng').map(a => String(a['UserID']))
+  const viewNguoiPhuTrach = (() => { const a = deptAssigns.find(x => x['Chức vụ'] === 'Người phụ trách'); return a ? String(a['UserID']) : '' })()
+  const viewAvailableUsers = activeUsers.filter(u => !viewMemberUserIds.includes(String(u.ID)))
 
   // === CREATE MODE helpers ===
   const createMembers = creating ? activeUsers.filter(u => createData.memberIds.includes(String(u.ID))) : []
@@ -62,13 +58,11 @@ export default function PhongBanManager() {
   function openCreate() {
     setCreating(true)
     setCreateData({ name: '', moTa: '', truong: '', pho: [], nguoiPhuTrach: '', donViQuanLy: [], memberIds: [] })
-
   }
 
   function closeModal() {
     setSelectedDeptId(null)
     setCreating(false)
-
   }
 
   // === CREATE handlers ===
@@ -76,19 +70,21 @@ export default function PhongBanManager() {
     if (!createData.name.trim()) { addToast('Vui lòng nhập tên phòng ban', 'error'); return }
     setSaving(true)
     try {
-      const data = {
+      const dept = await gasCall('api_addPhongBan', getToken(), {
         'Tên phòng ban': createData.name.trim(),
         'Mô tả': createData.moTa || '',
-        'Trưởng': createData.truong || '',
-        'Phó': createData.pho,
-        'Người phụ trách': createData.nguoiPhuTrach || '',
         'Đơn vị thuộc sự quản lý': JSON.stringify(createData.donViQuanLy || []),
-      }
-      await gasCall('api_addPhongBan', getToken(), data)
-      // Assign members
-      for (const uid of createData.memberIds) {
-        await gasCall('api_updateUser', getToken(), uid, { 'Phòng ban': createData.name.trim() })
-      }
+      })
+
+      const adds = []
+      const leaderIds = new Set()
+      if (createData.truong) { adds.push({ userId: createData.truong, chucVu: 'Trưởng phòng', phongBanId: dept.ID }); leaderIds.add(createData.truong) }
+      createData.pho.forEach(id => { adds.push({ userId: id, chucVu: 'Phó phòng', phongBanId: dept.ID }); leaderIds.add(id) })
+      if (createData.nguoiPhuTrach) { adds.push({ userId: createData.nguoiPhuTrach, chucVu: 'Người phụ trách', phongBanId: dept.ID }); leaderIds.add(createData.nguoiPhuTrach) }
+      createData.memberIds.filter(id => !leaderIds.has(id)).forEach(id => adds.push({ userId: id, chucVu: 'Nhân viên', phongBanId: dept.ID }))
+
+      if (adds.length > 0) await gasCall('api_batchSaveAssignments', getToken(), { adds, removes: [] })
+
       addToast('Thêm phòng ban thành công', 'success')
       setCreating(false)
       await sync(true)
@@ -102,7 +98,6 @@ export default function PhongBanManager() {
   function createAddMember(userId) {
     const uid = String(userId)
     setCreateData(d => ({ ...d, memberIds: [...d.memberIds, uid] }))
-
   }
 
   function createRemoveMember(userId) {
@@ -121,6 +116,7 @@ export default function PhongBanManager() {
       ...d,
       truong: newId,
       pho: newId ? d.pho.filter(id => id !== newId) : d.pho,
+      nguoiPhuTrach: d.nguoiPhuTrach === newId ? '' : d.nguoiPhuTrach,
       memberIds: newId && !d.memberIds.includes(newId) ? [...d.memberIds, newId] : d.memberIds,
     }))
   }
@@ -131,6 +127,7 @@ export default function PhongBanManager() {
       ...d,
       pho: [...d.pho, uid],
       truong: d.truong === uid ? '' : d.truong,
+      nguoiPhuTrach: d.nguoiPhuTrach === uid ? '' : d.nguoiPhuTrach,
       memberIds: !d.memberIds.includes(uid) ? [...d.memberIds, uid] : d.memberIds,
     }))
   }
@@ -139,7 +136,7 @@ export default function PhongBanManager() {
     setCreateData(d => ({ ...d, pho: d.pho.filter(id => id !== String(userId)) }))
   }
 
-  // === VIEW handlers ===
+  // === VIEW handlers (use batchSaveAssignments) ===
   async function handleDeleteDept() {
     if (!selectedDept) return
     if (!await confirm(`Xóa phòng ban "${viewDeptName}"? Tất cả thành viên sẽ bị xóa khỏi phòng ban.`)) return
@@ -156,8 +153,10 @@ export default function PhongBanManager() {
   async function handleAddMember(userId) {
     setSaving(true)
     try {
-      await gasCall('api_updateUser', getToken(), userId, { 'Phòng ban': viewDeptName })
-  
+      await gasCall('api_batchSaveAssignments', getToken(), {
+        adds: [{ userId, chucVu: 'Nhân viên', phongBanId: selectedDeptId }],
+        removes: [],
+      })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -172,16 +171,10 @@ export default function PhongBanManager() {
     if (!await confirm(`Xóa "${name}" khỏi phòng ban ${viewDeptName}?`)) return
     setSaving(true)
     try {
-      if (String(userId) === viewTruongId) {
-        await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Trưởng': '' })
+      const assign = deptAssigns.find(a => String(a['UserID']) === String(userId))
+      if (assign) {
+        await gasCall('api_batchSaveAssignments', getToken(), { adds: [], removes: [assign.ID] })
       }
-      if (viewPhoIds.includes(String(userId))) {
-        await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Phó': viewPhoIds.filter(id => id !== String(userId)) })
-      }
-      if (String(userId) === viewNguoiPhuTrach) {
-        await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Người phụ trách': '' })
-      }
-      await gasCall('api_updateUser', getToken(), userId, { 'Phòng ban': '' })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -193,11 +186,26 @@ export default function PhongBanManager() {
   async function handleChangeTruong(newId) {
     setSaving(true)
     try {
-      const updateData = { 'Trưởng': newId }
-      if (newId && viewPhoIds.includes(String(newId))) {
-        updateData['Phó'] = viewPhoIds.filter(id => id !== String(newId))
+      const removes = []
+      const adds = []
+
+      const currentTruong = deptAssigns.find(a => a['Chức vụ'] === 'Trưởng phòng')
+      if (currentTruong) {
+        removes.push(currentTruong.ID)
+        if (String(currentTruong['UserID']) !== String(newId)) {
+          adds.push({ userId: String(currentTruong['UserID']), chucVu: 'Nhân viên', phongBanId: selectedDeptId })
+        }
       }
-      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, updateData)
+
+      if (newId) {
+        const existing = deptAssigns.find(a => String(a['UserID']) === String(newId))
+        if (existing) removes.push(existing.ID)
+        adds.push({ userId: newId, chucVu: 'Trưởng phòng', phongBanId: selectedDeptId })
+      }
+
+      if (adds.length > 0 || removes.length > 0) {
+        await gasCall('api_batchSaveAssignments', getToken(), { adds, removes })
+      }
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -209,9 +217,13 @@ export default function PhongBanManager() {
   async function handleAddPho(userId) {
     setSaving(true)
     try {
-      const updateData = { 'Phó': [...viewPhoIds, String(userId)] }
-      if (String(userId) === viewTruongId) updateData['Trưởng'] = ''
-      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, updateData)
+      const removes = []
+      const adds = [{ userId, chucVu: 'Phó phòng', phongBanId: selectedDeptId }]
+
+      const existing = deptAssigns.find(a => String(a['UserID']) === String(userId))
+      if (existing) removes.push(existing.ID)
+
+      await gasCall('api_batchSaveAssignments', getToken(), { adds, removes })
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -223,7 +235,13 @@ export default function PhongBanManager() {
   async function handleRemovePho(userId) {
     setSaving(true)
     try {
-      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Phó': viewPhoIds.filter(id => id !== String(userId)) })
+      const phoAssign = deptAssigns.find(a => a['Chức vụ'] === 'Phó phòng' && String(a['UserID']) === String(userId))
+      if (phoAssign) {
+        await gasCall('api_batchSaveAssignments', getToken(), {
+          adds: [{ userId, chucVu: 'Nhân viên', phongBanId: selectedDeptId }],
+          removes: [phoAssign.ID],
+        })
+      }
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -235,7 +253,26 @@ export default function PhongBanManager() {
   async function handleChangeNguoiPhuTrach(newId) {
     setSaving(true)
     try {
-      await gasCall('api_updatePhongBan', getToken(), selectedDept.ID, { 'Người phụ trách': newId })
+      const removes = []
+      const adds = []
+
+      const current = deptAssigns.find(a => a['Chức vụ'] === 'Người phụ trách')
+      if (current) {
+        removes.push(current.ID)
+        if (String(current['UserID']) !== String(newId)) {
+          adds.push({ userId: String(current['UserID']), chucVu: 'Nhân viên', phongBanId: selectedDeptId })
+        }
+      }
+
+      if (newId) {
+        const existing = deptAssigns.find(a => String(a['UserID']) === String(newId))
+        if (existing) removes.push(existing.ID)
+        adds.push({ userId: newId, chucVu: 'Người phụ trách', phongBanId: selectedDeptId })
+      }
+
+      if (adds.length > 0 || removes.length > 0) {
+        await gasCall('api_batchSaveAssignments', getToken(), { adds, removes })
+      }
       await sync(true)
     } catch (err) {
       addToast(err.message, 'error')
@@ -266,6 +303,11 @@ export default function PhongBanManager() {
     } finally {
       setSaving(false)
     }
+  }
+
+  function getMemberRole(userId) {
+    const a = deptAssigns.find(x => String(x['UserID']) === String(userId))
+    return a ? a['Chức vụ'] : 'Nhân viên'
   }
 
   // ===================== SHARED MODAL RENDERER =====================
@@ -461,12 +503,12 @@ export default function PhongBanManager() {
               </select>
             </div>
 
-            {/* Members (exclude Trưởng/Phó — already shown above) */}
+            {/* Members (exclude leadership — already shown above) */}
             <div>
               {(() => {
                 const regularMembers = memberList.filter(u => {
                   const uid = String(u.ID)
-                  return uid !== truong && !pho.includes(uid)
+                  return uid !== truong && !pho.includes(uid) && uid !== nguoiPhuTrach
                 })
                 return (<>
               <div className="flex items-center justify-between mb-3">
@@ -519,7 +561,7 @@ export default function PhongBanManager() {
                             </td>
                             <td className="px-4 py-2.5">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                                {u['Chức vụ'] || 'Nhân viên'}
+                                {isCreate ? 'Nhân viên' : getMemberRole(uid)}
                               </span>
                             </td>
                             <td className="px-4 py-2.5">
@@ -592,8 +634,11 @@ export default function PhongBanManager() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {phongBan.map(dept => {
-            const count = (users || []).filter(u => u['Phòng ban'] === dept['Tên phòng ban']).length
-            const truong = dept['Trưởng'] ? getUserName(dept['Trưởng']) : ''
+            const da = getDeptAssignments(dept.ID)
+            const count = da.length
+            const truongAssign = da.find(a => a['Chức vụ'] === 'Trưởng phòng')
+            const truongName = truongAssign ? getUserName(truongAssign['UserID']) : ''
+            const phoCount = da.filter(a => a['Chức vụ'] === 'Phó phòng').length
             return (
               <button key={dept.ID} onClick={() => setSelectedDeptId(dept.ID)}
                 className="bg-white rounded-2xl shadow-card p-5 text-left hover:shadow-md transition-shadow group">
@@ -604,7 +649,7 @@ export default function PhongBanManager() {
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-on-surface truncate">{dept['Tên phòng ban']}</p>
                     <p className="text-xs text-on-surface-variant mt-0.5">
-                      {truong ? `Trưởng: ${truong}` : 'Chưa có trưởng phòng'}
+                      {truongName ? `Trưởng: ${truongName}` : 'Chưa có trưởng phòng'}
                     </p>
                   </div>
                 </div>
@@ -613,9 +658,9 @@ export default function PhongBanManager() {
                     <Icon name="group" size={12} />
                     {count} thành viên
                   </span>
-                  {parsePho(dept['Phó']).length > 0 && (
+                  {phoCount > 0 && (
                     <span className="text-xs text-on-surface-variant">
-                      · {parsePho(dept['Phó']).length} phó
+                      · {phoCount} phó
                     </span>
                   )}
                 </div>

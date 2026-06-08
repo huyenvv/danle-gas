@@ -1,16 +1,8 @@
 // ===== Main entry point — SSO child app =====
 
 function _buildSessionFromRows(userRow, roleRow) {
-  var depts = []
-  try {
-    var dv = userRow['Phòng ban']
-    if (dv && typeof dv === 'string' && dv.charAt(0) === '[') depts = JSON.parse(dv)
-    else if (dv) depts = [dv]
-  } catch(e) {}
-
-  var perms = getPermissions(roleRow)
-  var canCreate = (perms && perms.hoSo && perms.hoSo.c) || roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
-  var canCreateSubCat = (perms && perms.danhMuc && perms.danhMuc.c) || roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
+  var canCreate = roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
+  var canCreateSubCat = roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
   var canPublish = roleRow['Được phát hành'] === 'TRUE' || roleRow['Được phát hành'] === true
 
   return {
@@ -19,8 +11,6 @@ function _buildSessionFromRows(userRow, roleRow) {
     name: userRow['Tên nhân viên'] || userRow['Tên đăng nhập'] || '',
     email: userRow['Email'],
     role: roleRow['Quyền'],
-    departments: depts,
-    permissions: perms,
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
     canPublish: !!canPublish,
@@ -81,6 +71,10 @@ function doGet(e) {
 function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
   return _wrap(function() {
     if (!parentSheetId || !ssoToken) throw new Error('INVALID_SSO')
+    // Trust only the pinned parent sheet — reject client-supplied IDs that don't match.
+    // Prevents impersonation via a fake parent sheet the caller controls.
+    var pinnedParent = ssoGetParentSheetId()
+    if (pinnedParent && pinnedParent !== parentSheetId) throw new Error('INVALID_SSO')
     var ssoUser = validateAccessTokenCrossScript(parentSheetId, ssoToken)
     if (!ssoUser) throw new Error('SSO_TOKEN_EXPIRED')
 
@@ -89,7 +83,6 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
       'Tên đăng nhập': ssoUser.username,
       'Email': ssoUser.email,
       'Tên nhân viên': ssoUser.name,
-      'Phòng ban': ssoUser.department,
     }
 
     invalidateSheetCache(SHEETS.APP_ROLES)
@@ -97,8 +90,13 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
     var appRole = roles.find(function(r) {
       return String(r['UserID']) === String(userRow['ID']) && r['AppID'] === APP_ID
     })
-    // Chức vụ from SSO — sync every login
-    var ssoChucVu = ssoUser.chucVu || 'Nhân viên'
+    // Chức vụ from SSO _Phân Bổ — sync every login
+    var ssoChucVu = 'Nhân viên'
+    try {
+      var parentSs = SpreadsheetApp.openById(parentSheetId)
+      var deptRole = _getDeptRole(parentSs, ssoUser.userId)
+      if (deptRole) ssoChucVu = deptRole
+    } catch(_) {}
 
     if (!appRole) {
       var ownerEmail = ''
@@ -110,7 +108,6 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
         'Tên đăng nhập': userRow['Tên đăng nhập'],
         'AppID': APP_ID,
         'Quyền': autoRole,
-        'Phân quyền chi tiết': '',
       })
       invalidateSheetCache(SHEETS.APP_ROLES)
       roles = getSheetData(SHEETS.APP_ROLES)
@@ -126,19 +123,6 @@ function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
     var tokens = _mintTokensForUser(userRow, appRole, deviceType)
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, user: tokens.session }
   })
-}
-
-function _errorPage(title, message) {
-  return HtmlService.createHtmlOutput(
-    '<html><head><meta charset="UTF-8"><style>'
-    + 'body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f0f2f5}'
-    + '.box{text-align:center;background:#fff;padding:48px 32px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);max-width:400px}'
-    + '</style></head><body><div class="box">'
-    + '<div style="font-size:48px;margin-bottom:16px">&#128274;</div>'
-    + '<h2 style="color:#c62828;margin-bottom:8px">' + title + '</h2>'
-    + '<p style="color:#6b7280">' + message + '</p>'
-    + '</div></body></html>'
-  ).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
 }
 
 // ===== Session API =====
@@ -189,14 +173,12 @@ function api_resume(refreshToken) {
       throw new Error('USER_LOCKED')
     }
 
-    // Sync role from SSO parent on every resume (admin is never overwritten)
+    // Sync role from SSO _Phân Bổ on every resume (admin is never overwritten)
     if (roleRow['Quyền'] !== 'admin') {
-      var ssoChucVu = userInfo['Chức vụ'] || 'Nhân viên'
+      var ssoChucVu = 'Nhân viên'
       try {
         var deptRole = _getDeptRole(parentSs, roleRow['UserID'])
-        if (deptRole && (_ROLE_RANK[deptRole] || 0) > (_ROLE_RANK[ssoChucVu] || 0)) {
-          ssoChucVu = deptRole
-        }
+        if (deptRole) ssoChucVu = deptRole
       } catch(_) {}
       if (roleRow['Quyền'] !== ssoChucVu) {
         updateRow(SHEETS.APP_ROLES, roleRow['ID'], { 'Quyền': ssoChucVu })
@@ -561,7 +543,6 @@ function api_getUsers(token) {
           'Email': u['Email'],
           'Trạng thái': u['Trạng thái'],
           'Quyền': appRole ? appRole['Quyền'] : '',
-          'Phân quyền chi tiết': appRole ? (appRole['Phân quyền chi tiết'] || '') : '',
           'Được tạo hồ sơ': appRole && (appRole['Được tạo hồ sơ'] === true || appRole['Được tạo hồ sơ'] === 'TRUE') ? 'TRUE' : '',
           'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
           'Được phát hành': appRole && (appRole['Được phát hành'] === true || appRole['Được phát hành'] === 'TRUE') ? 'TRUE' : '',
@@ -611,7 +592,6 @@ function api_updateUser(token, id, data) {
     })
     var roleUpdates = {}
     if (data['Quyền'] !== undefined) roleUpdates['Quyền'] = data['Quyền']
-    if (data['permissions'] !== undefined) roleUpdates['Phân quyền chi tiết'] = JSON.stringify(data['permissions'])
     if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
     if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
     if (data['Được phát hành'] !== undefined) roleUpdates['Được phát hành'] = data['Được phát hành'] ? 'TRUE' : ''
@@ -623,7 +603,6 @@ function api_updateUser(token, id, data) {
         'Tên đăng nhập': data['Tên đăng nhập'] || '',
         'AppID': APP_ID,
         'Quyền': data['Quyền'] || 'Xem',
-        'Phân quyền chi tiết': data['permissions'] ? JSON.stringify(data['permissions']) : '',
         'Được tạo hồ sơ': data['Được tạo hồ sơ'] ? 'TRUE' : '',
         'Được tạo danh mục con': data['Được tạo danh mục con'] ? 'TRUE' : '',
       })

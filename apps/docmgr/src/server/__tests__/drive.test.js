@@ -40,9 +40,9 @@ describe('deleteFile', () => {
     expect(DriveApp._files['f1'].trashed).toBe(true)
   })
 
-  test('handles missing file gracefully', () => {
+  test('handles missing file gracefully (no throw, reports failure)', () => {
     const result = deleteFile('nonexistent')
-    expect(result.success).toBe(true)
+    expect(result.success).toBe(false)
   })
 })
 

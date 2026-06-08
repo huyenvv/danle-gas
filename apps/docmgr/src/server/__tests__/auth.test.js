@@ -1,6 +1,15 @@
 require('./setup.js')
 const { resetAll, setupRoleSheets, seedUser, createSession } = require('./helpers')
 
+const SSO_PARENT_ID = 'sso-parent-id'
+
+function setupSsoParent(assignments) {
+  var headers = ['ID', 'UserID', 'Chức vụ', 'PhongBanID']
+  var rows = [headers]
+  assignments.forEach(function(a, i) { rows.push([i + 1, a.userId, a.chucVu, a.phongBanId || '1']) })
+  SpreadsheetApp._addExternalSheet(SSO_PARENT_ID, '_Phân Bổ', rows)
+}
+
 beforeEach(() => {
   resetAll()
   setupRoleSheets()
@@ -40,24 +49,81 @@ describe('requireAdmin', () => {
   })
 })
 
-describe('getPermissions', () => {
-  test('returns full perms for admin role', () => {
-    var perms = getPermissions({ 'Quyền': 'admin', 'Phân quyền chi tiết': '' })
-    expect(perms.hoSo.c).toBe(true)
-    expect(perms.hoSo.d).toBe(true)
-    expect(perms.user.c).toBe(true)
+describe('_getDeptRole', () => {
+  test('returns highest role when user has multiple assignments', () => {
+    setupSsoParent([
+      { userId: 10, chucVu: 'Nhân viên' },
+      { userId: 10, chucVu: 'Trưởng phòng' },
+      { userId: 10, chucVu: 'Phó phòng' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 10)).toBe('Trưởng phòng')
   })
 
-  test('returns default perms for Xem role', () => {
-    var perms = getPermissions({ 'Quyền': 'Xem', 'Phân quyền chi tiết': '' })
-    expect(perms.hoSo.r).toBe(true)
-    expect(perms.hoSo.c).toBe(false)
+  test('returns Giám đốc as highest', () => {
+    setupSsoParent([
+      { userId: 5, chucVu: 'Giám đốc' },
+      { userId: 5, chucVu: 'Trưởng phòng' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 5)).toBe('Giám đốc')
   })
 
-  test('parses custom perms from JSON', () => {
-    var custom = JSON.stringify({ hoSo: { c: true, r: true, u: true, d: false } })
-    var perms = getPermissions({ 'Quyền': 'Nhân viên', 'Phân quyền chi tiết': custom })
-    expect(perms.hoSo.c).toBe(true)
-    expect(perms.hoSo.d).toBe(false)
+  test('returns single role for user with one assignment', () => {
+    setupSsoParent([
+      { userId: 7, chucVu: 'Phó GĐ' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 7)).toBe('Phó GĐ')
+  })
+
+  test('returns null when user has no assignments', () => {
+    setupSsoParent([
+      { userId: 99, chucVu: 'Giám đốc' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 1)).toBeNull()
+  })
+
+  test('returns null when _Phân Bổ sheet is missing', () => {
+    SpreadsheetApp._addExternalSheet(SSO_PARENT_ID, '_Dummy', [['ID']])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 1)).toBeNull()
+  })
+
+  test('matches userId as string comparison', () => {
+    setupSsoParent([
+      { userId: '10', chucVu: 'Phó GĐ' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 10)).toBe('Phó GĐ')
   })
 })
+
+describe('_buildSessionFromRows', () => {
+  test('canCreate from boolean column only', () => {
+    var userRow = { ID: 1, 'Tên đăng nhập': 'test', 'Email': 'test@t.com', 'Tên nhân viên': 'Test' }
+    var roleRow = { 'Quyền': 'Nhân viên', 'Được tạo hồ sơ': 'TRUE', 'Được tạo danh mục con': '', 'Được phát hành': '' }
+    var session = _buildSessionFromRows(userRow, roleRow)
+    expect(session.canCreate).toBe(true)
+    expect(session.canCreateSubCat).toBe(false)
+    expect(session.canPublish).toBe(false)
+  })
+
+  test('canCreateSubCat from boolean column', () => {
+    var userRow = { ID: 2, 'Tên đăng nhập': 'u2', 'Email': 'u2@t.com' }
+    var roleRow = { 'Quyền': 'Văn thư', 'Được tạo hồ sơ': '', 'Được tạo danh mục con': 'TRUE', 'Được phát hành': 'TRUE' }
+    var session = _buildSessionFromRows(userRow, roleRow)
+    expect(session.canCreate).toBe(false)
+    expect(session.canCreateSubCat).toBe(true)
+    expect(session.canPublish).toBe(true)
+  })
+
+  test('session does not contain permissions object', () => {
+    var userRow = { ID: 1, 'Tên đăng nhập': 'a', 'Email': 'a@t.com' }
+    var roleRow = { 'Quyền': 'admin', 'Được tạo hồ sơ': '', 'Được tạo danh mục con': '', 'Được phát hành': '' }
+    var session = _buildSessionFromRows(userRow, roleRow)
+    expect(session.permissions).toBeUndefined()
+  })
+})
+

@@ -41,16 +41,6 @@ describe('refresh token primitives', () => {
     expect(lookupRefreshToken('_Người Dùng', token)).toBeNull()
   })
 
-  test('rotateRefreshToken replaces entry, returns new token', () => {
-    var oldToken = mintRefreshToken('_Người Dùng', 1, { label: 'Laptop' })
-    var newToken = rotateRefreshToken('_Người Dùng', 1, oldToken)
-    expect(newToken).not.toBe(oldToken)
-    var users = getSheetData('_Người Dùng')
-    var tokens = JSON.parse(users[0].RefreshTokens)
-    expect(tokens.length).toBe(1)
-    expect(tokens[0].token).toBe(newToken)
-    expect(tokens[0].label).toBe('Laptop')
-  })
 
   test('revokeRefreshToken removes specific entry', () => {
     var t1 = mintRefreshToken('_Người Dùng', 1, {})

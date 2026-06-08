@@ -33,7 +33,7 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '9') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '10') { _initDone = true; return }
   var ss = getAppSheet()
   _ensureAllTabsExist(ss)
 
@@ -43,17 +43,17 @@ function ensureInitialized() {
   } else {
     _ensureOwnerUser(ss)
   }
-  props.setProperty('SCHEMA_V', '9')
+  props.setProperty('SCHEMA_V', '10')
   _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'Phòng ban', 'Chức vụ', 'Quyền', 'FailedLogins', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt', 'LogoutEpochs', 'AccessToken', 'AccessTokenExpiry'] },
-    { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái'] },
+    { name: SHEETS.USERS, headers: ['ID', 'Tên đăng nhập', 'Mật khẩu', 'Email', 'Tên nhân viên', 'Trạng thái', 'MustChangePass', 'Đăng nhập cuối', 'FailedLogins', 'SSO_Token', 'SSO_Expiry', 'RefreshTokens', 'LastLogoutAt', 'LogoutEpochs', 'AccessToken', 'AccessTokenExpiry'] },
+    { name: SHEETS.APPS,  headers: ['ID', 'Tên App', 'Webapp URL', 'Icon', 'Mô tả', 'Trạng thái', 'Quyền xem'] },
     { name: SHEETS.SYS,   headers: ['Key', 'Value'] },
     { name: SHEETS.HANDOFFS, headers: ['ID', 'Token', 'UserID', 'AppID', 'CreatedAt', 'ExpiresAt', 'Consumed'] },
-    { name: SHEETS.PHONG_BAN, headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Trưởng', 'Phó', 'Người phụ trách', 'Đơn vị thuộc sự quản lý'] },
+    { name: SHEETS.PHONG_BAN, headers: ['ID', 'Tên phòng ban', 'Mô tả', 'Đơn vị thuộc sự quản lý'] },
     { name: SHEETS.PHAN_BO, headers: ['ID', 'UserID', 'Chức vụ', 'PhongBanID'] },
     { name: SHEETS.NHAT_KY, headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
   ]
@@ -80,8 +80,9 @@ function _seedAdminUser(ss) {
   if (!owner.email) return
 
   var passwordHash = _hashPassword(owner.email, DEFAULT_PASSWORD)
-  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', '', '', '', 'Quản trị', '', ''])
+  usersSheet.appendRow([1, owner.email, passwordHash, owner.email, '', 'Active', 'TRUE', ''])
   invalidateSheetCache(SHEETS.USERS)
+  addRow(SHEETS.PHAN_BO, { 'UserID': '1', 'Chức vụ': 'admin', 'PhongBanID': '' })
 }
 
 function _getOwnerBootstrapInfo(ss) {
@@ -122,12 +123,8 @@ function _ensureOwnerUser(ss) {
     '',
     'Active',
     'TRUE',
-    '',
-    '',
-    '',
-    'Quản trị',
-    '',
     ''
   ])
   invalidateSheetCache(SHEETS.USERS)
+  addRow(SHEETS.PHAN_BO, { 'UserID': String(nextId), 'Chức vụ': 'admin', 'PhongBanID': '' })
 }

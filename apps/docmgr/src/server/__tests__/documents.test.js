@@ -60,6 +60,37 @@ describe('createDocument', () => {
   })
 })
 
+describe('createDocument — numeric fields', () => {
+  test('handles numeric Dự án (Phòng ban) without crashing', () => {
+    const result = createDocument(directorToken, {
+      'Tên hồ sơ': 'HĐ Numeric',
+      'Danh mục': 1,
+      'Dự án (Phòng ban)': 123,
+    }, null)
+    expect(result.data['Dự án (Phòng ban)']).toBe('123')
+  })
+
+  test('handles numeric Nhà cung cấp (Nơi ban hành) without crashing', () => {
+    const result = createDocument(directorToken, {
+      'Tên hồ sơ': 'HĐ Numeric NCC',
+      'Danh mục': 1,
+      'Nhà cung cấp (Nơi ban hành)': 456,
+    }, null)
+    expect(result.data['Nhà cung cấp (Nơi ban hành)']).toBe('456')
+  })
+
+  test('handles empty/null values for string-trimmed fields', () => {
+    const result = createDocument(directorToken, {
+      'Tên hồ sơ': 'HĐ Empty',
+      'Danh mục': 1,
+      'Dự án (Phòng ban)': null,
+      'Nhà cung cấp (Nơi ban hành)': undefined,
+    }, null)
+    expect(result.data['Dự án (Phòng ban)']).toBe('')
+    expect(result.data['Nhà cung cấp (Nơi ban hành)']).toBe('')
+  })
+})
+
 describe('updateDocument — Khẩn', () => {
   test('can toggle Khẩn on existing document', () => {
     createDocument(directorToken, { 'Tên hồ sơ': 'Doc A', 'Danh mục': 1 }, null)
@@ -425,7 +456,7 @@ describe('uploadFileEager', () => {
     expect(r2.fileInfo.fileName).toBe('file2.png')
     invalidateSheetCache(SHEETS.HO_SO)
     const docs = getSheetData(SHEETS.HO_SO)
-    const files = JSON.parse(docs[0]['File ID'])
+    const files = JSON.parse(docs[0]['Tệp đính kèm'])
     expect(files).toHaveLength(2)
   })
 
@@ -546,7 +577,7 @@ describe('updateDocument — eagerFileInfos', () => {
     }, [{ base64Data: 'AQID', mimeType: 'application/pdf', fileName: 'old.pdf', size: 100 }])
     invalidateSheetCache(SHEETS.HO_SO)
     const docs = getSheetData(SHEETS.HO_SO)
-    const oldFiles = JSON.parse(docs[0]['File ID'])
+    const oldFiles = JSON.parse(docs[0]['Tệp đính kèm'])
     const keepIds = oldFiles.map(function(f) { return f.fileId })
 
     const eagerInfos = [{ fileId: 'eager-123', fileName: 'eager.pdf', mimeType: 'application/pdf', size: 200 }]
@@ -554,7 +585,7 @@ describe('updateDocument — eagerFileInfos', () => {
     invalidateSheetCache(SHEETS.HO_SO)
 
     const updated = getSheetData(SHEETS.HO_SO)
-    const allFiles = JSON.parse(updated[0]['File ID'])
+    const allFiles = JSON.parse(updated[0]['Tệp đính kèm'])
     expect(allFiles).toHaveLength(2)
     expect(allFiles[1].fileId).toBe('eager-123')
     expect(updated[0]['Ghi chú']).toBe('Updated')

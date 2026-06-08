@@ -85,8 +85,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
   const [form, setForm] = useState(isEdit ? {
     ...doc,
-    'Dự án (Phòng ban)': (doc['Dự án (Phòng ban)'] || '').trim(),
-    'Nhà cung cấp (Nơi ban hành)': (doc['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Dự án (Phòng ban)': String(doc['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': String(doc['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
     'Ngày ban hành': toDateInput(doc['Ngày ban hành']),
     'Ngày kết thúc': toDateInput(doc['Ngày kết thúc']),
     'Ghi chú': doc['Ghi chú'] || '',
@@ -113,7 +113,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const eagerIdCounter = useRef(0)
   const [draftId, setDraftId] = useState(isDraftEdit ? doc.ID : null)
   const [existingFiles, setExistingFiles] = useState(
-    isEdit ? _parseFileInfosClient(doc['File ID']) : []
+    isEdit ? _parseFileInfosClient(doc['Tệp đính kèm']) : []
   )
   const [isDragging, setIsDragging] = useState(false)
   const [uploading, setUploading] = useState(false)

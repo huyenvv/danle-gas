@@ -870,7 +870,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
     || role === 'admin' || role === 'Quản trị viên' || isVanThuOwnerRejected
 
   const fileInfos = (() => {
-    const raw = doc['File ID']
+    const raw = doc['Tệp đính kèm']
     if (!raw) return []
     try {
       return typeof raw === 'string' && raw.charAt(0) === '[' ? JSON.parse(raw) : [{ fileId: raw }]

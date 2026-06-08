@@ -129,9 +129,9 @@ function _getAppLink() {
 }
 
 function _buildFileLinks(doc) {
-  if (!doc || !doc['File ID']) return ''
+  if (!doc || !doc['Tệp đính kèm']) return ''
   var files = []
-  try { files = JSON.parse(doc['File ID']) } catch(e) { return '' }
+  try { files = JSON.parse(doc['Tệp đính kèm']) } catch(e) { return '' }
   if (!Array.isArray(files) || files.length === 0) return ''
   return files.map(function(f) {
     return 'https://drive.google.com/file/d/' + f.fileId + '/view'
@@ -172,15 +172,6 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
   toRecipients.forEach(function(r) { toEmails[r.email.toLowerCase()] = true })
   ccRecipients = _dedup(ccRecipients).filter(function(r) { return !toEmails[r.email.toLowerCase()] })
   var docName = (typeof doc === 'string') ? doc : (doc['Tên hồ sơ'] || '')
-  // Dev override: redirect all emails to test address for huyenvv90 owner
-  try {
-    var ownerEmail = getCentralSheet().getOwner().getEmail()
-    if (ownerEmail === 'huyenvv90@gmail.com') {
-      var _redir = function(r) { return { email: 'huyenvv.it@gmail.com', name: r.name, role: r.role } }
-      toRecipients = toRecipients.map(_redir)
-      ccRecipients = ccRecipients.map(_redir)
-    }
-  } catch(e) {}
   try {
     var templates = _getMailTemplates()
     var tpl = templates[mailType] || _DEFAULT_MAIL_TEMPLATES[mailType] || { subject: 'Thông báo: ' + docName, body: 'Hồ sơ "' + docName + '" có cập nhật mới.' }
@@ -230,6 +221,35 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
   }
 }
 
+// Resolve the people who approve documents, from the SSO `_Phân Bổ` (source of truth).
+// Primary: Chức vụ='Giám đốc'. Fallback: 'admin' when NO director is assigned — admins can
+// also run every director approval action (see transitionDocument isAdmin bypass), which covers
+// small orgs where the admin IS the director. We never use the local _Phân Quyền role string:
+// a director who owns the spreadsheet is assigned the local role 'admin' (see api_ssoLogin),
+// which would otherwise exclude them.
+function _getDirectorUserIds() {
+  var parentId = ssoGetParentSheetId()
+  if (!parentId) return []
+  try {
+    var ss = SpreadsheetApp.openById(parentId)
+    var sheet = ss.getSheetByName('_Phân Bổ')
+    if (!sheet) return []
+    var rows = rowsToObjects(sheet.getDataRange().getValues())
+    var directors = []
+    var admins = []
+    rows.forEach(function(a) {
+      var uid = String(a['UserID'])
+      if (!uid) return
+      if (a['Chức vụ'] === 'Giám đốc') { if (directors.indexOf(uid) === -1) directors.push(uid) }
+      else if (a['Chức vụ'] === 'admin') { if (admins.indexOf(uid) === -1) admins.push(uid) }
+    })
+    return directors.length > 0 ? directors : admins
+  } catch(e) {
+    Logger.log('_getDirectorUserIds error: ' + e.message)
+    return []
+  }
+}
+
 function _getRecipientsByUsernames(usernames) {
   if (!usernames || usernames.length === 0) return []
   var parentId = ssoGetParentSheetId()
@@ -276,7 +296,7 @@ function _getRecipientsByIds(userIds) {
           userId: user['ID'],
           email: user['Email'],
           name: user['Tên nhân viên'] || user['Email'],
-          role: user['Chức vụ'] || ''
+          role: _getDeptRole(ss, uid) || ''
         })
       }
     })
@@ -461,16 +481,14 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     'Tên hồ sơ': data['Tên hồ sơ'],
     'Danh mục': data['Danh mục'],
     'Số hồ sơ': data['Số hồ sơ'] || '',
-    'Dự án (Phòng ban)': (data['Dự án (Phòng ban)'] || '').trim(),
-    'Nhà cung cấp (Nơi ban hành)': (data['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Dự án (Phòng ban)': String(data['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': String(data['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
     'Ngày ban hành': data['Ngày ban hành'] || '',
     'Ngày kết thúc': data['Ngày kết thúc'] || '',
     'Giá trị HĐ': data['Giá trị HĐ'] || 0,
     'Tình trạng': data['Tình trạng'] || 'Chờ duyệt',
-    'File ID': fileIdCol,
+    'Tệp đính kèm': fileIdCol,
     'Tên file': fileNameCol,
-    'Loại file': uploadedFiles.length > 0 ? uploadedFiles[0].mimeType : '',
-    'Kích thước': '',
     'Phụ trách': data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : '',
     'Người phối hợp': _buildAssignees(data['Người phối hợp'], null),
     'Ghi chú': data['Ghi chú'] || '',
@@ -487,12 +505,10 @@ function createDocument(token, data, fileInfos, notifyTarget) {
   // Send email notification if Trình duyệt (notify directors)
   var emailError = null
   if (notifyTarget === 'directors') {
-    var roles = getSheetData(SHEETS.APP_ROLES)
-    var dirUserIds = []
-    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    var dirUserIds = _getDirectorUserIds()
     _markUnreadForUsers(dirUserIds, added['ID'])
     try {
-      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+      var dirRecipients = _getRecipientsByIds(dirUserIds)
       _sendNotificationEmails(dirRecipients, added, 'trinhDuyet', session)
     } catch(e) {
       Logger.log('createDocument trinhDuyet email error: ' + e.message)
@@ -566,7 +582,7 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   keepFileIds = Array.isArray(keepFileIds) ? keepFileIds : []
 
   // Parse existing file infos
-  var existingInfos = _parseFileInfos(doc['File ID'])
+  var existingInfos = _parseFileInfos(doc['Tệp đính kèm'])
 
   // Delete files that are NOT in keepFileIds
   existingInfos.forEach(function(ef) {
@@ -604,9 +620,8 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   var eagerFiles = Array.isArray(eagerFileInfos) ? eagerFileInfos : []
 
   var allFiles = keptFiles.concat(newlyUploaded).concat(eagerFiles)
-  updates['File ID'] = allFiles.length > 0 ? JSON.stringify(allFiles) : ''
+  updates['Tệp đính kèm'] = allFiles.length > 0 ? JSON.stringify(allFiles) : ''
   updates['Tên file'] = allFiles.map(function(f) { return f.fileName }).join(', ')
-  if (allFiles.length > 0) updates['Loại file'] = allFiles[0].mimeType
 
   // Update Phụ trách if provided (single person) — only admin/GĐ can change
   if (data['Phụ trách'] !== undefined) {
@@ -635,14 +650,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   if (notifyTarget === 'directors') {
     // Clear read status for directors so doc shows as unread
     // Add unread records for directors + send email
-    var allRoles = getSheetData(SHEETS.APP_ROLES)
-    var directorUserIds = []
-    allRoles.forEach(function(r) {
-      if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) directorUserIds.push(r['Tên đăng nhập'] || String(r['UserID']))
-    })
+    var directorUserIds = _getDirectorUserIds()
     _markUnreadForUsers(directorUserIds, id)
     try {
-      var directorRecipients = _getRecipientsByUsernames(directorUserIds)
+      var directorRecipients = _getRecipientsByIds(directorUserIds)
       _sendNotificationEmails(directorRecipients, updated, 'trinhDuyet', session)
     } catch(e) {
       Logger.log('updateDocument trinhDuyet email error: ' + e.message)
@@ -664,7 +675,7 @@ function deleteDocument(token, id) {
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
   // Delete all associated Drive files (JSON array or legacy plain string)
-  var fileInfos = _parseFileInfos(doc['File ID'])
+  var fileInfos = _parseFileInfos(doc['Tệp đính kèm'])
   fileInfos.forEach(function(fi) {
     if (fi.fileId) deleteFile(fi.fileId)
   })
@@ -800,10 +811,10 @@ function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draf
     if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
     if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
 
-    var existingInfos = _parseFileInfos(draft['File ID'])
+    var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
     existingInfos.push(fileInfo)
     updateRow(SHEETS.HO_SO, draftId, {
-      'File ID': JSON.stringify(existingInfos),
+      'Tệp đính kèm': JSON.stringify(existingInfos),
       'Tên file': existingInfos.map(function(f) { return f.fileName }).join(', '),
       'Ngày cập nhật': new Date().toISOString(),
     })
@@ -816,9 +827,8 @@ function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draf
     'Tên hồ sơ': '',
     'Danh mục': categoryId,
     'Tình trạng': 'Nháp',
-    'File ID': JSON.stringify([fileInfo]),
+    'Tệp đính kèm': JSON.stringify([fileInfo]),
     'Tên file': fileInfo.fileName,
-    'Loại file': fileInfo.mimeType,
     'Người tạo': session.username,
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
@@ -845,8 +855,8 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
   var updates = {
     'Tên hồ sơ': formData['Tên hồ sơ'],
     'Số hồ sơ': formData['Số hồ sơ'] || '',
-    'Dự án (Phòng ban)': (formData['Dự án (Phòng ban)'] || '').trim(),
-    'Nhà cung cấp (Nơi ban hành)': (formData['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Dự án (Phòng ban)': String(formData['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': String(formData['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
     'Ngày ban hành': formData['Ngày ban hành'] || '',
     'Ngày kết thúc': formData['Ngày kết thúc'] || '',
     'Giá trị HĐ': formData['Giá trị HĐ'] || 0,
@@ -867,7 +877,7 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
   var oldCatId = String(draft['Danh mục'] || '')
   var newCatId = String(updates['Danh mục'] || oldCatId)
   if (oldCatId !== newCatId && oldCatId !== '') {
-    var existingInfos = _parseFileInfos(draft['File ID'])
+    var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
     var newCatPath = _resolveCategoryPath(newCatId)
     Logger.log('[finalizeDraft] moving ' + existingInfos.length + ' files from cat ' + oldCatId + ' to ' + newCatId)
     existingInfos.forEach(function(f) {
@@ -884,12 +894,10 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
   // Notifications (same logic as createDocument)
   var emailError = null
   if (notifyTarget === 'directors') {
-    var roles = getSheetData(SHEETS.APP_ROLES)
-    var dirUserIds = []
-    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    var dirUserIds = _getDirectorUserIds()
     _markUnreadForUsers(dirUserIds, draftId)
     try {
-      var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+      var dirRecipients = _getRecipientsByIds(dirUserIds)
       _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
     } catch(e) {
       Logger.log('finalizeDraft trinhDuyet email error: ' + e.message)
@@ -918,7 +926,7 @@ function cancelDraft(token, draftId) {
   if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được huỷ hồ sơ nháp')
 
   // Delete files from Drive
-  var fileInfos = _parseFileInfos(draft['File ID'])
+  var fileInfos = _parseFileInfos(draft['Tệp đính kèm'])
   fileInfos.forEach(function(fi) {
     if (fi.fileId) deleteFile(fi.fileId)
   })
@@ -1087,25 +1095,21 @@ function transitionDocument(token, id, action, data, updateData) {
     }
   } else if (action === 'hoanThanh' || action === 'hoanThanhLai') {
     // hoanThanh/hoanThanhLai: notify all GĐ
-    var roles2 = getSheetData(SHEETS.APP_ROLES)
-    var dirIds = []
-    roles2.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    var dirIds = _getDirectorUserIds()
     if (dirIds.length > 0) {
       _markUnreadForUsers(dirIds, id)
       try {
-        var dirList = _getRecipientsByUsernames(dirIds)
+        var dirList = _getRecipientsByIds(dirIds)
         _sendNotificationEmails(dirList, updated, 'trinhDuyet', session)
       } catch(e) { Logger.log('transitionDocument hoanThanh email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'trinhDuyetLai') {
     // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
-    var roles = getSheetData(SHEETS.APP_ROLES)
-    var dirUserIds = []
-    roles.forEach(function(r) { if (r['Quyền'] === 'Giám đốc' && r['AppID'] === APP_ID) dirUserIds.push(r['Tên đăng nhập'] || String(r['UserID'])) })
+    var dirUserIds = _getDirectorUserIds()
     if (dirUserIds.length > 0) {
       _markUnreadForUsers(dirUserIds, id)
       try {
-        var dirRecipients = _getRecipientsByUsernames(dirUserIds)
+        var dirRecipients = _getRecipientsByIds(dirUserIds)
         _sendNotificationEmails(dirRecipients, updated, 'trinhDuyet', session)
       } catch(e) { Logger.log('transitionDocument trinhDuyetLai email error: ' + e.message); emailError = e.message }
     }

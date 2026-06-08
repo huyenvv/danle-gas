@@ -189,7 +189,6 @@ export default function UserManager() {
   }
 
   function isProtectedUser(u) {
-    if (u['Quyền'] === 'Quản trị') return true
     return (assignments || []).some(a => String(a['UserID']) === String(u.ID) && a['Chức vụ'] === 'admin')
   }
 

@@ -36,7 +36,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const { showToast } = useToast()
   const NOTE_PREVIEW_LIMIT = 200
   const [doc, setDoc] = useState(initialDoc)
-  const fileInfos = parseFileInfos(doc['File ID'])
+  const fileInfos = parseFileInfos(doc['Tệp đính kèm'])
   const [slideIdx, setSlideIdx] = useState(0)
   const [comments, setComments] = useState([])
   const [commentLoading, setCommentLoading] = useState(false)

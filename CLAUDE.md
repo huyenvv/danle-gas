@@ -11,7 +11,7 @@ npm workspaces monorepo chứa các ứng dụng Google Apps Script.
 ## Structure
 
 ```
-packages/gas-core/       # Shared GAS modules (config-base, cache, utils, sheets-crud, auth-core, access-token, refresh-token, session-epoch, handoff, sso, drive-io, license)
+packages/gas-core/       # Shared GAS modules (config-base, cache, utils, sheets-crud, auth-core, access-token, refresh-token, session-epoch, sso, drive-io, license)
 apps/sso-portal/         # SSO Portal — centralized login, user management, app launcher (parent app)
 apps/docmgr/             # Quản Lý Tài Liệu — React client + GAS server (SSO child app)
 apps/license-server/     # License activation — standalone GAS Web App + Node dev runner
@@ -22,7 +22,7 @@ scripts/                 # Shared build scripts (bundle-server, obfuscate, conve
 
 - **GAS has no module system.** All files are concatenated into one scope at build time. Order matters.
 - **gas-core** is NOT an npm package — it's plain JS files auto-included by `scripts/bundle-server.js` before app files.
-- **Build concat order:** gas-core (config-base→cache→utils→sheets-crud→auth-core→access-token→refresh-token→session-epoch→handoff→sso→drive-io→license) → app server files (config→sheets→auth→documents→main).
+- **Build concat order:** gas-core (config-base→cache→utils→sheets-crud→auth-core→access-token→refresh-token→session-epoch→sso→drive-io→license) → app server files (config→sheets→auth→documents→main).
 - **Override pattern** for extending gas-core at app level:
   ```js
   var _coreDeleteRow = deleteRow
@@ -82,7 +82,7 @@ Child app (docmgr) — container-bound to its own Google Sheet
   └── License check disabled — SSO Portal manages access
 ```
 
-**Auth modules:** `access-token.js` (mint/validate + cross-script), `refresh-token.js` (single-device), `session-epoch.js` (global revocation), `handoff.js` (legacy).
+**Auth modules:** `access-token.js` (mint/validate + cross-script), `refresh-token.js` (single-device), `session-epoch.js` (global revocation).
 **Cross-script:** Child reads parent's `_Người Dùng` sheet to validate access token (CacheService is per-script, Sheets are shared).
 
 ## Commands
@@ -121,5 +121,5 @@ npm run build:license      # .js → .gs conversion
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/003-yc-phat-hanh/plan.md`
+at `specs/004-bulk-import-data/plan.md`
 <!-- SPECKIT END -->

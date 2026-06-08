@@ -59,12 +59,12 @@ describe('AuditLog — log rendering', () => {
     expect(huyenCells.length).toBeGreaterThanOrEqual(1)
   })
 
-  test('renders type badges (Xác thực, Người dùng)', async () => {
+  test('renders type for each log row (Xác thực, Người dùng)', async () => {
     await goToAuditLog()
-    // 'Xác thực' appears as type badge in 2 rows
-    const xacThucBadges = screen.getAllByText('Xác thực')
-    expect(xacThucBadges.length).toBeGreaterThanOrEqual(2)
-    // 'Người dùng' appears as type badge AND in the tab navigation
+    // Row type is rendered lowercase inline; 2 rows have type 'Xác thực'
+    const xacThuc = screen.getAllByText('xác thực')
+    expect(xacThuc.length).toBeGreaterThanOrEqual(2)
+    // 'Người dùng' (capitalized) appears in the tab nav / type filter
     const nguoiDungEls = screen.getAllByText('Người dùng')
     expect(nguoiDungEls.length).toBeGreaterThanOrEqual(1)
   })

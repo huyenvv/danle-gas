@@ -2,10 +2,10 @@
 // Updated for SSO model: users are managed by parent app, this app only manages roles.
 
 // ── Header constants matching config.js ──────────────────────────────────────
-var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Phân quyền chi tiết', 'Được tạo hồ sơ']
+var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành']
 var DOC_HEADERS = [
   'ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc',
-  'File ID', 'Tên file', 'Loại file', 'Kích thước',
+  'Tệp đính kèm', 'Tên file',
   'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
   'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng',
   'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn'
@@ -38,14 +38,13 @@ function setupDocSheets() {
 // ── Seed a user role in local _Phân Quyền + create session ──────────────────
 function seedUser(id, username, email, role) {
   SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push(
-    [SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.length, id, username, APP_ID, role, '']
+    [SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.length, id, username, APP_ID, role, '', '', '']
   )
   invalidateSheetCache(SHEETS.APP_ROLES)
 }
 
 // ── Create a session directly (SSO session creation) ────────────────────────
 function createSession(userId, username, email, role) {
-  var appRole = { 'Quyền': role, 'Phân quyền chi tiết': '' }
   var sessionData = {
     userId: userId,
     username: username,
@@ -53,7 +52,6 @@ function createSession(userId, username, email, role) {
     role: role,
     mustChangePass: false,
     departments: [],
-    permissions: getPermissions(appRole),
   }
   return mintAccessToken(sessionData)
 }

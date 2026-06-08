@@ -27,8 +27,6 @@ function getAllData(session) {
             name: u['Tên nhân viên'] || u['Tên đăng nhập'] || '',
             email: u['Email'] || '',
             username: u['Tên đăng nhập'] || '',
-            phongBan: u['Phòng ban'] || '',
-            chucVu: u['Chức vụ'] || '',
           }
         })
       }
@@ -52,24 +50,39 @@ function getAllData(session) {
   } catch(e) { Logger.log('getAllData assignments error: ' + e.message) }
 
   // All active SSO employees (for publish dialog — can send email to anyone in company)
-  // Owner's Quyền column may be empty — SSO determines owner at runtime via getOwner().
-  // Mark owner as 'Quản trị' so the client can filter them out when they have no other role.
   var parentOwnerEmail = ''
   try { parentOwnerEmail = (parentSs.getOwner().getEmail() || '').toLowerCase() } catch(e) {}
   var allParentUsers = parentUserRows.filter(function(u) {
     return u['Trạng thái'] === 'Active'
   }).map(function(u) {
-    var quyen = u['Quyền'] || ''
+    var uid = String(u['ID'])
+    var hasAdmin = assignmentsData.some(function(a) { return String(a['UserID']) === uid && a['Chức vụ'] === 'admin' })
+    var quyen = hasAdmin ? 'Quản trị' : ''
     if (!quyen && parentOwnerEmail && (u['Email'] || '').toLowerCase() === parentOwnerEmail) {
       quyen = 'Quản trị'
     }
     return { ID: u['ID'], 'Tên nhân viên': u['Tên nhân viên'] || u['Tên đăng nhập'] || '', 'Email': u['Email'] || '', 'Tên đăng nhập': u['Tên đăng nhập'] || '', 'Quyền': quyen }
   })
 
+  // Build per-user best position from assignments
+  var deptMap = {}
+  phongBanData.forEach(function(d) { deptMap[String(d['ID'])] = d['Tên phòng ban'] })
+  var userPosMap = {}
+  assignmentsData.forEach(function(a) {
+    var uid = String(a['UserID'])
+    var rank = _ROLE_RANK[a['Chức vụ']] || 0
+    if (!userPosMap[uid] || rank > userPosMap[uid].rank) {
+      userPosMap[uid] = {
+        rank: rank,
+        chucVu: a['Chức vụ'],
+        phongBan: a['PhongBanID'] ? (deptMap[String(a['PhongBanID'])] || '') : '',
+      }
+    }
+  })
+
   var users = roles.filter(function(r) { return r['AppID'] === APP_ID }).map(function(r) {
     var info = parentInfoMap[String(r['UserID'])] || {}
-    // SSO _Người Dùng is the source of truth for Tên đăng nhập (session.username comes from there).
-    // APP_ROLES.Tên đăng nhập is a stale cache — only used as fallback when the SSO row is missing.
+    var pos = userPosMap[String(r['UserID'])] || {}
     var role = r['Quyền']
     var isAdminOrVanThu = (role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc' || role === 'Văn thư')
     return {
@@ -77,8 +90,8 @@ function getAllData(session) {
       'Tên đăng nhập': info.username || r['Tên đăng nhập'] || '',
       'Tên nhân viên': info.name || r['Tên đăng nhập'] || '',
       'Email': info.email || '',
-      'Phòng ban': info.phongBan || '',
-      'Chức vụ': info.chucVu || '',
+      'Phòng ban': pos.phongBan || '',
+      'Chức vụ': pos.chucVu || '',
       'Quyền': role,
       'Được phát hành': isAdminOrVanThu || r['Được phát hành'] === 'TRUE' || r['Được phát hành'] === true,
     }

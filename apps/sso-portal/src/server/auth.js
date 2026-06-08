@@ -85,7 +85,7 @@ function login(email, password, deviceType, deviceInfo) {
   var hasAdminPosition = getSheetData(SHEETS.PHAN_BO).some(function(a) {
     return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
   })
-  var isAdmin = isOwner || user['Quyền'] === 'Quản trị' || hasAdminPosition
+  var isAdmin = isOwner || hasAdminPosition
 
   var sessionData = {
     userId: user['ID'],
@@ -163,7 +163,6 @@ function _isOwnerUser(user) {
 }
 
 function _isAdminUser(user) {
-  if (user['Quyền'] === 'Quản trị') return true
   return getSheetData(SHEETS.PHAN_BO).some(function(a) {
     return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
   })
@@ -255,15 +254,37 @@ function portalUnlockUser(token, targetUserId) {
 function getUsers(token) {
   var session = requireAdmin(token)
   var users = getSheetData(SHEETS.USERS)
+  var assignments = getSheetData(SHEETS.PHAN_BO)
+  var depts = getSheetData(SHEETS.PHONG_BAN)
+
+  var deptMap = {}
+  depts.forEach(function(d) { deptMap[String(d['ID'])] = d['Tên phòng ban'] })
 
   var ownerEmail = ''
   try { ownerEmail = getAppSheet().getOwner().getEmail() } catch(e) {}
 
   return users.filter(function(u) {
-    // Owner chỉ hiện cho chính mình
+    // Owner row only visible to the owner
     if (ownerEmail && u['Email'] && u['Email'].toLowerCase() === ownerEmail.toLowerCase()) return session.isOwner
+    // Other admin (Quản trị) accounts are hidden from non-owner admins
+    if (!session.isOwner) {
+      var isAdminRow = assignments.some(function(a) { return String(a['UserID']) === String(u['ID']) && a['Chức vụ'] === 'admin' })
+      if (isAdminRow) return false
+    }
     return true
   }).map(function(u) {
+    var uid = String(u['ID'])
+    var userAssignments = assignments.filter(function(a) { return String(a['UserID']) === uid })
+    var bestRank = 0, bestChucVu = '', bestPhongBan = ''
+    userAssignments.forEach(function(a) {
+      var rank = _getPositionRank(a['Chức vụ'])
+      if (rank > bestRank) {
+        bestRank = rank
+        bestChucVu = a['Chức vụ']
+        bestPhongBan = a['PhongBanID'] ? (deptMap[String(a['PhongBanID'])] || '') : ''
+      }
+    })
+    var hasAdmin = userAssignments.some(function(a) { return a['Chức vụ'] === 'admin' })
     return {
       ID: u['ID'],
       'Tên đăng nhập': u['Tên đăng nhập'],
@@ -272,9 +293,9 @@ function getUsers(token) {
       'Trạng thái': u['Trạng thái'],
       'MustChangePass': u['MustChangePass'],
       'Đăng nhập cuối': u['Đăng nhập cuối'],
-      'Phòng ban': u['Phòng ban'] || '',
-      'Chức vụ': u['Chức vụ'] || '',
-      'Quyền': u['Quyền'] || '',
+      'Phòng ban': bestPhongBan,
+      'Chức vụ': bestChucVu,
+      'Quyền': hasAdmin ? 'Quản trị' : '',
     }
   })
 }
@@ -308,13 +329,17 @@ function addUser(token, data) {
     'Trạng thái': 'Active',
     'MustChangePass': 'TRUE',
     'Đăng nhập cuối': '',
-    'Phòng ban': '',
-    'Chức vụ': '',
-    'Quyền': data['Quyền'] || '',
   }
+  if (data['Quyền'] === 'Quản trị' && !session.isOwner) {
+    throw new Error('Chỉ chủ sở hữu mới có quyền cấp quyền Quản trị')
+  }
+
   var added = addRow(SHEETS.USERS, userData)
 
-  // Send email notification if configured
+  if (data['Quyền'] === 'Quản trị') {
+    addRow(SHEETS.PHAN_BO, { 'UserID': String(added.ID), 'Chức vụ': 'admin', 'PhongBanID': '' })
+  }
+
   _notifyNewUser(email, username, data['Tên nhân viên'] || '')
 
   logAudit(session, 'Thêm', 'Người dùng', email, '')
@@ -333,8 +358,21 @@ function updateUser(token, id, data) {
   if (!ownerSelfEdit && data['Tên đăng nhập'] !== undefined) updateData['Tên đăng nhập'] = data['Tên đăng nhập']
   if (!ownerSelfEdit && data['Email'] !== undefined) updateData['Email'] = data['Email']
   if (data['Tên nhân viên'] !== undefined) updateData['Tên nhân viên'] = data['Tên nhân viên']
-  if (!ownerSelfEdit && data['Quyền'] !== undefined) updateData['Quyền'] = data['Quyền']
-  // Phòng ban + Chức vụ are derived from _Phân Bổ — not editable directly
+  if (!ownerSelfEdit && data['Quyền'] !== undefined) {
+    var wantAdmin = data['Quyền'] === 'Quản trị'
+    var hasAdmin = _isAdminUser(target)
+    if (wantAdmin !== hasAdmin && !session.isOwner) {
+      throw new Error('Chỉ chủ sở hữu mới có quyền thay đổi quyền Quản trị')
+    }
+    if (wantAdmin && !hasAdmin) {
+      addRow(SHEETS.PHAN_BO, { 'UserID': String(id), 'Chức vụ': 'admin', 'PhongBanID': '' })
+    } else if (!wantAdmin && hasAdmin) {
+      var adminAssignment = getSheetData(SHEETS.PHAN_BO).find(function(a) {
+        return String(a['UserID']) === String(id) && a['Chức vụ'] === 'admin'
+      })
+      if (adminAssignment) deleteRow(SHEETS.PHAN_BO, adminAssignment['ID'])
+    }
+  }
   if (Object.keys(updateData).length > 0) {
     var diff = _buildDiff(target, updateData)
     updateRow(SHEETS.USERS, id, updateData)
@@ -461,7 +499,6 @@ function addPhongBan(token, data) {
 
   var rowData = { 'Tên phòng ban': name }
   if (data['Mô tả'] !== undefined) rowData['Mô tả'] = data['Mô tả']
-  if (data['Người phụ trách'] !== undefined) rowData['Người phụ trách'] = data['Người phụ trách']
   if (data['Đơn vị thuộc sự quản lý'] !== undefined) rowData['Đơn vị thuộc sự quản lý'] = data['Đơn vị thuộc sự quản lý']
   var added = addRow(SHEETS.PHONG_BAN, rowData)
   logAudit(session, 'Thêm', 'Phòng ban', name, '')
@@ -477,9 +514,6 @@ function updatePhongBan(token, id, data) {
   var updateData = {}
   if (data['Tên phòng ban'] !== undefined) updateData['Tên phòng ban'] = data['Tên phòng ban']
   if (data['Mô tả'] !== undefined) updateData['Mô tả'] = data['Mô tả']
-  if (data['Trưởng'] !== undefined) updateData['Trưởng'] = data['Trưởng']
-  if (data['Phó'] !== undefined) updateData['Phó'] = data['Phó']
-  if (data['Người phụ trách'] !== undefined) updateData['Người phụ trách'] = data['Người phụ trách']
   if (data['Đơn vị thuộc sự quản lý'] !== undefined) updateData['Đơn vị thuộc sự quản lý'] = data['Đơn vị thuộc sự quản lý']
 
   if (Object.keys(updateData).length > 0) {
@@ -501,7 +535,6 @@ function deletePhongBan(token, id) {
   if (hasMembers) throw new Error('Không thể xóa phòng ban vẫn còn nhân viên. Hãy chuyển hết nhân viên trước.')
 
   deleteRow(SHEETS.PHONG_BAN, id)
-  _syncUsersFromStructure()
   logAudit(session, 'Xóa', 'Phòng ban', dept['Tên phòng ban'] || id, '')
   return { success: true }
 }
@@ -524,77 +557,6 @@ function getOrgStructure(token) {
   }
 }
 
-function saveAssignment(token, data) {
-  var session = requireAdmin(token)
-  var userId = String(data.userId)
-  var chucVu = data.chucVu
-  var phongBanId = data.phongBanId || ''
-
-  if (!userId || !chucVu) throw new Error('Thiếu thông tin')
-  if (chucVu === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền phân bổ admin')
-
-  // Validate position exists
-  var pos = POSITIONS.find(function(p) { return p.code === chucVu })
-  if (!pos) throw new Error('Chức vụ không hợp lệ')
-
-  // Validate scope
-  if (pos.scope === 'dept' && !phongBanId) throw new Error('Chức vụ này yêu cầu phòng ban')
-  if (pos.scope === 'company' && phongBanId) phongBanId = '' // company-level ignores dept
-
-  var assignments = getSheetData(SHEETS.PHAN_BO)
-
-  // Check max constraint
-  if (pos.max > 0) {
-    var count = assignments.filter(function(a) {
-      if (a['Chức vụ'] !== chucVu) return false
-      if (pos.scope === 'dept') return String(a['PhongBanID']) === String(phongBanId)
-      return true // company scope
-    }).length
-    if (count >= pos.max) {
-      var where = pos.scope === 'dept' ? ' trong phòng ban này' : ''
-      throw new Error('Chỉ được tối đa ' + pos.max + ' ' + chucVu + where)
-    }
-  }
-
-  // Check duplicate: same user + same position + same dept
-  var dup = assignments.find(function(a) {
-    return String(a['UserID']) === userId &&
-           a['Chức vụ'] === chucVu &&
-           String(a['PhongBanID'] || '') === String(phongBanId)
-  })
-  if (dup) throw new Error('Phân bổ này đã tồn tại')
-
-  // Check: no two positions in the same dept for the same user
-  if (pos.scope === 'dept' && phongBanId) {
-    var sameUserDept = assignments.find(function(a) {
-      return String(a['UserID']) === userId &&
-             String(a['PhongBanID']) === String(phongBanId)
-    })
-    if (sameUserDept) throw new Error('Người dùng đã có vị trí trong phòng ban này (' + sameUserDept['Chức vụ'] + ')')
-  }
-
-  var added = addRow(SHEETS.PHAN_BO, {
-    'UserID': userId,
-    'Chức vụ': chucVu,
-    'PhongBanID': phongBanId,
-  })
-
-  _syncUsersFromStructure()
-
-  var users = getSheetData(SHEETS.USERS)
-  var user = users.find(function(u) { return String(u['ID']) === userId })
-  var userName = user ? (user['Tên nhân viên'] || user['Email']) : userId
-  var addTarget = userName + ' làm ' + chucVu
-  if (phongBanId) {
-    var allDepts = getSheetData(SHEETS.PHONG_BAN)
-    var addDept = allDepts.find(function(d) { return String(d['ID']) === String(phongBanId) })
-    if (addDept) addTarget += ' — ' + addDept['Tên phòng ban']
-  }
-  logAudit(session, 'Phân bổ', 'Bộ máy', addTarget, '')
-
-  return added
-}
-
 function batchSaveAssignments(token, operations) {
   var session = requireAdmin(token)
   var adds = operations.adds || []
@@ -602,158 +564,95 @@ function batchSaveAssignments(token, operations) {
 
   if (adds.length === 0 && removes.length === 0) return { success: true }
 
-  var assignments = getSheetData(SHEETS.PHAN_BO)
-  var depts = getSheetData(SHEETS.PHONG_BAN)
-  var users = getSheetData(SHEETS.USERS)
-
-  // --- Validate & execute removes first ---
-  removes.forEach(function(assignmentId) {
-    var assignment = assignments.find(function(a) { return String(a['ID']) === String(assignmentId) })
-    if (!assignment) throw new Error('Không tìm thấy phân bổ ID ' + assignmentId)
-    deleteRow(SHEETS.PHAN_BO, assignmentId)
-    var u = users.find(function(u) { return String(u['ID']) === String(assignment['UserID']) })
-    var userName = u ? (u['Tên nhân viên'] || u['Email']) : assignment['UserID']
-    var rmTarget = userName + ' khỏi vị trí ' + assignment['Chức vụ']
-    if (assignment['PhongBanID']) {
-      var dept = depts.find(function(d) { return String(d['ID']) === String(assignment['PhongBanID']) })
-      if (dept) rmTarget += ' — ' + dept['Tên phòng ban']
-    }
-    logAudit(session, 'Xóa', 'Bộ máy', rmTarget, '')
-  })
-
-  // Re-read after removes
-  if (removes.length > 0) {
+  // Single lock for the whole validate-then-mutate sequence so concurrent calls
+  // can't race past each other's max/duplicate checks. Use the *unlocked* CRUD
+  // primitives inside — the locking variants would release this lock early.
+  var lock = LockService.getScriptLock()
+  lock.waitLock(15000)
+  try {
     invalidateSheetCache(SHEETS.PHAN_BO)
-    assignments = getSheetData(SHEETS.PHAN_BO)
-  }
-
-  // --- Validate & execute adds ---
-  adds.forEach(function(data) {
-    var userId = String(data.userId)
-    var chucVu = data.chucVu
-    var phongBanId = data.phongBanId || ''
-
-    if (!userId || !chucVu) throw new Error('Thiếu thông tin')
-
-    var pos = POSITIONS.find(function(p) { return p.code === chucVu })
-    if (!pos) throw new Error('Chức vụ không hợp lệ: ' + chucVu)
-
-    if (pos.scope === 'dept' && !phongBanId) throw new Error('Chức vụ ' + chucVu + ' yêu cầu phòng ban')
-    if (pos.scope === 'company' && phongBanId) phongBanId = ''
-
-    if (pos.max > 0) {
-      var count = assignments.filter(function(a) {
-        if (a['Chức vụ'] !== chucVu) return false
-        if (pos.scope === 'dept') return String(a['PhongBanID']) === String(phongBanId)
-        return true
-      }).length
-      if (count >= pos.max) {
-        var where = pos.scope === 'dept' ? ' trong phòng ban này' : ''
-        throw new Error('Chỉ được tối đa ' + pos.max + ' ' + chucVu + where)
-      }
-    }
-
-    var dup = assignments.find(function(a) {
-      return String(a['UserID']) === userId && a['Chức vụ'] === chucVu && String(a['PhongBanID'] || '') === String(phongBanId)
-    })
-    if (dup) throw new Error('Phân bổ đã tồn tại: ' + chucVu + ' cho user ' + userId)
-
-    if (pos.scope === 'dept' && phongBanId) {
-      var sameUserDept = assignments.find(function(a) {
-        return String(a['UserID']) === userId && String(a['PhongBanID']) === String(phongBanId)
-      })
-      if (sameUserDept) throw new Error('Người dùng đã có vị trí trong phòng ban này (' + sameUserDept['Chức vụ'] + ')')
-    }
-
-    var added = addRow(SHEETS.PHAN_BO, { 'UserID': userId, 'Chức vụ': chucVu, 'PhongBanID': phongBanId })
-    // Track the new row in our working copy for subsequent validations
-    assignments.push({ ID: added.ID || (assignments.length + 1), 'UserID': userId, 'Chức vụ': chucVu, 'PhongBanID': phongBanId })
-
-    var u = users.find(function(u) { return String(u['ID']) === userId })
-    var userName = u ? (u['Tên nhân viên'] || u['Email']) : userId
-    var batchAddTarget = userName + ' làm ' + chucVu
-    if (phongBanId) {
-      var batchDept = depts.find(function(d) { return String(d['ID']) === String(phongBanId) })
-      if (batchDept) batchAddTarget += ' — ' + batchDept['Tên phòng ban']
-    }
-    logAudit(session, 'Phân bổ', 'Bộ máy', batchAddTarget, '')
-  })
-
-  // Sync users ONCE at the end
-  _syncUsersFromStructure()
-
-  return { success: true, added: adds.length, removed: removes.length }
-}
-
-function removeAssignment(token, assignmentId) {
-  var session = requireAdmin(token)
-  var assignments = getSheetData(SHEETS.PHAN_BO)
-  var assignment = assignments.find(function(a) { return String(a['ID']) === String(assignmentId) })
-  if (!assignment) throw new Error('Không tìm thấy phân bổ')
-  if (assignment['Chức vụ'] === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền xóa phân bổ admin')
-
-  var users = getSheetData(SHEETS.USERS)
-  var user = users.find(function(u) { return String(u['ID']) === String(assignment['UserID']) })
-  var userName = user ? (user['Tên nhân viên'] || user['Email']) : assignment['UserID']
-
-  deleteRow(SHEETS.PHAN_BO, assignmentId)
-  _syncUsersFromStructure()
-
-  var rmTarget = userName + ' khỏi vị trí ' + assignment['Chức vụ']
-  if (assignment['PhongBanID']) {
+    var assignments = getSheetData(SHEETS.PHAN_BO)
     var depts = getSheetData(SHEETS.PHONG_BAN)
-    var dept = depts.find(function(d) { return String(d['ID']) === String(assignment['PhongBanID']) })
-    if (dept) rmTarget += ' — ' + dept['Tên phòng ban']
-  }
-  logAudit(session, 'Xóa', 'Bộ máy', rmTarget, '')
-  return { success: true }
-}
+    var users = getSheetData(SHEETS.USERS)
 
-function _syncUsersFromStructure() {
-  var assignments = getSheetData(SHEETS.PHAN_BO)
-  var users = getSheetData(SHEETS.USERS)
-  var depts = getSheetData(SHEETS.PHONG_BAN)
-
-  // Build dept ID → name map
-  var deptMap = {}
-  depts.forEach(function(d) { deptMap[String(d['ID'])] = d['Tên phòng ban'] })
-
-  // For each user, find the highest-rank assignment → set Chức vụ + Phòng ban
-  users.forEach(function(u) {
-    var uid = String(u['ID'])
-    var userAssignments = assignments.filter(function(a) { return String(a['UserID']) === uid })
-
-    var bestRank = 0
-    var bestChucVu = ''
-    var bestPhongBan = ''
-
-    userAssignments.forEach(function(a) {
-      var rank = _getPositionRank(a['Chức vụ'])
-      if (rank > bestRank) {
-        bestRank = rank
-        bestChucVu = a['Chức vụ']
-        bestPhongBan = a['PhongBanID'] ? (deptMap[String(a['PhongBanID'])] || '') : ''
+    // --- Validate & execute removes first ---
+    removes.forEach(function(assignmentId) {
+      var assignment = assignments.find(function(a) { return String(a['ID']) === String(assignmentId) })
+      if (!assignment) throw new Error('Không tìm thấy phân bổ ID ' + assignmentId)
+      _deleteRowUnlocked(SHEETS.PHAN_BO, assignmentId)
+      var u = users.find(function(u) { return String(u['ID']) === String(assignment['UserID']) })
+      var userName = u ? (u['Tên nhân viên'] || u['Email']) : assignment['UserID']
+      var rmTarget = userName + ' khỏi vị trí ' + assignment['Chức vụ']
+      if (assignment['PhongBanID']) {
+        var dept = depts.find(function(d) { return String(d['ID']) === String(assignment['PhongBanID']) })
+        if (dept) rmTarget += ' — ' + dept['Tên phòng ban']
       }
+      logAudit(session, 'Xóa', 'Bộ máy', rmTarget, '')
     })
 
-    var currentChucVu = u['Chức vụ'] || ''
-    var currentPhongBan = u['Phòng ban'] || ''
-    var currentQuyen = u['Quyền'] || ''
-
-    var hasAdminPosition = userAssignments.some(function(a) { return a['Chức vụ'] === 'admin' })
-    var bestQuyen = hasAdminPosition ? 'Quản trị' : ''
-
-    if (currentChucVu !== bestChucVu || currentPhongBan !== bestPhongBan || currentQuyen !== bestQuyen) {
-      updateRow(SHEETS.USERS, u['ID'], {
-        'Chức vụ': bestChucVu,
-        'Phòng ban': bestPhongBan,
-        'Quyền': bestQuyen,
-      })
+    // Re-read after removes (still under lock)
+    if (removes.length > 0) {
+      invalidateSheetCache(SHEETS.PHAN_BO)
+      assignments = getSheetData(SHEETS.PHAN_BO)
     }
-  })
 
-  invalidateSheetCache(SHEETS.USERS)
-  invalidateSheetCache(SHEETS.PHAN_BO)
+    // --- Validate & execute adds ---
+    adds.forEach(function(data) {
+      var userId = String(data.userId)
+      var chucVu = data.chucVu
+      var phongBanId = data.phongBanId || ''
+
+      if (!userId || !chucVu) throw new Error('Thiếu thông tin')
+      if (chucVu === 'admin' && !session.isOwner) throw new Error('Chỉ chủ sở hữu mới có quyền phân bổ admin')
+
+      var pos = POSITIONS.find(function(p) { return p.code === chucVu })
+      if (!pos) throw new Error('Chức vụ không hợp lệ: ' + chucVu)
+
+      if (pos.scope === 'dept' && !phongBanId) throw new Error('Chức vụ ' + chucVu + ' yêu cầu phòng ban')
+      if (pos.scope === 'company' && phongBanId) phongBanId = ''
+
+      if (pos.max > 0) {
+        var count = assignments.filter(function(a) {
+          if (a['Chức vụ'] !== chucVu) return false
+          if (pos.scope === 'dept') return String(a['PhongBanID']) === String(phongBanId)
+          return true
+        }).length
+        if (count >= pos.max) {
+          var where = pos.scope === 'dept' ? ' trong phòng ban này' : ''
+          throw new Error('Chỉ được tối đa ' + pos.max + ' ' + chucVu + where)
+        }
+      }
+
+      var dup = assignments.find(function(a) {
+        return String(a['UserID']) === userId && a['Chức vụ'] === chucVu && String(a['PhongBanID'] || '') === String(phongBanId)
+      })
+      if (dup) throw new Error('Phân bổ đã tồn tại: ' + chucVu + ' cho user ' + userId)
+
+      if (pos.scope === 'dept' && phongBanId) {
+        var sameUserDept = assignments.find(function(a) {
+          return String(a['UserID']) === userId && String(a['PhongBanID']) === String(phongBanId)
+        })
+        if (sameUserDept) throw new Error('Người dùng đã có vị trí trong phòng ban này (' + sameUserDept['Chức vụ'] + ')')
+      }
+
+      var added = _addRowUnlocked(SHEETS.PHAN_BO, { 'UserID': userId, 'Chức vụ': chucVu, 'PhongBanID': phongBanId })
+      // Track the new row in our working copy for subsequent validations
+      assignments.push({ ID: added.ID || (assignments.length + 1), 'UserID': userId, 'Chức vụ': chucVu, 'PhongBanID': phongBanId })
+
+      var u = users.find(function(u) { return String(u['ID']) === userId })
+      var userName = u ? (u['Tên nhân viên'] || u['Email']) : userId
+      var batchAddTarget = userName + ' làm ' + chucVu
+      if (phongBanId) {
+        var batchDept = depts.find(function(d) { return String(d['ID']) === String(phongBanId) })
+        if (batchDept) batchAddTarget += ' — ' + batchDept['Tên phòng ban']
+      }
+      logAudit(session, 'Phân bổ', 'Bộ máy', batchAddTarget, '')
+    })
+
+    return { success: true, added: adds.length, removed: removes.length }
+  } finally {
+    lock.releaseLock()
+  }
 }
 
 // ===== Email notifications =====

@@ -26,7 +26,6 @@ const GAS_CORE_FILES = [
   'access-token.js',
   'refresh-token.js',
   'session-epoch.js',
-  'handoff.js',
   'sso.js',
   'drive-io.js',
   'license.js',

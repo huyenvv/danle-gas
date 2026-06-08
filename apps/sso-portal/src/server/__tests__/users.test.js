@@ -1,5 +1,5 @@
 require('./setup.js')
-const { resetAll, setupAllSheets, seedUser, createAdminSession } = require('./helpers')
+const { resetAll, setupAllSheets, seedUser, seedAssignment, createAdminSession } = require('./helpers')
 
 var adminToken
 
@@ -16,7 +16,8 @@ beforeEach(() => {
 
 describe('getUsers', () => {
   test('admin sees regular users but not Quản trị accounts', () => {
-    seedUser(4, 'other-admin', 'other-admin@test.com', { quyen: 'Quản trị' })
+    seedUser(4, 'other-admin', 'other-admin@test.com', {})
+    seedAssignment(99, 4, 'admin', '') // admin status now derived from _Phân Bổ
     var users = getUsers(adminToken)
     var ids = users.map(function(u) { return String(u.ID) })
     expect(ids).toContain('2')
@@ -81,14 +82,28 @@ describe('addUser', () => {
   })
 
   test('new user Phòng ban and Chức vụ are empty', () => {
-    var result = addUser(adminToken, { 'Email': 'new@test.com' })
-    expect(result['Phòng ban']).toBe('')
-    expect(result['Chức vụ']).toBe('')
+    var added = addUser(adminToken, { 'Email': 'new@test.com' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === String(added.ID) })
+    expect(user['Phòng ban']).toBe('')
+    expect(user['Chức vụ']).toBe('')
   })
 
   test('throws for non-admin', () => {
     var userToken = login('huyenvv@test.com', 'Admin@@123', 'desktop').accessToken
     expect(() => addUser(userToken, { 'Email': 'x@test.com' })).toThrow()
+  })
+
+  test('non-owner admin cannot grant Quản trị', () => {
+    expect(() => addUser(adminToken, { 'Email': 'adm@test.com', 'Quyền': 'Quản trị' })).toThrow('chủ sở hữu')
+  })
+
+  test('owner can grant Quản trị (creates admin assignment in _Phân Bổ)', () => {
+    var ownerToken = mintAccessToken({ userId: 1, username: 'admin', email: 'admin@test.com', role: 'admin', isOwner: true }, SHEETS.USERS)
+    var added = addUser(ownerToken, { 'Email': 'adm@test.com', 'Quyền': 'Quản trị' })
+    var adminRows = getSheetData(SHEETS.PHAN_BO).filter(function(a) {
+      return String(a['UserID']) === String(added.ID) && a['Chức vụ'] === 'admin'
+    })
+    expect(adminRows.length).toBe(1)
   })
 })
 
@@ -113,6 +128,19 @@ describe('updateUser', () => {
   test('throws for non-admin', () => {
     var userToken = login('huyenvv@test.com', 'Admin@@123', 'desktop').accessToken
     expect(() => updateUser(userToken, 3, { 'Tên nhân viên': 'X' })).toThrow()
+  })
+
+  test('non-owner admin cannot grant Quản trị', () => {
+    expect(() => updateUser(adminToken, 2, { 'Quyền': 'Quản trị' })).toThrow('chủ sở hữu')
+  })
+
+  test('owner can grant/revoke Quản trị via _Phân Bổ', () => {
+    var ownerToken = mintAccessToken({ userId: 1, username: 'admin', email: 'admin@test.com', role: 'admin', isOwner: true }, SHEETS.USERS)
+    updateUser(ownerToken, 2, { 'Quyền': 'Quản trị' })
+    var adminRows = getSheetData(SHEETS.PHAN_BO).filter(function(a) {
+      return String(a['UserID']) === '2' && a['Chức vụ'] === 'admin'
+    })
+    expect(adminRows.length).toBe(1)
   })
 })
 

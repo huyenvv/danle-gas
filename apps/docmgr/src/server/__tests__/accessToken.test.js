@@ -18,6 +18,16 @@ describe('access token primitives', () => {
     expect(validateAccessToken('nope')).toBeNull()
   })
 
+  test('mintAccessToken sweeps expired token backups (GC)', () => {
+    loadGAS()
+    const props = PropertiesService.getScriptProperties()
+    props.setProperty('at_bk_expired', JSON.stringify({ s: {}, e: 1 }))
+    props.setProperty('at_bk_future', JSON.stringify({ s: {}, e: Date.now() + 1e9 }))
+    mintAccessToken({ userId: 'gc1' }) // triggers throttled GC (no prior gc timestamp)
+    expect(props.getProperty('at_bk_expired')).toBeNull()
+    expect(props.getProperty('at_bk_future')).not.toBeNull()
+  })
+
   test('revokeAccessToken kills the token', () => {
     loadGAS()
     const token = mintAccessToken({ userId: 'u1' })

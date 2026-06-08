@@ -8,6 +8,7 @@
     "build:server": "node ../../scripts/bundle-server.js --app workmgr",
     "build:obfuscate": "node ../../scripts/obfuscate.js --app workmgr",
     "build": "npm run build:client && npm run build:server && npm run build:obfuscate",
+    "test": "jest --config jest.config.js",
     "deploy": "clasp push --force && clasp deploy"
   },
   "dependencies": {

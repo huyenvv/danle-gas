@@ -1,10 +1,11 @@
 require('./setup.js')
-const { resetAll, setupAllSheets, seedUser, createAdminSession } = require('./helpers')
+const { resetAll, setupAllSheets, seedUser, seedAssignment, createAdminSession } = require('./helpers')
 
 beforeEach(() => {
   resetAll()
   setupAllSheets()
-  seedUser(1, 'admin', 'admin@test.com', { quyen: 'Quản trị', name: 'Admin' })
+  seedUser(1, 'admin', 'admin@test.com', { name: 'Admin' })
+  seedAssignment(1, 1, 'admin', '')  // admin role derived from _Phân Bổ
   seedUser(2, 'huyenvv', 'huyenvv@test.com', { name: 'Huyên' })
   seedUser(3, 'locked', 'locked@test.com', { status: 'Locked' })
 })

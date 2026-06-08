@@ -2,13 +2,36 @@
 
 var ACCESS_TOKEN_TTL = 604800 // 7 days
 
+var _AT_BK_GC_KEY = 'at_bk_last_gc'
+var _AT_BK_GC_INTERVAL_MS = 3600000 // run GC at most hourly
+
+// Sweep expired at_bk_* token backups so ScriptProperties doesn't grow unbounded.
+// Throttled to once an hour so it costs nothing on the hot path; no trigger needed.
+function _maybeCleanupTokenBackups() {
+  try {
+    var props = PropertiesService.getScriptProperties()
+    var now = new Date().getTime()
+    var last = Number(props.getProperty(_AT_BK_GC_KEY) || 0)
+    if (now - last < _AT_BK_GC_INTERVAL_MS) return
+    props.setProperty(_AT_BK_GC_KEY, String(now))
+    var all = props.getProperties()
+    for (var k in all) {
+      if (k.indexOf('at_bk_') !== 0 || k === _AT_BK_GC_KEY) continue
+      var expired = true
+      try { expired = !(JSON.parse(all[k]).e > now) } catch(_) { expired = true }
+      if (expired) props.deleteProperty(k)
+    }
+  } catch(_) {}
+}
+
 function mintAccessToken(sessionData, usersSheetName) {
   if (!sessionData) throw new Error('mintAccessToken: sessionData required')
   var token = generateUuid()
   var expiresAt = new Date().getTime() + ACCESS_TOKEN_TTL * 1000
   cachePut('at_' + token, sessionData, ACCESS_TOKEN_TTL)
-  // Backup session for cache-miss fallback (cache caps at 6h, token lives up to 24h)
+  // Backup session for cache-miss fallback (cache caps at 6h, token lives up to 7d)
   try { PropertiesService.getScriptProperties().setProperty('at_bk_' + token, JSON.stringify({ s: sessionData, e: expiresAt })) } catch(_) {}
+  _maybeCleanupTokenBackups()
   if (usersSheetName && sessionData.userId) {
     updateRow(usersSheetName, sessionData.userId, {
       'AccessToken': token,
@@ -54,8 +77,6 @@ function validateAccessTokenCrossScript(parentSheetId, token) {
     email: headers.indexOf('Email'),
     name: headers.indexOf('Tên nhân viên'),
     status: headers.indexOf('Trạng thái'),
-    dept: headers.indexOf('Phòng ban'),
-    chucVu: headers.indexOf('Chức vụ'),
     at: headers.indexOf('AccessToken'),
     exp: headers.indexOf('AccessTokenExpiry'),
   }
@@ -69,8 +90,6 @@ function validateAccessTokenCrossScript(parentSheetId, token) {
         username: data[i][col.username],
         email: data[i][col.email],
         name: data[i][col.name] || data[i][col.username] || '',
-        department: data[i][col.dept] || '',
-        chucVu: col.chucVu !== -1 ? (data[i][col.chucVu] || 'Nhân viên') : 'Nhân viên',
       }
     }
   }

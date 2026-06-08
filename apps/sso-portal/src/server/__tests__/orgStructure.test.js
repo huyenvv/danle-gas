@@ -40,166 +40,64 @@ describe('getOrgStructure', () => {
 
 // ── saveAssignment ──────────────────────────────────────────────────────────
 
-describe('saveAssignment', () => {
-  test('creates a dept-level assignment', () => {
-    var result = saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    expect(result.ID).toBeDefined()
-    expect(result['UserID']).toBe('2')
-    expect(result['Chức vụ']).toBe('Trưởng phòng')
-    expect(result['PhongBanID']).toBe(1)
-  })
-
-  test('creates a company-level assignment (no dept)', () => {
-    var result = saveAssignment(adminToken, { userId: 2, chucVu: 'Giám đốc' })
-    expect(result['PhongBanID']).toBe('')
-  })
-
-  test('syncs user Chức vụ + Phòng ban after assignment', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    invalidateSheetCache(SHEETS.USERS)
-    var users = getSheetData(SHEETS.USERS)
-    var user = users.find(function(u) { return String(u['ID']) === '2' })
-    expect(user['Chức vụ']).toBe('Trưởng phòng')
-    expect(user['Phòng ban']).toBe('Kỹ thuật')
-  })
-
+// Assignment create/validation is covered by batchSaveAssignments.test.js.
+// These cover the getUsers derivation across multiple assignments.
+describe('getUsers derivation — multiple assignments', () => {
   test('user with multiple assignments gets highest-rank position', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 2 })
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    invalidateSheetCache(SHEETS.USERS)
-    var users = getSheetData(SHEETS.USERS)
-    var user = users.find(function(u) { return String(u['ID']) === '2' })
-    // Trưởng phòng (rank 70) > Nhân viên (rank 10)
+    seedAssignment(1, 2, 'Nhân viên', 2)
+    seedAssignment(2, 2, 'Trưởng phòng', 1)
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '2' })
+    // Trưởng phòng (rank 60) > Nhân viên (rank 10)
     expect(user['Chức vụ']).toBe('Trưởng phòng')
     expect(user['Phòng ban']).toBe('Kỹ thuật')
-  })
-
-  test('rejects invalid position', () => {
-    expect(() => saveAssignment(adminToken, { userId: 2, chucVu: 'Thượng đế' })).toThrow('Chức vụ không hợp lệ')
-  })
-
-  test('rejects dept position without phongBanId', () => {
-    expect(() => saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng' })).toThrow('yêu cầu phòng ban')
-  })
-
-  test('enforces max=1 for Giám đốc', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Giám đốc' })
-    expect(() => saveAssignment(adminToken, { userId: 3, chucVu: 'Giám đốc' })).toThrow('tối đa 1')
-  })
-
-  test('enforces max=1 Trưởng phòng per dept', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    expect(() => saveAssignment(adminToken, { userId: 3, chucVu: 'Trưởng phòng', phongBanId: 1 })).toThrow('tối đa 1')
-  })
-
-  test('allows Trưởng phòng in different depts', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    var result = saveAssignment(adminToken, { userId: 3, chucVu: 'Trưởng phòng', phongBanId: 2 })
-    expect(result.ID).toBeDefined()
-  })
-
-  test('rejects duplicate assignment', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 1 })
-    expect(() => saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 1 })).toThrow('đã tồn tại')
-  })
-
-  test('rejects same user with two positions in same dept', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 1 })
-    expect(() => saveAssignment(adminToken, { userId: 2, chucVu: 'Phó phòng', phongBanId: 1 })).toThrow('đã có vị trí trong phòng ban này')
-  })
-
-  test('allows same user in different depts', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    var result = saveAssignment(adminToken, { userId: 2, chucVu: 'Phó phòng', phongBanId: 2 })
-    expect(result.ID).toBeDefined()
-  })
-
-  test('allows unlimited Phó GĐ (max=-1)', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Phó GĐ' })
-    saveAssignment(adminToken, { userId: 3, chucVu: 'Phó GĐ' })
-    var assignments = getSheetData(SHEETS.PHAN_BO)
-    var phoGd = assignments.filter(function(a) { return a['Chức vụ'] === 'Phó GĐ' })
-    expect(phoGd).toHaveLength(2)
-  })
-
-  test('company-level ignores phongBanId', () => {
-    var result = saveAssignment(adminToken, { userId: 2, chucVu: 'Văn thư', phongBanId: 1 })
-    expect(result['PhongBanID']).toBe('')
-  })
-
-  test('throws for non-admin', () => {
-    var userToken = mintAccessToken({ userId: 2, username: 'huyenvv', email: 'huyenvv@test.com', role: 'user' })
-    expect(() => saveAssignment(userToken, { userId: 3, chucVu: 'Nhân viên', phongBanId: 1 })).toThrow()
   })
 })
 
-// ── removeAssignment ────────────────────────────────────────────────────────
+// ── batchSaveAssignments removes → derived fields ───────────────────────────
 
-describe('removeAssignment', () => {
-  test('removes an assignment and syncs user fields', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    var assignments = getSheetData(SHEETS.PHAN_BO)
-    var aid = assignments[0].ID
-
-    removeAssignment(adminToken, aid)
+describe('batchSaveAssignments removes — derived fields', () => {
+  test('removing the only assignment clears derived fields', () => {
+    seedAssignment(1, 2, 'Trưởng phòng', 1)
+    batchSaveAssignments(adminToken, { removes: [1] })
 
     invalidateSheetCache(SHEETS.PHAN_BO)
     expect(getSheetData(SHEETS.PHAN_BO)).toHaveLength(0)
 
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '2' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '2' })
     expect(user['Chức vụ']).toBe('')
     expect(user['Phòng ban']).toBe('')
   })
 
   test('removing one of multiple assignments keeps the best', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 2 })
+    seedAssignment(1, 2, 'Trưởng phòng', 1)
+    seedAssignment(2, 2, 'Nhân viên', 2)
+    batchSaveAssignments(adminToken, { removes: [1] })
 
-    // Remove TP assignment
-    invalidateSheetCache(SHEETS.PHAN_BO)
-    var assignments = getSheetData(SHEETS.PHAN_BO)
-    var tpAssignment = assignments.find(function(a) { return a['Chức vụ'] === 'Trưởng phòng' })
-    removeAssignment(adminToken, tpAssignment.ID)
-
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '2' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '2' })
     expect(user['Chức vụ']).toBe('Nhân viên')
     expect(user['Phòng ban']).toBe('Kinh doanh')
   })
-
-  test('throws for non-existent assignment', () => {
-    expect(() => removeAssignment(adminToken, 999)).toThrow('Không tìm thấy phân bổ')
-  })
 })
 
-// ── _syncUsersFromStructure ─────────────────────────────────────────────────
+// ── getUsers derives position from _Phân Bổ ──────────────────────────────────
 
-describe('_syncUsersFromStructure', () => {
-  test('clears user fields when no assignments exist', () => {
-    // Pre-set some values
-    seedUser(5, 'user5', 'user5@test.com', { chucVu: 'Nhân viên', phongBan: 'Kỹ thuật' })
-    _syncUsersFromStructure()
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '5' })
+describe('getUsers derivation', () => {
+  test('empty Chức vụ + Phòng ban when no assignments exist', () => {
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '3' })
     expect(user['Chức vụ']).toBe('')
     expect(user['Phòng ban']).toBe('')
   })
 
   test('sets correct dept name from phongBanId', () => {
     seedAssignment(1, 3, 'Nhân viên', 2)
-    _syncUsersFromStructure()
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '3' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '3' })
     expect(user['Chức vụ']).toBe('Nhân viên')
     expect(user['Phòng ban']).toBe('Kinh doanh')
   })
 
   test('company-level assignment sets empty phongBan', () => {
     seedAssignment(1, 2, 'Giám đốc', '')
-    _syncUsersFromStructure()
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '2' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === '2' })
     expect(user['Chức vụ']).toBe('Giám đốc')
     expect(user['Phòng ban']).toBe('')
   })
@@ -207,28 +105,17 @@ describe('_syncUsersFromStructure', () => {
 
 // ── deletePhongBan cascade ──────────────────────────────────────────────────
 
-describe('deletePhongBan cascade', () => {
-  test('cascade-deletes assignments when dept is deleted', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    saveAssignment(adminToken, { userId: 3, chucVu: 'Nhân viên', phongBanId: 1 })
-    saveAssignment(adminToken, { userId: 4, chucVu: 'Nhân viên', phongBanId: 2 })
-
-    deletePhongBan(adminToken, 1)
-
-    invalidateSheetCache(SHEETS.PHAN_BO)
-    var remaining = getSheetData(SHEETS.PHAN_BO)
-    expect(remaining).toHaveLength(1)
-    expect(remaining[0]['PhongBanID']).toBe(2)
+describe('deletePhongBan', () => {
+  test('throws when the dept still has members', () => {
+    seedAssignment(1, 2, 'Trưởng phòng', 1)
+    expect(() => deletePhongBan(adminToken, 1)).toThrow('còn nhân viên')
   })
 
-  test('syncs user fields after cascade delete', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Trưởng phòng', phongBanId: 1 })
-    deletePhongBan(adminToken, 1)
-
-    invalidateSheetCache(SHEETS.USERS)
-    var user = getSheetData(SHEETS.USERS).find(function(u) { return String(u['ID']) === '2' })
-    expect(user['Chức vụ']).toBe('')
-    expect(user['Phòng ban']).toBe('')
+  test('deletes an empty dept', () => {
+    deletePhongBan(adminToken, 2) // dept 2 has no assignments
+    invalidateSheetCache(SHEETS.PHONG_BAN)
+    var depts = getSheetData(SHEETS.PHONG_BAN)
+    expect(depts.find(function(d) { return String(d['ID']) === '2' })).toBeUndefined()
   })
 })
 
@@ -264,9 +151,10 @@ describe('getPhongBan simplified', () => {
 
 describe('addUser without org fields', () => {
   test('creates user with empty Phòng ban and Chức vụ', () => {
-    var result = addUser(adminToken, { 'Email': 'newuser@test.com', 'Tên nhân viên': 'New' })
-    expect(result['Phòng ban']).toBe('')
-    expect(result['Chức vụ']).toBe('')
+    var added = addUser(adminToken, { 'Email': 'newuser@test.com', 'Tên nhân viên': 'New' })
+    var user = getUsers(adminToken).find(function(u) { return String(u['ID']) === String(added.ID) })
+    expect(user['Phòng ban']).toBe('')
+    expect(user['Chức vụ']).toBe('')
   })
 })
 
@@ -303,36 +191,13 @@ describe('portalSync', () => {
   })
 })
 
-// ── _getDeptRole (gas-core cross-script) ────────────────────────────────────
-
-describe('_getDeptRole reads _Phân Bổ', () => {
-  test('returns best role from assignments', () => {
-    seedAssignment(1, 2, 'Trưởng phòng', 1)
-    seedAssignment(2, 2, 'Phó phòng', 2)
-    var ss = SpreadsheetApp.getActiveSpreadsheet()
-    var role = _getDeptRole(ss, 2)
-    expect(role).toBe('Trưởng phòng')
-  })
-
-  test('returns empty for user with no assignments', () => {
-    var ss = SpreadsheetApp.getActiveSpreadsheet()
-    var role = _getDeptRole(ss, 99)
-    expect(role).toBe('')
-  })
-
-  test('returns single role for user with one assignment', () => {
-    seedAssignment(1, 3, 'Nhân viên', 1)
-    var ss = SpreadsheetApp.getActiveSpreadsheet()
-    var role = _getDeptRole(ss, 3)
-    expect(role).toBe('Nhân viên')
-  })
-})
+// _getDeptRole is a docmgr-only helper (see apps/docmgr auth.test.js) — not part of SSO Portal.
 
 // ── POSITIONS constant ──────────────────────────────────────────────────────
 
 describe('POSITIONS constant', () => {
   test('has correct structure', () => {
-    expect(POSITIONS.length).toBe(7)
+    expect(POSITIONS.length).toBe(8) // 7 chức vụ + 'admin'
     POSITIONS.forEach(function(p) {
       expect(p).toHaveProperty('code')
       expect(p).toHaveProperty('rank')
@@ -371,22 +236,14 @@ describe('API wrappers', () => {
     expect(res.payload.positions).toBeDefined()
   })
 
-  test('api_saveAssignment wraps saveAssignment', () => {
-    var res = api_saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 1 })
+  test('api_batchSaveAssignments wraps batchSaveAssignments', () => {
+    var res = api_batchSaveAssignments(adminToken, { adds: [{ userId: 2, chucVu: 'Nhân viên', phongBanId: 1 }] })
     expect(res.success).toBe(true)
-    expect(res.payload.ID).toBeDefined()
-  })
-
-  test('api_removeAssignment wraps removeAssignment', () => {
-    saveAssignment(adminToken, { userId: 2, chucVu: 'Nhân viên', phongBanId: 1 })
-    invalidateSheetCache(SHEETS.PHAN_BO)
-    var assignments = getSheetData(SHEETS.PHAN_BO)
-    var res = api_removeAssignment(adminToken, assignments[0].ID)
-    expect(res.success).toBe(true)
+    expect(res.payload.added).toBe(1)
   })
 
   test('api wrappers return error on failure', () => {
-    var res = api_saveAssignment(adminToken, { userId: 2, chucVu: 'FAKE' })
+    var res = api_batchSaveAssignments(adminToken, { adds: [{ userId: 2, chucVu: 'FAKE' }] })
     expect(res.success).toBe(false)
     expect(res.error).toContain('không hợp lệ')
   })

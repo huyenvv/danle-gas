@@ -28,6 +28,10 @@ function doGet(e) {
 function api_ssoLogin(parentSheetId, ssoToken, deviceType) {
   return _wrap(function() {
     if (!parentSheetId || !ssoToken) throw new Error('INVALID_SSO')
+    // Trust only the pinned parent sheet — reject client-supplied IDs that don't match.
+    // Prevents impersonation via a fake parent sheet the caller controls.
+    var pinnedParent = ssoGetParentSheetId()
+    if (pinnedParent && pinnedParent !== parentSheetId) throw new Error('INVALID_SSO')
     var ssoUser = validateAccessTokenCrossScript(parentSheetId, ssoToken)
     if (!ssoUser) throw new Error('SSO_TOKEN_EXPIRED')
 

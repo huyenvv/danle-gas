@@ -197,4 +197,16 @@ describe('batchSaveAssignments — auth', () => {
       adds: [{ userId: 3, chucVu: 'Nhân viên', phongBanId: 10 }]
     })).toThrow()
   })
+
+  test('non-owner admin cannot assign admin role', () => {
+    expect(() => batchSaveAssignments(adminToken, {
+      adds: [{ userId: 2, chucVu: 'admin' }]
+    })).toThrow('chủ sở hữu')
+  })
+
+  test('owner can assign admin role', () => {
+    var ownerToken = mintAccessToken({ userId: 1, username: 'admin', email: 'admin@test.com', role: 'admin', isOwner: true }, SHEETS.USERS)
+    var res = batchSaveAssignments(ownerToken, { adds: [{ userId: 2, chucVu: 'admin' }] })
+    expect(res.added).toBe(1)
+  })
 })

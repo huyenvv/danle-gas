@@ -19,6 +19,9 @@ function setupSSOParent(opts) {
   ]
   if (opts.extraUsers) opts.extraUsers.forEach(function(u) { users.push(u) })
   SpreadsheetApp._addExternalSheet(PARENT_ID, '_Người Dùng', users)
+  // Directors are resolved from SSO _Phân Bổ (Chức vụ='Giám đốc'). User 2 = giamdoc.
+  var assignments = opts.assignments || [[1, 2, 'Giám đốc', '']]
+  SpreadsheetApp._addExternalSheet(PARENT_ID, '_Phân Bổ', [['ID', 'UserID', 'Chức vụ', 'PhongBanID']].concat(assignments))
   PropertiesService.getScriptProperties().setProperty('SSO_PARENT_SHEET_ID', PARENT_ID)
 }
 
@@ -54,6 +57,21 @@ describe('Trình duyệt email notification', () => {
     expect(GmailApp._sent).toHaveLength(1)
     expect(GmailApp._sent[0].to).toBe('giamdoc@test.com')
     expect(GmailApp._sent[0].subject).toContain('HĐ Mua sắm 001')
+  })
+
+  test('notifies the admin when no Giám đốc is assigned (admin == director org)', () => {
+    // Customer scenario: the director owns the sheet and is set up only as admin.
+    // No 'Giám đốc' assignment exists → fall back to the admin.
+    setupSSOParent({ assignments: [[1, 2, 'admin', '']] })
+
+    const result = createDocument(vanthuToken, {
+      'Tên hồ sơ': 'HĐ Admin Director',
+      'Danh mục': 1,
+    }, null, 'directors')
+
+    expect(result.data['ID']).toBeDefined()
+    expect(GmailApp._sent).toHaveLength(1)
+    expect(GmailApp._sent[0].to).toBe('giamdoc@test.com') // user 2, the admin
   })
 
   test('email not sent when MAIL_ENABLED is missing', () => {

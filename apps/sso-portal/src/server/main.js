@@ -44,7 +44,7 @@ function api_resume(refreshToken) {
     var hasAdminPosition = getSheetData(SHEETS.PHAN_BO).some(function(a) {
       return String(a['UserID']) === String(user['ID']) && a['Chức vụ'] === 'admin'
     })
-    var isAdmin = isOwner || user['Quyền'] === 'Quản trị' || hasAdminPosition
+    var isAdmin = isOwner || hasAdminPosition
 
     var sessionData = {
       userId: user['ID'],
@@ -168,14 +168,6 @@ function api_deleteApp(token, id) {
 
 function api_getOrgStructure(token) {
   return _wrap(function() { return getOrgStructure(token) })
-}
-
-function api_saveAssignment(token, data) {
-  return _wrap(function() { return saveAssignment(token, data) })
-}
-
-function api_removeAssignment(token, assignmentId) {
-  return _wrap(function() { return removeAssignment(token, assignmentId) })
 }
 
 function api_batchSaveAssignments(token, operations) {

@@ -82,7 +82,7 @@ function deleteFile(fileId) {
     DriveApp.getFileById(fileId).setTrashed(true)
     return { success: true }
   } catch(e) {
-    return { success: true }
+    return { success: false, error: e.message }
   }
 }
 
