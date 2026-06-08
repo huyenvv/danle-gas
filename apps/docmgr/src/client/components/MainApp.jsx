@@ -19,6 +19,8 @@ import SupplierManager from './suppliers/SupplierManager.jsx'
 import ProjectManager from './projects/ProjectManager.jsx'
 import DocumentPreview from './documents/DocumentPreview.jsx'
 import AuditLogPage from './AuditLogPage.jsx'
+import ImportManager from './ImportManager.jsx'
+import CreateMenu from './CreateMenu.jsx'
 import TopHeader from './layout/TopHeader.jsx'
 import { getDeadlineStatus } from '../utils/deadlineStatus.js'
 import Icon from './common/Icon.jsx'
@@ -296,6 +298,7 @@ export default function MainApp() {
     return map
   }, [lookups.users])
   const canCreate = session.canCreate || session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Văn thư'
+  const canImport = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session.role)
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
@@ -305,6 +308,7 @@ export default function MainApp() {
         isAdmin={isAdmin}
         isSuperAdmin={isSuperAdmin}
         onCreateDoc={canCreate ? () => { setPage('documents'); setDocModal({ mode: 'create' }) } : undefined}
+        onImport={canImport ? () => setPage('import') : undefined}
         collapsed={sidebarCollapsed}
         role={session.role}
         canCreateSubCat={session.canCreateSubCat}
@@ -469,14 +473,13 @@ export default function MainApp() {
                   >
                     <span className="material-symbols-outlined text-base leading-none">refresh</span>
                   </button>
-                  {canCreate && (
-                    <button
-                      onClick={() => setDocModal({ mode: 'create' })}
-                      className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1"
-                    >
-                      <span className="material-symbols-outlined text-base leading-none">add</span>
-                      <span>Thêm hồ sơ</span>
-                    </button>
+                  {(canCreate || canImport) && (
+                    <CreateMenu
+                      label="Thêm hồ sơ"
+                      compact
+                      onCreate={canCreate ? () => setDocModal({ mode: 'create' }) : undefined}
+                      onImport={canImport ? () => setPage('import') : undefined}
+                    />
                   )}
                 </div>
               </div>
@@ -571,6 +574,14 @@ export default function MainApp() {
 
           {page === 'auditlogs' && isAdmin && (
             <AuditLogPage token={localStorage.getItem('docmgr_access_token')} />
+          )}
+
+          {page === 'import' && canImport && (
+            <ImportManager
+              token={localStorage.getItem('docmgr_access_token')}
+              lookups={lookups}
+              onImported={() => refreshLookups(localStorage.getItem('docmgr_access_token')).then(setLookups)}
+            />
           )}
           </div>
         </main>

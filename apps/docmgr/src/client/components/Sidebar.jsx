@@ -1,4 +1,5 @@
 import Icon from './common/Icon.jsx'
+import CreateMenu from './CreateMenu.jsx'
 
 const NAV_ITEMS = [
   { key: 'documents',   icon: 'description',   label: 'Hồ sơ',         admin: false, superAdmin: false },
@@ -11,7 +12,7 @@ const NAV_ITEMS = [
   { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
 ]
 
-export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, collapsed, role, canCreateSubCat }) {
+export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, onImport, collapsed, role, canCreateSubCat }) {
   const limitedDocOnlyRoles = ['Nhân viên', 'Trưởng phòng']
   const visibleItems = NAV_ITEMS.filter(item => {
     if (limitedDocOnlyRoles.includes(role)) {
@@ -38,17 +39,10 @@ export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateD
         )}
       </div>
 
-      {/* "Tạo hồ sơ mới" CTA — only shown when user has create permission */}
-      {onCreateDoc && (
+      {/* "Tạo hồ sơ mới" CTA — split button with import dropdown */}
+      {(onCreateDoc || onImport) && (
         <div className={`pt-4 pb-2 shrink-0 ${collapsed ? 'px-2' : 'px-3'}`}>
-          <button
-            onClick={onCreateDoc}
-            title="Tạo hồ sơ mới"
-            className={`w-full flex items-center gap-2 bg-accent text-white rounded-full py-2.5 font-medium text-sm hover:bg-accent-hover transition-colors shadow-md3-2 ${collapsed ? 'justify-center px-0' : 'px-4'}`}
-          >
-            <Icon name="add" size={18} />
-            {!collapsed && <span>Tạo hồ sơ mới</span>}
-          </button>
+          <CreateMenu onCreate={onCreateDoc} onImport={onImport} collapsed={collapsed} />
         </div>
       )}
 

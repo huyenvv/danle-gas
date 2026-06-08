@@ -9,13 +9,10 @@
 ## Dev Setup
 
 ```bash
-# 1. Install xlsx dependency cho docmgr
-cd apps/docmgr && npm install xlsx
-
-# 2. Start dev server
+# 1. Start dev server
 npm run dev:docmgr    # port 5173
 
-# 3. Run tests
+# 2. Run tests
 npm run test:docmgr
 ```
 
@@ -23,9 +20,9 @@ npm run test:docmgr
 
 | File | Purpose |
 |------|---------|
-| `apps/docmgr/src/server/import.js` | Server: parse, validate, create docs |
+| `apps/docmgr/src/server/import.js` | Server: parse uploaded file + validate + create docs |
 | `apps/docmgr/src/client/components/ImportManager.jsx` | Client: upload, preview, results UI |
-| `apps/docmgr/src/client/utils/xlsxParser.js` | Client: SheetJS wrapper |
+| `apps/docmgr/src/client/utils/importResolver.js` | Client: group rows + resolve lookups |
 | `apps/docmgr/src/server/__tests__/import.test.js` | Server tests |
 
 ## Build & Deploy
@@ -51,3 +48,4 @@ npm run deploy:docmgr   # Deploy to GAS (never bare clasp push)
 - GAS 6-minute execution limit
 - `google.script.run` payload ~50MB max
 - Concat order: gas-core → config → sheets → auth → documents → **import** → main
+- Không thêm npm dependency — Excel parsing hoàn toàn bằng native GAS APIs

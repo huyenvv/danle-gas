@@ -1,4 +1,78 @@
-# API Contract: Bulk Import Documents
+# API Contracts: Bulk Import
+
+## Endpoint: `api_parseImportFile`
+
+**Access**: `google.script.run.api_parseImportFile(token, base64Data, fileName)`
+
+**Authorization**: Role `Quản trị viên` hoặc `Văn thư`
+
+### Request
+
+```
+token: string       // SSO access token
+base64Data: string  // file content as base64 string (from FileReader)
+fileName: string    // original file name (e.g. "import-data.xlsx")
+```
+
+### Response (success)
+
+```
+{
+  success: true,
+  rows: [
+    {
+      tenHoSo: string,
+      tenFile: string,
+      soHoSo: string,
+      ngayBanHanh: string,
+      ngayKetThuc: string,
+      ghiChu: string,
+      noiLuu: string,
+      duAn: string,
+      nhaCungCap: string,
+      phuTrach: string,
+      nguoiPhoiHop: string,
+      giaTriHD: number,
+      gId: string,
+      mimeType: string,
+      size: number,
+      danhMuc: string,
+      rowIndex: number          // 1-based row in original Excel (for error reporting)
+    }
+  ],
+  totalRows: number,
+  fileName: string
+}
+```
+
+### Response (error)
+
+```
+{
+  success: false,
+  error: "File không đúng định dạng hoặc không có dữ liệu"
+}
+```
+
+### Server Logic
+
+1. Decode base64 → Blob
+2. `Drive.Files.insert({mimeType: GOOGLE_SHEETS}, blob, {convert: true})` — Drive Advanced Service convert .xlsx → Google Sheet
+3. `SpreadsheetApp.openById(id)`, đọc tab `FileMoi` (fallback: sheet đầu tiên nếu không có): `getDataRange().getValues()`
+4. Map header row (row 0) → keys bằng **normalize** (bỏ phần trong ngoặc `(...)`, trim, lowercase). Header thực tế có hậu tố `(tự động lấy)` / `(Tự động)` nên KHÔNG match nguyên văn. Remaining rows → ImportRow objects (gắn `rowIndex` 1-based)
+5. `DriveApp.getFileById(fileId).setTrashed(true)` — cleanup temp file
+6. Return rows JSON
+
+### Error Codes
+
+| Error | Cause |
+|-------|-------|
+| `Bạn không có quyền import` | Role không phải Quản trị/Văn thư |
+| `File không đúng định dạng` | Không thể đọc hoặc convert file |
+| `File không có dữ liệu` | Sheet trống hoặc chỉ có header |
+| `Header không đúng format` | Thiếu cột bắt buộc (Tên hồ sơ, G_ID, Danh mục) |
+
+---
 
 ## Endpoint: `api_bulkImportDocuments`
 

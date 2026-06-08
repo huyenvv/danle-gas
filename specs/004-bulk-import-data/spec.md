@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-bulk-import-data`
 
-**Created**: 2026-06-06
+**Created**: 2026-06-07
 
 **Status**: Draft
 
@@ -70,22 +70,28 @@ Sau khi import xong, người dùng muốn biết kết quả: bao nhiêu docume
 ### Functional Requirements
 
 - **FR-001**: Hệ thống PHẢI cho phép người dùng upload file Excel (.xlsx) chứa danh sách file đã upload sẵn trên Drive
-- **FR-002**: Hệ thống PHẢI đọc và parse file Excel với các cột: Tên hồ sơ (tên document), Tên file, File ID, Danh mục [NEEDS CLARIFICATION: Ngoài các cột trên, bạn cần thêm cột nào khác trong Excel? Ví dụ: Số hồ sơ, Ngày ban hành, Ngày kết thúc, Dự án, Nhà cung cấp, Ghi chú?]
-- **FR-003**: Hệ thống PHẢI nhóm các dòng có cùng "Tên hồ sơ" thành một document, gom các file vào mảng File ID của document đó
-- **FR-004**: Hệ thống PHẢI validate từng dòng: kiểm tra file ID tồn tại trên Drive, kiểm tra danh mục hợp lệ, kiểm tra các cột bắt buộc có giá trị
+- **FR-002**: Hệ thống PHẢI đọc và parse file Excel dạng phẳng (flat) ở tab `FileMoi` gồm 17 cột (A–Q). Mỗi dòng đại diện cho 1 file, nhiều dòng cùng "Tên hồ sơ" thuộc chung 1 document. Tên header thực tế có hậu tố `(tự động lấy)` / `(Tự động)` — hệ thống PHẢI map header bằng cách normalize (bỏ phần trong ngoặc, trim, lowercase), không so khớp nguyên văn:
+  - **Cột document-level** (lấy từ dòng đầu tiên của mỗi nhóm): Tên hồ sơ (bắt buộc, dùng để nhóm), Số hồ sơ, Ngày ban hành, Ngày kết thúc, Ghi chú, Nơi lưu hồ sơ cứng, Dự án (Phòng ban), Nhà cung cấp, Phụ trách, Người phối hợp, Giá trị HĐ
+  - **Cột file-level** (lấy từ mỗi dòng trong nhóm): Tên file (tự động lấy), G_ID (file ID trên Drive, bắt buộc), MimeType (tự động), Size (tự động)
+  - **Cột bỏ qua khi import**: link (tự động lấy, để xem)
+  - **Cột danh mục**: Danh mục (tự động lấy, bắt buộc) — format phân cấp phân tách bằng dấu `/`, ví dụ: `Công văn / Đến / Nội bộ`
+- **FR-003**: Hệ thống PHẢI nhóm các dòng có cùng "Tên hồ sơ" thành một document. Thông tin document (tên, số hồ sơ, ngày, ghi chú...) lấy từ dòng đầu tiên của nhóm. Nếu các dòng sau trong cùng nhóm có giá trị document-level khác dòng đầu, hệ thống PHẢI cảnh báo rõ ràng (chỉ ra dòng nào, cột nào khác biệt) nhưng vẫn dùng giá trị dòng đầu. Danh sách file đính kèm gom từ tất cả các dòng trong nhóm (mỗi dòng = 1 file gồm: Tên file, G_ID, MimeType, Size)
+- **FR-003b**: Cột Phụ trách chứa 1 email. Cột Người phối hợp chứa nhiều email phân tách bằng dấu phẩy. Hệ thống PHẢI tra cứu email trong danh sách người dùng để lấy user ID tương ứng
+- **FR-004**: Hệ thống PHẢI resolve cột Danh mục theo cấu trúc phân cấp: tách chuỗi theo dấu `/`, tra cứu lần lượt từ cha → con → cháu trong sheet Danh mục để tìm ID danh mục leaf (cuối cùng). Ví dụ: `Công văn / Đến / Nội bộ` → tìm ID của "Công văn" → tìm con "Đến" (có parent = ID "Công văn") → tìm cháu "Nội bộ" (có parent = ID "Đến")
+- **FR-004b**: Hệ thống PHẢI validate: G_ID không trống, Tên hồ sơ không trống, Danh mục resolve được trong sheet Danh mục (tất cả cấp đều tồn tại)
 - **FR-005**: Hệ thống PHẢI hiển thị preview kết quả phân tích trước khi import, cho phép người dùng xác nhận hoặc hủy
-- **FR-006**: Hệ thống PHẢI tạo document với trạng thái ban đầu phù hợp cho dữ liệu lịch sử [NEEDS CLARIFICATION: Documents import vào nên ở trạng thái nào? "Hoàn thành" (vì là dữ liệu cũ đã xử lý xong) hay "Nháp" (để review lại trước)?]
+- **FR-006**: Hệ thống PHẢI tạo document với trạng thái "Hoàn thành" (dữ liệu lịch sử đã xử lý xong)
 - **FR-007**: Hệ thống PHẢI xử lý từng phần — nếu một số dòng lỗi, các dòng hợp lệ vẫn được import
 - **FR-008**: Hệ thống PHẢI hiển thị báo cáo kết quả sau import: số document tạo, số file liên kết, danh sách lỗi chi tiết
 - **FR-009**: Hệ thống PHẢI ghi nhận người thực hiện import (Người tạo, Ngày cập nhật) cho mỗi document được tạo
-- **FR-010**: Chỉ người dùng có quyền phù hợp (Văn thư, Quản trị) mới được sử dụng tính năng import [NEEDS CLARIFICATION: Những role nào được phép import? Chỉ Văn thư và Quản trị, hay tất cả role đều được?]
+- **FR-010**: Chỉ người dùng có role Quản trị hoặc Văn thư mới được sử dụng tính năng import
 
 ### Key Entities
 
-- **Import Batch**: Một lần import từ một file Excel — chứa danh sách documents cần tạo và trạng thái import (pending, completed, partial)
-- **Import Row**: Một dòng trong file Excel — ánh xạ đến một file trên Drive, thuộc một document (nhóm theo Tên hồ sơ)
-- **Document (Hồ sơ)**: Bản ghi trong sheet HO_SO — được tạo mới từ import, chứa mảng file IDs
-- **File Reference**: Thông tin file trên Drive (fileId, fileName, mimeType, size) — lấy metadata từ Drive dựa trên file ID trong Excel
+- **Import Row**: Một dòng trong file Excel — đại diện cho 1 file trên Drive
+- **Import Group**: Tập hợp các dòng cùng "Tên hồ sơ" — tạo thành 1 document. Thông tin document lấy từ dòng đầu, file đính kèm gom từ tất cả các dòng
+- **Document (Hồ sơ)**: Bản ghi trong sheet HO_SO — được tạo mới từ import, chứa mảng file (Tên file, G_ID, MimeType, Size)
+- **Danh mục phân cấp**: Chuỗi dạng `Cha / Con / Cháu` — cần resolve lần lượt từ gốc đến lá trong sheet Danh mục để lấy ID cuối cùng
 
 ## Success Criteria *(mandatory)*
 

@@ -12,6 +12,7 @@ const ACTION_COLORS = {
   'Xóa quyền':  'text-orange-700',
   'Workflow':   'text-purple-700',
   'Giao việc':  'text-teal-700',
+  'Import':     'text-emerald-700',
 }
 
 const TYPE_COLORS = {

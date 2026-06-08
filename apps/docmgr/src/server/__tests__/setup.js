@@ -29,6 +29,7 @@ const APP_FILES = [
   'sheets.js',
   'auth.js',
   'documents.js',
+  'import.js',
   'main.js',
 ]
 

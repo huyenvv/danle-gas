@@ -6,13 +6,13 @@
 
 ## Summary
 
-Bulk import documents vào docmgr từ file Excel (.xlsx) chứa danh sách file đã upload sẵn lên Drive. Client parse Excel bằng SheetJS → nhóm theo Tên hồ sơ → resolve danh mục phân cấp → validate → preview → server tạo document records với file references (không upload file, chỉ link file ID có sẵn).
+Bulk import documents vào docmgr từ file Excel (.xlsx) chứa danh sách file đã upload sẵn lên Drive. Client upload Excel lên Drive → server đọc bằng SpreadsheetApp (GAS auto-convert xlsx) → trả rows JSON về client → client nhóm theo Tên hồ sơ → resolve danh mục phân cấp bằng lookups → validate → preview → server tạo document records với file references (không upload file, chỉ link file ID có sẵn).
 
 ## Technical Context
 
 **Language/Version**: JavaScript ES5 (GAS V8 server), React + modern JS (client)
 
-**Primary Dependencies**: SheetJS (xlsx parsing, client-side), existing gas-core modules
+**Primary Dependencies**: Existing gas-core modules, native GAS APIs (DriveApp, SpreadsheetApp)
 
 **Storage**: Google Sheets (HO_SO, DANH_MUC, APP_ROLES sheets)
 
@@ -40,7 +40,7 @@ Bulk import documents vào docmgr từ file Excel (.xlsx) chứa danh sách file
 | IV. SSO Parent-Child | PASS | Dùng `requireAuth(token)` hiện có. Email→userId resolve qua parent sheet |
 | V. Surgical Changes | PASS | Thêm file mới, chỉ sửa minimal: Sidebar.jsx (thêm nav item), MainApp.jsx (thêm page render), main.js (thêm api endpoint) |
 | VI. Sheets-as-Database | PASS | Dùng `addRow()` hiện có. Validate danh mục trước khi insert |
-| VII. Test via vm.runInContext | PASS | Test import.js qua vm.runInContext, mock SheetJS data |
+| VII. Test via vm.runInContext | PASS | Test import.js qua vm.runInContext, mock SpreadsheetApp/DriveApp |
 | VIII. Shared Design System | PASS | Dùng Tailwind + MD3 tokens hiện có |
 
 ## Project Structure
@@ -66,9 +66,9 @@ specs/004-bulk-import-data/
 apps/docmgr/
 ├── src/
 │   ├── server/
-│   │   ├── import.js          # NEW: bulk import logic (server-side)
+│   │   ├── import.js          # NEW: parse uploaded file + bulk create docs
 │   │   ├── documents.js       # MODIFY: extract reusable helpers if needed
-│   │   ├── main.js            # MODIFY: add api_bulkImportDocuments endpoint
+│   │   ├── main.js            # MODIFY: add api_parseImportFile + api_bulkImportDocuments
 │   │   └── config.js          # NO CHANGE (reference only)
 │   └── client/
 │       ├── components/
@@ -76,10 +76,9 @@ apps/docmgr/
 │       │   ├── Sidebar.jsx         # MODIFY: add nav item
 │       │   └── MainApp.jsx         # MODIFY: add page routing
 │       └── utils/
-│           └── xlsxParser.js       # NEW: SheetJS wrapper for Excel parsing
-├── package.json                    # MODIFY: add xlsx dependency
+│           └── importResolver.js   # NEW: group rows + resolve lookups
 └── src/server/__tests__/
     └── import.test.js              # NEW: server-side import tests
 ```
 
-**Structure Decision**: Thêm 1 server file mới (`import.js`) và 1 client component mới (`ImportManager.jsx`). Minimal touches vào existing files (Sidebar, MainApp, main.js). SheetJS parsing isolated trong client util.
+**Structure Decision**: Thêm 1 server file mới (`import.js`) và 1 client component mới (`ImportManager.jsx`). Minimal touches vào existing files (Sidebar, MainApp, main.js). Excel parsing hoàn toàn server-side (DriveApp + SpreadsheetApp), không thêm npm dependency. Client chỉ resolve lookups + group rows.

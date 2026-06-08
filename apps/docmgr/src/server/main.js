@@ -392,6 +392,16 @@ function api_publishDocument(token, docId, toUserIds, ccUserIds) {
   return _wrap(function() { return publishDocument(token, docId, toUserIds, ccUserIds) })
 }
 
+// ===== Bulk import API =====
+
+function api_parseImportFile(token, base64Data, fileName) {
+  return _wrap(function() { return parseImportFile(token, base64Data, fileName) })
+}
+
+function api_bulkImportDocuments(token, payload) {
+  return _wrap(function() { return bulkImportDocuments(token, payload) })
+}
+
 // ===== Category API =====
 
 function api_addCategory(token, data) {

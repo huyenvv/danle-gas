@@ -2,20 +2,30 @@
 
 ## R1: Excel Parsing trong GAS Environment
 
-**Decision**: Client-side parsing bằng SheetJS (xlsx npm package)
+**Decision**: Upload file lên Drive → server đọc bằng `SpreadsheetApp.openById()`
 
 **Rationale**:
-- GAS không có native xlsx parsing
-- Client-side parsing cho phép preview trước khi gửi server
-- SheetJS là library phổ biến, nhẹ (~300KB minified), parse nhanh
-- Có thể dùng `XLSX.read()` với FileReader API trên client
-- Chỉ gửi JSON data (đã parse) lên server qua `google.script.run`
+- SheetJS (xlsx npm) có lỗ hổng bảo mật HIGH severity (Prototype Pollution CVE-2023-30533, DoS) — loại bỏ
+- `DriveApp.createFile()` KHÔNG tự convert xlsx → phải dùng **Drive Advanced Service** (`Drive.Files.insert` với `{convert:true}`) để convert xlsx → Google Sheet
+- `SpreadsheetApp.openById()` đọc native Google Sheets → trả rows JSON về client
+- Không thêm dependency npm nào vào client bundle (chỉ bật advanced service Drive v2, tận dụng scope `drive` đã có)
+- Server xóa file tạm trên Drive sau khi đọc xong
+
+**Flow**:
+1. Client đọc file thành base64 → gửi lên server qua `google.script.run`
+2. Server: `Drive.Files.insert({mimeType: GOOGLE_SHEETS}, blob, {convert:true})` → convert xlsx → Google Sheet, lấy `id`
+3. Server: `SpreadsheetApp.openById(id).getSheetByName('FileMoi').getDataRange().getValues()`
+4. Server: Map header row (normalize) → trả rows JSON về client
+5. Server: `DriveApp.getFileById(id).setTrashed(true)` → xóa file tạm (trong finally)
+6. Client: Nhận rows → group/resolve bằng lookups → preview → confirm → gửi payload import
+
+**Setup**: `appsscript.json` thêm `dependencies.enabledAdvancedServices` (Drive v2). Drive API phải được bật trong GCP project liên kết.
 
 **Alternatives considered**:
-- SpreadsheetApp.openById() (đọc Google Sheet thay vì Excel) — cần thêm bước import thủ công vào Sheet, phức tạp cho user
-- Server-side parsing bằng DriveApp — GAS không có xlsx parser, chỉ đọc được native Google Sheets
+- SheetJS (xlsx npm package) — HIGH severity vulnerabilities, abandoned on npm. Loại bỏ
+- Client-side FileReader + manual xlsx parsing — quá phức tạp, không đáng
 
-**Implementation**: `npm install xlsx` trong `apps/docmgr`, import trong `xlsxParser.js`, build bằng Vite
+**Implementation**: Endpoint mới `api_parseImportFile(token, base64Data, fileName)` trong `import.js`
 
 ## R2: Client-Side Resolution Strategy
 

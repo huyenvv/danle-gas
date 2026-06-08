@@ -11,5 +11,13 @@
     "https://www.googleapis.com/auth/script.scriptapp",
     "https://mail.google.com/"
   ],
-  "dependencies": {}
+  "dependencies": {
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "serviceId": "drive",
+        "version": "v2"
+      }
+    ]
+  }
 }

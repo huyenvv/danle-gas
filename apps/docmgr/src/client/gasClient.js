@@ -552,6 +552,55 @@ async function mockCall(fn, ...args) {
     }
     case 'api_deleteFiles':
       return { success: true }
+    case 'api_parseImportFile': {
+      // Dev mock: simulate server-parsed rows from the uploaded xlsx (FileMoi tab).
+      // Exercises grouping, category resolution, email resolution, conflicts,
+      // duplicate G_ID, and validation errors.
+      const mk = (o) => {
+        const r = Object.assign({
+          tenHoSo: '', tenFile: '', link: '', soHoSo: '', ngayBanHanh: '', ngayKetThuc: '',
+          ghiChu: '', noiLuu: '', duAn: '', nhaCungCap: '', phuTrach: '',
+          nguoiPhoiHop: '', giaTriHD: 0, gId: '', mimeType: 'application/pdf', size: 1024, danhMuc: '',
+        }, o)
+        if (!r.link && r.gId) r.link = 'https://drive.google.com/file/d/' + r.gId + '/view'
+        return r
+      }
+      return {
+        success: true,
+        fileName: args[2] || 'scan file.xlsx',
+        totalRows: 6,
+        rows: [
+          // Group A: 2 files, valid, with assignees
+          mk({ tenHoSo: 'Hợp đồng EVN 2024', tenFile: 'hd-evn.pdf', gId: 'gid-A1', danhMuc: 'Hợp đồng / Hợp đồng XD', soHoSo: 'HS-100', phuTrach: 'vt@test.com', nguoiPhoiHop: 'nva@test.com, missing@test.com', giaTriHD: 5000000, rowIndex: 2 }),
+          mk({ tenHoSo: 'Hợp đồng EVN 2024', tenFile: 'phu-luc-evn.docx', gId: 'gid-A2', danhMuc: 'Hợp đồng / Hợp đồng XD', soHoSo: 'HS-100-KHAC', rowIndex: 3 }), // soHoSo khác → warning
+          // Group B: valid single file
+          mk({ tenHoSo: 'Công văn đến 05', tenFile: 'cv-05.pdf', gId: 'gid-B1', danhMuc: 'Công văn', soHoSo: 'HS-200', rowIndex: 4 }),
+          // Group B duplicate G_ID → dedup warning
+          mk({ tenHoSo: 'Công văn đến 05', tenFile: 'cv-05-trung.pdf', gId: 'gid-B1', danhMuc: 'Công văn', rowIndex: 5 }),
+          // Group C: error — category không tồn tại
+          mk({ tenHoSo: 'Báo cáo lỗi DM', tenFile: 'bc.pdf', gId: 'gid-C1', danhMuc: 'Danh mục không có', rowIndex: 6 }),
+          // Group D: error — thiếu G_ID
+          mk({ tenHoSo: 'Hồ sơ thiếu file', tenFile: 'x.pdf', gId: '', danhMuc: 'Báo cáo', rowIndex: 7 }),
+        ],
+      }
+    }
+    case 'api_bulkImportDocuments': {
+      const groups = (args[1] && args[1].groups) || []
+      let totalFiles = 0
+      const warnings = []
+      groups.forEach(g => {
+        _mockAdd(_mockData.docs, Object.assign({}, g.docData, {
+          'Tình trạng': 'Hoàn thành',
+          'Tệp đính kèm': JSON.stringify(g.files || []),
+          'Tên file': (g.files || []).map(f => f.fileName).join(', '),
+          'Ngày cập nhật': new Date().toISOString(),
+          'Người tạo': 'admin', 'Người cập nhật': 'admin',
+        }))
+        totalFiles += (g.files || []).length
+        ;(g.warnings || []).forEach(w => warnings.push({ group: g.docData['Tên hồ sơ'], message: w, rowIndices: g.rowIndices || [] }))
+      })
+      return { success: true, created: groups.length, totalFiles, errors: [], warnings }
+    }
     default:
       throw new Error('Mock không hỗ trợ: ' + fn)
   }
