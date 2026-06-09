@@ -9,6 +9,7 @@ import { useConfirm } from '../context/ConfirmContext.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
 import UserPickerDropdown from './common/UserPickerDropdown.jsx'
 import PublishDialog from './documents/PublishDialog.jsx'
+import DriveFilePicker from './settings/DriveFilePicker.jsx'
 
 const STATUS_OPTIONS = ['Chờ duyệt', 'Chờ xử lý', 'Đang xử lý', 'Hoàn thành']
 
@@ -120,6 +121,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     isEdit ? _parseFileInfosClient(doc['Tệp đính kèm']) : []
   )
   const [isDragging, setIsDragging] = useState(false)
+  const [showDrivePicker, setShowDrivePicker] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError]         = useState('')
   const [dupWarning, setDupWarning] = useState('')
@@ -163,6 +165,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const canEditPhoiHop = isAdminRole || isPhuTrachOfDoc
   const canEditFields = isAdminRole || isVanThu
   const canPublish = isAdminRole || isVanThu || session?.canPublish
+  const canPickDrive = isAdminRole || isVanThu || session?.canPickDrive
   const canQuickAddLookup = isAdminRole || isVanThu
 
   function setField(key, val) {
@@ -246,6 +249,65 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         // Upload failed → drop the placeholder so it doesn't look attached
         setEagerUploads(prev => prev.filter(u => u.id !== entry.id))
       }
+    }
+  }
+
+  // Copy files chosen from the deploy owner's Drive into the category folder.
+  // Mirrors handleFileChange's placeholder/draft flow but copies server-side in one call.
+  async function handleDriveFiles(picked) {
+    setShowDrivePicker(false)
+    if (!picked || !picked.length) return
+    if (!form['Danh mục']) {
+      setError('Vui lòng chọn Danh mục trước')
+      return
+    }
+
+    const existingNames = new Set([
+      ...eagerUploads.map(u => u.fileName),
+      ...existingFiles.map(f => f.fileName),
+    ])
+    const unique = picked.filter(f => !existingNames.has(f.name))
+    if (!unique.length) return
+
+    const entries = unique.map(f => ({
+      id: ++eagerIdCounter.current,
+      driveId: f.id,
+      fileName: f.name,
+      mimeType: f.mimeType,
+      size: f.size,
+      status: 'uploading',
+      fileId: null,
+    }))
+    setEagerUploads(prev => [...prev, ...entries])
+    setError('')
+
+    try {
+      const draftArg = (isEdit && !isDraftEdit) ? 'edit' : (draftId || null)
+      const isFirst = !draftId && !(isEdit && !isDraftEdit)
+      if (isFirst) showToast('Đang tạo hồ sơ nháp + sao chép file từ Drive...', 'info')
+
+      const res = await gasCall('api_copyDriveFiles', token, unique.map(f => f.id), form['Danh mục'], draftArg)
+      if (res.draftId) {
+        setDraftId(res.draftId)
+        showToast('Đã tạo hồ sơ nháp', 'success')
+      }
+      if (res.data) setDraftDoc(res.data)
+
+      const byDrive = {}
+      ;(res.results || []).forEach(r => { byDrive[r.fileId] = r })
+      setEagerUploads(prev => prev.flatMap(u => {
+        if (!entries.find(e => e.id === u.id)) return [u]
+        const r = byDrive[u.driveId]
+        if (r && r.ok) return [{ ...u, status: 'done', fileId: r.fileInfo.fileId }]
+        const errMsg = (r && r.error) || 'Lỗi sao chép'
+        showToast(`Lỗi sao chép "${u.fileName}": ${errMsg}`, 'error')
+        return []
+      }))
+    } catch (err) {
+      const msg = `Lỗi sao chép từ Drive: ${err.message}`
+      showToast(msg, 'error')
+      setError(msg)
+      setEagerUploads(prev => prev.filter(u => !entries.find(e => e.id === u.id)))
     }
   }
 
@@ -734,6 +796,17 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange} multiple
                     accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" />
                 </div>
+                {canPickDrive && (
+                  <button type="button"
+                    onClick={() => {
+                      if (!form['Danh mục']) { setError('Vui lòng chọn Danh mục trước'); return }
+                      setShowDrivePicker(true)
+                    }}
+                    className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl border border-outline-variant text-sm text-on-surface hover:bg-primary/5 hover:border-primary/50 transition-colors">
+                    <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>add_to_drive</span>
+                    Chọn từ Google Drive
+                  </button>
+                )}
               </Field>
             </div>
 
@@ -1003,6 +1076,14 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           onPublish={handlePublishFromDialog}
           onClose={() => setShowPublishDialog(false)}
           loading={uploading}
+        />
+      )}
+
+      {showDrivePicker && (
+        <DriveFilePicker
+          token={token}
+          onConfirm={handleDriveFiles}
+          onClose={() => setShowDrivePicker(false)}
         />
       )}
     </div>

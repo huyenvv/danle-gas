@@ -81,17 +81,11 @@ function _mapImportRows(values) {
   return rows
 }
 
-// Read the uploaded xlsx (base64) and return its rows as JSON.
-function parseImportFile(token, base64Data, fileName) {
-  var session = requireAuth(token)
-  _importCheckRole(session)
-
-  if (!base64Data) throw new Error('File không đúng định dạng')
-
+// Convert an xlsx blob → Google Sheet, read the FileMoi tab, return rows as JSON.
+// Shared by parseImportFile (OS upload) and parseImportFileFromDrive (Drive pick).
+function _parseImportBlob(blob, fileName) {
   var ssId = null
   try {
-    var bytes = Utilities.base64Decode(base64Data)
-    var blob = Utilities.newBlob(bytes, MimeType.MICROSOFT_EXCEL, fileName || 'import.xlsx')
     // Drive Advanced Service: convert xlsx → Google Sheet
     var converted = Drive.Files.insert(
       { title: (fileName || 'import') + ' (import tạm)', mimeType: MimeType.GOOGLE_SHEETS },
@@ -116,6 +110,28 @@ function parseImportFile(token, base64Data, fileName) {
       try { DriveApp.getFileById(ssId).setTrashed(true) } catch (e) { Logger.log('parseImportFile cleanup error: ' + e.message) }
     }
   }
+}
+
+// Read the uploaded xlsx (base64) and return its rows as JSON.
+function parseImportFile(token, base64Data, fileName) {
+  var session = requireAuth(token)
+  _importCheckRole(session)
+
+  if (!base64Data) throw new Error('File không đúng định dạng')
+
+  var bytes = Utilities.base64Decode(base64Data)
+  var blob = Utilities.newBlob(bytes, MimeType.MICROSOFT_EXCEL, fileName || 'import.xlsx')
+  return _parseImportBlob(blob, fileName)
+}
+
+// Read an xlsx picked from the deploy owner's Drive (by fileId) and return its rows.
+function parseImportFileFromDrive(token, fileId) {
+  var session = requireAuth(token)
+  _importCheckRole(session)
+
+  if (!fileId) throw new Error('Chưa chọn file')
+  var file = DriveApp.getFileById(fileId)
+  return _parseImportBlob(file.getBlob(), file.getName())
 }
 
 // Create HO_SO rows from pre-resolved groups (client already resolved lookups).

@@ -4,6 +4,7 @@ function _buildSessionFromRows(userRow, roleRow) {
   var canCreate = roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
   var canCreateSubCat = roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
   var canPublish = roleRow['Được phát hành'] === 'TRUE' || roleRow['Được phát hành'] === true
+  var canPickDrive = roleRow['Được chọn từ Drive'] === 'TRUE' || roleRow['Được chọn từ Drive'] === true
 
   return {
     userId: userRow['ID'],
@@ -14,6 +15,7 @@ function _buildSessionFromRows(userRow, roleRow) {
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
     canPublish: !!canPublish,
+    canPickDrive: !!canPickDrive,
   }
 }
 
@@ -384,6 +386,39 @@ function api_finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSiz
   return _wrap(function() { return finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, categoryId, draftId) })
 }
 
+// Browse the deploy owner's Drive (folders + files) for the file picker.
+// Requires the "Được chọn từ Drive" permission. Returns root when parentFolderId is empty.
+function api_browseDrive(token, parentFolderId) {
+  return _wrap(function() {
+    var session = requireAuth(token)
+    _checkPickDrivePermission(session)
+    var parent = parentFolderId
+      ? DriveApp.getFolderById(parentFolderId)
+      : DriveApp.getRootFolder()
+    var folders = []
+    var fit = parent.getFolders()
+    while (fit.hasNext()) {
+      var f = fit.next()
+      folders.push({ id: f.getId(), name: f.getName() })
+    }
+    folders.sort(function(a, b) { return a.name.localeCompare(b.name) })
+    var files = []
+    var it = parent.getFiles()
+    while (it.hasNext()) {
+      var fl = it.next()
+      files.push({ id: fl.getId(), name: fl.getName(), mimeType: fl.getMimeType(), size: fl.getSize() || 0 })
+    }
+    files.sort(function(a, b) { return a.name.localeCompare(b.name) })
+    return { current: { id: parent.getId(), name: parent.getName() }, folders: folders, files: files }
+  })
+}
+
+// Copy selected Drive files into the document's category folder and attach them
+// to the draft (creating one if needed). Same draftId semantics as uploadFileEager.
+function api_copyDriveFiles(token, fileIds, categoryId, draftId) {
+  return _wrap(function() { return copyDriveFiles(token, fileIds, categoryId, draftId) })
+}
+
 function api_finalizeDraft(token, draftId, formData, notifyTarget) {
   return _wrap(function() { return finalizeDraft(token, draftId, formData, notifyTarget) })
 }
@@ -404,6 +439,10 @@ function api_publishDocument(token, docId, toUserIds, ccUserIds) {
 
 function api_parseImportFile(token, base64Data, fileName) {
   return _wrap(function() { return parseImportFile(token, base64Data, fileName) })
+}
+
+function api_parseImportFileFromDrive(token, fileId) {
+  return _wrap(function() { return parseImportFileFromDrive(token, fileId) })
 }
 
 function api_bulkImportDocuments(token, payload) {
@@ -564,6 +603,7 @@ function api_getUsers(token) {
           'Được tạo hồ sơ': appRole && (appRole['Được tạo hồ sơ'] === true || appRole['Được tạo hồ sơ'] === 'TRUE') ? 'TRUE' : '',
           'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
           'Được phát hành': appRole && (appRole['Được phát hành'] === true || appRole['Được phát hành'] === 'TRUE') ? 'TRUE' : '',
+          'Được chọn từ Drive': appRole && (appRole['Được chọn từ Drive'] === true || appRole['Được chọn từ Drive'] === 'TRUE') ? 'TRUE' : '',
           'Phòng ban': u['Phòng ban'] || '',
         }
       })
@@ -613,6 +653,7 @@ function api_updateUser(token, id, data) {
     if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
     if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
     if (data['Được phát hành'] !== undefined) roleUpdates['Được phát hành'] = data['Được phát hành'] ? 'TRUE' : ''
+    if (data['Được chọn từ Drive'] !== undefined) roleUpdates['Được chọn từ Drive'] = data['Được chọn từ Drive'] ? 'TRUE' : ''
     if (existing) {
       updateRow(SHEETS.APP_ROLES, existing['ID'], roleUpdates)
     } else {
@@ -623,6 +664,7 @@ function api_updateUser(token, id, data) {
         'Quyền': data['Quyền'] || 'Xem',
         'Được tạo hồ sơ': data['Được tạo hồ sơ'] ? 'TRUE' : '',
         'Được tạo danh mục con': data['Được tạo danh mục con'] ? 'TRUE' : '',
+        'Được chọn từ Drive': data['Được chọn từ Drive'] ? 'TRUE' : '',
       })
     }
     logAudit(null, 'Phân quyền', 'Người dùng', String(id), JSON.stringify(data))

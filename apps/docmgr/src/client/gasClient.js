@@ -318,7 +318,7 @@ async function mockCall(fn, ...args) {
     case 'api_ssoLogin':
     case 'api_resume': {
       if (!_mockSession) {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, canCreate: true, canCreateSubCat: true }
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, canCreate: true, canCreateSubCat: true, canPublish: true, canPickDrive: true }
       }
       return {
         accessToken: 'mock-access-' + Date.now(),
@@ -542,6 +542,50 @@ async function mockCall(fn, ...args) {
         { id: pid + '_sub1', name: '2024' }, { id: pid + '_sub2', name: '2025' }
       ]}
     }
+    case 'api_browseDrive': {
+      const pid = args[1]
+      if (!pid) return {
+        current: { id: 'root', name: 'My Drive' },
+        folders: [{ id: 'f1', name: 'Dự án A' }, { id: 'f2', name: 'Hợp đồng' }, { id: 'f3', name: 'Tài liệu nội bộ' }],
+        files: [
+          { id: 'd1', name: 'Quy chế công ty.pdf', mimeType: 'application/pdf', size: 348160 },
+          { id: 'd2', name: 'Mẫu hợp đồng.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 51200 },
+          { id: 'xlsx-ok', name: 'Danh sách hồ sơ.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 81920 },
+          { id: 'xlsx-empty', name: 'File rỗng.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 8192 },
+          { id: 'xlsx-big', name: 'File 2000 dòng.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 921600 },
+        ],
+      }
+      return {
+        current: { id: pid, name: 'Subfolder' },
+        folders: [{ id: pid + '_sub1', name: '2024' }, { id: pid + '_sub2', name: '2025' }],
+        files: [
+          { id: pid + '_fa', name: 'Báo cáo tháng.xlsx', mimeType: 'application/vnd.ms-excel', size: 81920 },
+          { id: pid + '_fb', name: 'Ảnh hiện trường.jpg', mimeType: 'image/jpeg', size: 1228800 },
+        ],
+      }
+    }
+    case 'api_copyDriveFiles': {
+      const fileIds = args[1] || []
+      const categoryId = args[2]
+      const draftId = args[3]
+      const results = fileIds.map(fid => ({
+        fileId: fid, ok: true,
+        fileInfo: { fileId: 'mock-copy-' + (++_nextId), fileName: 'Drive ' + fid + '.pdf', mimeType: 'application/pdf', size: 2048 },
+      }))
+      if (draftId === 'edit') return { results }
+      let outDraftId = draftId || null
+      let lastData
+      results.forEach(r => {
+        if (outDraftId) {
+          lastData = _mockAppendDraftFile(outDraftId, r.fileInfo)
+        } else {
+          const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([r.fileInfo]), 'Tên file': r.fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
+          outDraftId = draft.ID
+          lastData = { ...draft }
+        }
+      })
+      return { draftId: (draftId === 'edit') ? undefined : outDraftId, results, data: lastData }
+    }
     case 'api_uploadFileEager': {
       const categoryId = args[4]
       const draftId = args[5]
@@ -577,10 +621,16 @@ async function mockCall(fn, ...args) {
     }
     case 'api_deleteFiles':
       return { success: true }
+    case 'api_parseImportFileFromDrive':
     case 'api_parseImportFile': {
       // Dev mock: simulate server-parsed rows from the uploaded xlsx (FileMoi tab).
       // Exercises grouping, category resolution, email resolution, conflicts,
       // duplicate G_ID, and validation errors.
+      // Simulate the server's empty / over-1000 validation via a filename/fileId hint
+      // (the mock can't read real file content). Name/pick a file containing these words:
+      const hint = String(fn === 'api_parseImportFileFromDrive' ? args[1] : args[2] || '')
+      if (/empty|rỗng|trống/i.test(hint)) throw new Error('File không có dữ liệu')
+      if (/big|1k|2000|quá ?lớn|lon/i.test(hint)) throw new Error('File quá lớn (tối đa 1000 dòng, hiện 2000)')
       const mk = (o) => {
         const r = Object.assign({
           tenHoSo: '', tenFile: '', link: '', soHoSo: '', ngayBanHanh: '', ngayKetThuc: '',

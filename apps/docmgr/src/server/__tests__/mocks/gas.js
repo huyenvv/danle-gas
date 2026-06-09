@@ -191,8 +191,22 @@ global.DriveApp = {
     return {
       setTrashed(v) { files[id].trashed = v },
       getUrl()      { return 'https://drive.google.com/file/d/' + id },
+      getName()     { return files[id].name },
+      getMimeType() { return files[id].mimeType || 'application/octet-stream' },
+      getSize()     { return files[id].size || 0 },
+      getBlob()     { return { getName() { return files[id].name }, getBytes() { return files[id].bytes || [] }, getDataAsString() { return files[id].content || '' } } },
       moveTo(folder) { /* no-op in mock */ },
       setSharing(access, permission) { files[id].sharing = { access, permission } },
+      makeCopy(name, folder) {
+        const cid = 'copy_' + id + '_' + Object.keys(files).length
+        files[cid] = { id: cid, name: name, mimeType: files[id].mimeType, size: files[id].size, parent: folder && folder.getId ? folder.getId() : null }
+        return {
+          getId()   { return cid },
+          getName() { return name },
+          getUrl()  { return 'https://drive.google.com/file/d/' + cid },
+          setSharing(access, permission) { files[cid].sharing = { access, permission } },
+        }
+      },
     }
   }
 }

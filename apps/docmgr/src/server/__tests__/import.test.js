@@ -93,3 +93,38 @@ describe('bulkImportDocuments', () => {
     expect(() => bulkImportDocuments(vanThuToken, { groups: [] })).toThrow('Không có dữ liệu')
   })
 })
+
+describe('parseImportFileFromDrive', () => {
+  test('rejects a non-importer role before touching Drive', () => {
+    expect(() => parseImportFileFromDrive(nhanVienToken, 'someFileId')).toThrow('không có quyền')
+  })
+
+  test('throws when no fileId given', () => {
+    expect(() => parseImportFileFromDrive(vanThuToken, '')).toThrow('Chưa chọn file')
+  })
+})
+
+describe('_parseImportBlob validation (empty / over-limit)', () => {
+  beforeEach(() => {
+    global.MimeType = { MICROSOFT_EXCEL: 'application/vnd.ms-excel', GOOGLE_SHEETS: 'application/vnd.google-apps.spreadsheet' }
+    global.Drive = { Files: { insert: function () { return { id: 'tempImportSS' } } } }
+  })
+
+  test('empty file (header only) → throws "không có dữ liệu"', () => {
+    SpreadsheetApp._addExternalSheet('tempImportSS', 'FileMoi', [['Tên hồ sơ', 'Tên file']])
+    expect(() => parseImportFile(vanThuToken, 'AQID', 'empty.xlsx')).toThrow('không có dữ liệu')
+  })
+
+  test('over 1000 data rows → throws "quá lớn"', () => {
+    const rows = [['Tên hồ sơ', 'Tên file']]
+    for (let i = 0; i < 1001; i++) rows.push(['HS ' + i, 'f' + i + '.pdf'])
+    SpreadsheetApp._addExternalSheet('tempImportSS', 'FileMoi', rows)
+    expect(() => parseImportFile(vanThuToken, 'AQID', 'big.xlsx')).toThrow('quá lớn')
+  })
+
+  test('Drive variant validates the same (empty → throws)', () => {
+    SpreadsheetApp._addExternalSheet('tempImportSS', 'FileMoi', [['Tên hồ sơ', 'Tên file']])
+    DriveApp._files['driveXlsx'] = { id: 'driveXlsx', name: 'empty.xlsx', mimeType: 'application/vnd.ms-excel', size: 100 }
+    expect(() => parseImportFileFromDrive(vanThuToken, 'driveXlsx')).toThrow('không có dữ liệu')
+  })
+})

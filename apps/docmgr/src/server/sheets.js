@@ -94,6 +94,7 @@ function getAllData(session) {
       'Chức vụ': pos.chucVu || '',
       'Quyền': role,
       'Được phát hành': isAdminOrVanThu || r['Được phát hành'] === 'TRUE' || r['Được phát hành'] === true,
+      'Được chọn từ Drive': isAdminOrVanThu || r['Được chọn từ Drive'] === 'TRUE' || r['Được chọn từ Drive'] === true,
     }
   })
   var allCats = getSheetData(SHEETS.DANH_MUC)

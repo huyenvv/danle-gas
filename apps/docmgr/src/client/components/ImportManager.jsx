@@ -6,6 +6,7 @@ import { dataCache } from '../utils/dataCache.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { btnPrimary, btnOutline } from './common/formStyles.js'
 import Icon from './common/Icon.jsx'
+import DriveFilePicker from './settings/DriveFilePicker.jsx'
 
 const MAX_FILE_MB = 25
 const MAX_ROWS = 1000   // server cap in import.js — keep in sync
@@ -52,6 +53,7 @@ export default function ImportManager({ token, lookups, onImported }) {
   const [result, setResult] = useState(null)
   const [fileModal, setFileModal] = useState(null) // { stt, group } | null
   const [showAllRows, setShowAllRows] = useState(false)
+  const [showDrivePicker, setShowDrivePicker] = useState(false)
   const fileInputRef = useRef(null)
   const { showToast } = useToast()
 
@@ -111,6 +113,25 @@ export default function ImportManager({ token, lookups, onImported }) {
     try {
       const base64 = await readFileAsBase64(file)
       const res = await gasCall('api_parseImportFile', token, base64, file.name)
+      const { groups: gs, orphanErrors: oe } = groupAndResolve(res.rows || [], lookups)
+      setGroups(gs)
+      setOrphanErrors(oe)
+      setStage('preview')
+    } catch (err) {
+      showToast(err.message || 'Lỗi đọc file', 'error')
+      reset()
+    }
+  }
+
+  // Parse an Excel file picked from the deploy owner's Drive (no re-upload).
+  async function handleDriveFile(picked) {
+    setShowDrivePicker(false)
+    const file = picked && picked[0]
+    if (!file) return
+    setFileName(file.name)
+    setStage('parsing')
+    try {
+      const res = await gasCall('api_parseImportFileFromDrive', token, file.id)
       const { groups: gs, orphanErrors: oe } = groupAndResolve(res.rows || [], lookups)
       setGroups(gs)
       setOrphanErrors(oe)
@@ -183,19 +204,28 @@ export default function ImportManager({ token, lookups, onImported }) {
               className="hidden"
               id="import-file-input"
             />
-            <label htmlFor="import-file-input" className={`${btnPrimary} cursor-pointer`}>
-              <Icon name="folder_open" size={18} />
-              Chọn file
-            </label>
+            <div className="flex items-center gap-3">
+              <label htmlFor="import-file-input" className={`${btnPrimary} cursor-pointer`}>
+                <Icon name="folder_open" size={18} />
+                Chọn file
+              </label>
+              <button type="button" onClick={() => setShowDrivePicker(true)} className={`${btnOutline} cursor-pointer`}>
+                <Icon name="add_to_drive" size={18} />
+                Chọn từ Drive
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Parsing / importing */}
+      {/* Parsing / importing — full-screen blocking overlay */}
       {(stage === 'parsing' || stage === 'importing') && (
-        <div className="bg-white rounded-2xl shadow-card p-12 flex flex-col items-center text-center">
-          <div className="w-9 h-9 border-[3px] border-primary border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-sm text-on-surface-variant">{stage === 'parsing' ? 'Đang đọc file…' : 'Đang tạo hồ sơ…'}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-card px-12 py-10 flex flex-col items-center text-center">
+            <div className="w-12 h-12 border-[3px] border-primary border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-sm font-medium text-on-surface">{stage === 'parsing' ? 'Đang đọc file…' : 'Đang tạo hồ sơ…'}</p>
+            <p className="text-xs text-on-surface-variant mt-1">Vui lòng đợi, không đóng cửa sổ</p>
+          </div>
         </div>
       )}
 
@@ -505,6 +535,17 @@ export default function ImportManager({ token, lookups, onImported }) {
           </div>
         </div>,
         document.body
+      )}
+
+      {showDrivePicker && (
+        <DriveFilePicker
+          token={token}
+          multiple={false}
+          accept={['.xlsx', '.xls']}
+          title="Chọn file Excel từ Drive"
+          onConfirm={handleDriveFile}
+          onClose={() => setShowDrivePicker(false)}
+        />
       )}
     </div>
   )

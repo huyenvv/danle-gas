@@ -2,7 +2,7 @@
 // Updated for SSO model: users are managed by parent app, this app only manages roles.
 
 // ── Header constants matching config.js ──────────────────────────────────────
-var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành']
+var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành', 'Được chọn từ Drive']
 var DOC_HEADERS = [
   'ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc',
   'Tệp đính kèm', 'Tên file',

@@ -21,17 +21,17 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '6') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '7') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
   invalidateSheetCache(SHEETS.HO_SO)
-  props.setProperty('SCHEMA_V', '6')
+  props.setProperty('SCHEMA_V', '7')
   _initDone = true
 }
 
 function _ensureAllTabsExist(ss) {
   var tabDefs = [
-    { name: SHEETS.APP_ROLES,     headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành', 'RefreshTokens'] },
+    { name: SHEETS.APP_ROLES,     headers: ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành', 'Được chọn từ Drive', 'RefreshTokens'] },
     { name: SHEETS.DANH_MUC,      headers: ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha', 'Người được xem', 'Nhóm được xem', 'Nơi lưu hồ sơ cứng'] },
     { name: SHEETS.NHOM,          headers: ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên'] },
     { name: SHEETS.DU_AN,         headers: ['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ'] },

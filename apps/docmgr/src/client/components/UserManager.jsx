@@ -30,6 +30,7 @@ export default function UserManager({ token, session, lookups }) {
   const [canCreateDoc, setCanCreateDoc] = useState(false)
   const [canCreateSubCat, setCanCreateSubCat] = useState(false)
   const [canPublish, setCanPublish] = useState(false)
+  const [canPickDrive, setCanPickDrive] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving]   = useState(false)
   const [search, setSearch]   = useState('')
@@ -57,6 +58,7 @@ export default function UserManager({ token, session, lookups }) {
     setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
     setCanCreateSubCat(user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true)
     setCanPublish(user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true)
+    setCanPickDrive(user['Được chọn từ Drive'] === 'TRUE' || user['Được chọn từ Drive'] === true)
     setFormError('')
     setModal({ user })
   }
@@ -71,6 +73,7 @@ export default function UserManager({ token, session, lookups }) {
         'Được tạo hồ sơ': canCreateDoc,
         'Được tạo danh mục con': canCreateSubCat,
         'Được phát hành': canPublish,
+        'Được chọn từ Drive': canPickDrive,
       })
       closeModal()
       showToast('Đã lưu phân quyền', 'success')
@@ -187,19 +190,20 @@ export default function UserManager({ token, session, lookups }) {
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo hồ sơ</th>
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Tạo danh mục con</th>
               <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Phát hành</th>
+              <th className="px-4 py-3 text-center font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Chọn từ Drive</th>
               <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide hidden md:table-cell">Trạng thái (SSO)</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-outline-variant/40">
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-on-surface-variant">Không tìm thấy người dùng</td></tr>
             )}
             {groups.map(group => (
               <React.Fragment key={group.name}>
                 {group.name && (
                   <tr className="bg-surface-container-low/60">
-                    <td colSpan={7} className="px-4 py-2">
+                    <td colSpan={8} className="px-4 py-2">
                       <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">{group.name}</span>
                       <span className="ml-2 text-[10px] font-medium text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded-full">{group.users.length}</span>
                     </td>
@@ -268,6 +272,18 @@ export default function UserManager({ token, session, lookups }) {
                         const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
                         const canPub = isFullRole || user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true
                         return canPub ? (
+                          <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
+                        ) : (
+                          <span className="text-on-surface-variant/40">—</span>
+                        )
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-center hidden md:table-cell">
+                      {(() => {
+                        const r = getSsoRole(user)
+                        const isFullRole = r === 'admin' || r === 'Giám đốc' || r === 'Quản trị viên' || r === 'Văn thư'
+                        const canDrive = isFullRole || user['Được chọn từ Drive'] === 'TRUE' || user['Được chọn từ Drive'] === true
+                        return canDrive ? (
                           <Icon name="check_circle" size={18} className="text-emerald-600 inline-block" />
                         ) : (
                           <span className="text-on-surface-variant/40">—</span>
@@ -375,6 +391,15 @@ export default function UserManager({ token, session, lookups }) {
                     Được phát hành
                   </label>
                   <span className="text-xs text-on-surface-variant ml-auto">{canCreateDoc ? 'Phát hành ngay từ mọi trạng thái' : 'Phát hành khi hoàn thành'}</span>
+                </div>
+                <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                  <input type="checkbox" id="canPickDrive" checked={canPickDrive}
+                    onChange={e => setCanPickDrive(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                  <label htmlFor="canPickDrive" className="text-sm text-on-surface cursor-pointer select-none">
+                    Được chọn từ Drive
+                  </label>
+                  <span className="text-xs text-on-surface-variant ml-auto">Đính kèm file từ Google Drive của app</span>
                 </div>
               </>
             )}

@@ -791,6 +791,60 @@ function _checkCreatePermission(session) {
   }
 }
 
+// Permission check for picking files from the deploy owner's Drive.
+// Full-access roles always allowed; others need the "Được chọn từ Drive" flag.
+function _checkPickDrivePermission(session) {
+  var fullAccess = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (fullAccess.indexOf(session.role) !== -1) return
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var appRole = roles.find(function(r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
+  var allowed = appRole && (appRole['Được chọn từ Drive'] === 'TRUE' || appRole['Được chọn từ Drive'] === true)
+  if (!allowed) throw new Error('Bạn không có quyền chọn file từ Google Drive')
+}
+
+// Copy each Drive file (by id) into the category folder. Returns one result per
+// file; a failure on one file does not abort the others.
+function copyDriveFilesToCategory(fileIds, categoryId) {
+  var catPath = _resolveCategoryPath(categoryId)
+  var targetFolder = DriveApp.getFolderById(resolveFolderId(catPath))
+  return fileIds.map(function(fileId) {
+    try {
+      var src = DriveApp.getFileById(fileId)
+      var copy = src.makeCopy(src.getName(), targetFolder)
+      copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+      return {
+        fileId: fileId,
+        ok: true,
+        fileInfo: { fileId: copy.getId(), fileName: src.getName(), mimeType: src.getMimeType(), size: src.getSize() || 0 },
+      }
+    } catch (e) {
+      return { fileId: fileId, ok: false, error: e.message }
+    }
+  })
+}
+
+function copyDriveFiles(token, fileIds, categoryId, draftId) {
+  var session = requireAuth(token)
+  _checkPickDrivePermission(session)
+  if (!categoryId) throw new Error('Danh mục là bắt buộc')
+  if (!fileIds || !fileIds.length) throw new Error('Chưa chọn file nào')
+
+  var copied = copyDriveFilesToCategory(fileIds, categoryId)
+  var outDraftId = (draftId === 'edit') ? 'edit' : (draftId || null)
+  var lastData
+  copied.forEach(function(r) {
+    if (!r.ok) return
+    var attach = _attachFileToDraft(session, r.fileInfo, categoryId, outDraftId)
+    if (attach.draftId) outDraftId = attach.draftId
+    if (attach.data) lastData = attach.data
+  })
+  return {
+    draftId: (draftId === 'edit') ? undefined : (outDraftId || undefined),
+    results: copied,
+    data: lastData,
+  }
+}
+
 // Attach an already-uploaded file to a draft row. Shared by uploadFileEager
 // (small files) and finalizeChunkedUpload (large files).
 //   draftId === 'edit' → upload only, no row changes
