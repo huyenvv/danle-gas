@@ -177,6 +177,40 @@ describe('DocumentModal', () => {
     delete global.fetch
   })
 
+  // Test 2f: File > 50MB shows % progress instead of chunk count
+  it('shows percent progress (not chunk count) while uploading a file > 50MB', async () => {
+    let pendingResolve = null
+    global.fetch = jest.fn(() => new Promise(res => { pendingResolve = () => res({ status: 308 }) }))
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_startResumableUpload') return Promise.resolve({ uploadUri: 'https://up', accessToken: 'tok' })
+      if (fn === 'api_finalizeChunkedUpload') return Promise.resolve({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'big.pdf' } })
+      return Promise.resolve({})
+    })
+
+    const SIZE = 55 * 1024 * 1024 // 55MB → 11 chunks of 5MB, > 50MB → percent display
+    const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
+    })
+
+    // Advance 4 of 11 chunks → progress 4/11 ≈ 36%
+    for (let i = 0; i < 4; i++) {
+      await act(async () => { pendingResolve() })
+    }
+
+    // Badge shows a percentage (new behavior), never a "X/Y" chunk count
+    expect(screen.getByText(/36%/)).toBeInTheDocument()
+    expect(screen.queryByText(/—\s*\d+\/\d+/)).not.toBeInTheDocument()
+
+    // Drain remaining chunks so no promises dangle
+    await act(async () => { for (let i = 0; i < 8; i++) { pendingResolve(); await Promise.resolve() } })
+
+    delete global.fetch
+  })
+
   // Test 3: Edit pre-fill — mode='edit', doc=MOCK_DOCS[0] → Tên hồ sơ pre-filled
   it('pre-fills Tên hồ sơ in edit mode', () => {
     renderModal({

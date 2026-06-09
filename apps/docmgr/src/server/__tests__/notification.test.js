@@ -264,7 +264,7 @@ describe('Transition notifications (acceptance gate)', () => {
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 
-  test('hoanThanh sends email + marks unread for GĐ', () => {
+  test('hoanThanh marks unread for GĐ without sending email', () => {
     setupSSOParent()
 
     seedUser(3, 'phutrach', 'pt@test.com', 'Nhân viên')
@@ -281,13 +281,12 @@ describe('Transition notifications (acceptance gate)', () => {
 
     transitionDocument(ptToken, 1, 'hoanThanh')
 
-    expect(GmailApp._sent).toHaveLength(1)
-    expect(GmailApp._sent[0].to).toBe('giamdoc@test.com')
+    expect(GmailApp._sent).toHaveLength(0)
     var daDoc = getSheetData(SHEETS.DA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 
-  test('hoanThanhLai sends email + marks unread for GĐ', () => {
+  test('hoanThanhLai marks unread for GĐ without sending email', () => {
     setupSSOParent()
 
     seedUser(3, 'phutrach', 'pt@test.com', 'Nhân viên')
@@ -304,8 +303,9 @@ describe('Transition notifications (acceptance gate)', () => {
 
     transitionDocument(ptToken, 1, 'hoanThanhLai')
 
-    expect(GmailApp._sent).toHaveLength(1)
-    expect(GmailApp._sent[0].to).toBe('giamdoc@test.com')
+    expect(GmailApp._sent).toHaveLength(0)
+    var daDoc = getSheetData(SHEETS.DA_DOC)
+    expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 })
 
@@ -336,7 +336,7 @@ describe('transitionDocument succeeds when email throws', () => {
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 
-  test('hoanThanh: status committed + emailError returned', () => {
+  test('hoanThanh: status committed, no email sent even if mail is broken', () => {
     setupSSOParent()
     seedUser(3, 'phutrach', 'pt@test.com', 'Nhân viên')
     const ptToken = createSession(3, 'phutrach', 'pt@test.com', 'Nhân viên')
@@ -354,7 +354,7 @@ describe('transitionDocument succeeds when email throws', () => {
     restore()
 
     expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
-    expect(result.emailError).toContain('Quota exceeded')
+    expect(result.emailError).toBeNull()
   })
 
   test('giaoViec: status committed + emailError returned', () => {

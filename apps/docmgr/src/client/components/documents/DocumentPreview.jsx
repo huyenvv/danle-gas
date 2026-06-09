@@ -373,6 +373,13 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   Chỉnh sửa
                 </button>
                 )}
+                {canDelete && (
+                <button onClick={onDelete} disabled={transitioning}
+                  className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
+                  <Icon name="delete" size={18} />
+                  Xóa
+                </button>
+                )}
                 {primaryGiaoViecAction && (
                 <button onClick={openGiaoViec} disabled={transitioning}
                   className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-accent text-white hover:bg-accent-hover transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
@@ -389,7 +396,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                 )}
                 {showPublishBtn && (
                 <button onClick={() => setShowPublishDialog(true)} disabled={transitioning || publishing}
-                  className={`flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1${!primaryGiaoViecAction && !canDelete ? ' col-span-2' : ''}`}>
+                  className="col-span-2 flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-amber-600 text-white hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50 shadow-md3-1">
                   <Icon name="send" size={18} />
                   Phát hành
                 </button>
@@ -408,13 +415,6 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   Hoàn thành
                 </button>
                 )}
-                {canDelete ? (
-                  <button onClick={onDelete} disabled={transitioning}
-                    className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-error-container text-on-error-container hover:opacity-80 transition-opacity text-sm font-medium disabled:opacity-40">
-                    <Icon name="delete" size={18} />
-                    Xóa
-                  </button>
-                ) : (canEditDoc || primaryGiaoViecAction) && !isVanThuOwnerRejected && !isPhuTrachRejectedResult ? <div /> : null}
               </div>
 
               {/* Workflow action buttons */}

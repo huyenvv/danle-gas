@@ -39,6 +39,7 @@ function parseAssignees(v) {
 const WARN_FILE_MB = 50
 const CHUNK_SIZE = 5 * 1024 * 1024          // 5MB per chunk (Drive resumable upload)
 const CHUNKED_THRESHOLD = 25 * 1024 * 1024   // files > 25MB upload directly to Drive in chunks
+const PERCENT_THRESHOLD = 50 * 1024 * 1024   // files > 50MB show % progress instead of chunk count
 
 function buildCategoryOptions(danhMuc) {
   const opts = []
@@ -682,7 +683,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                         <span className="max-w-[120px] truncate">{u.fileName}</span>
                         <span className="opacity-60">({(u.size / 1024 / 1024).toFixed(1)}MB)</span>
                         {u.status === 'uploading' && u.totalChunks ? (
-                          <span className="opacity-60">— {u.progress || 0}/{u.totalChunks}</span>
+                          <span className="opacity-60">— {u.size > PERCENT_THRESHOLD
+                            ? Math.round((u.progress || 0) / u.totalChunks * 100) + '%'
+                            : `${u.progress || 0}/${u.totalChunks}`}</span>
                         ) : null}
                         {u.status !== 'uploading' && (
                           <button type="button" onClick={() => removeEagerUpload(u.id)}

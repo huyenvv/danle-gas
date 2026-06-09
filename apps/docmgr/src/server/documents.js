@@ -1127,14 +1127,10 @@ function transitionDocument(token, id, action, data, updateData) {
       } catch(e) { Logger.log('transitionDocument tuChoiKetQua email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'hoanThanh' || action === 'hoanThanhLai') {
-    // hoanThanh/hoanThanhLai: notify all GĐ
+    // hoanThanh/hoanThanhLai: chỉ báo chuông cho GĐ, không gửi email
     var dirIds = _getDirectorUserIds()
     if (dirIds.length > 0) {
       _markUnreadForUsers(dirIds, id)
-      try {
-        var dirList = _getRecipientsByIds(dirIds)
-        _sendNotificationEmails(dirList, updated, 'trinhDuyet', session)
-      } catch(e) { Logger.log('transitionDocument hoanThanh email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'trinhDuyetLai') {
     // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
