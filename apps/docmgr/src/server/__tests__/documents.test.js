@@ -442,6 +442,9 @@ describe('uploadFileEager', () => {
     expect(result.draftId).toBe(1)
     expect(result.fileInfo.fileName).toBe('test.pdf')
     expect(result.fileInfo.fileId).toBeTruthy()
+    // Returns the draft row so the client can show it in the list without a reload
+    expect(result.data['ID']).toBe(1)
+    expect(result.data['Tình trạng']).toBe('Nháp')
     invalidateSheetCache(SHEETS.HO_SO)
     const docs = getSheetData(SHEETS.HO_SO)
     expect(docs[0]['Tình trạng']).toBe('Nháp')
@@ -454,6 +457,8 @@ describe('uploadFileEager', () => {
     const r2 = uploadFileEager(directorToken, 'AQID', 'image/png', 'file2.png', 1, r1.draftId)
     expect(r2.draftId).toBeUndefined()
     expect(r2.fileInfo.fileName).toBe('file2.png')
+    // Returns the updated draft row (now with both files attached)
+    expect(JSON.parse(r2.data['Tệp đính kèm'])).toHaveLength(2)
     invalidateSheetCache(SHEETS.HO_SO)
     const docs = getSheetData(SHEETS.HO_SO)
     const files = JSON.parse(docs[0]['Tệp đính kèm'])

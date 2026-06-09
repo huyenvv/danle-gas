@@ -473,6 +473,32 @@ describe('DocumentModal', () => {
     expect(onDeleted).toHaveBeenCalledWith('5')
   })
 
+  it('closing via X and choosing "Huỷ" keeps the eager draft in the list (onSaved), without finalizeDraft', async () => {
+    const draftDoc = { ID: 'd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': '', 'Danh mục': '1', 'Tên file': 'ok.pdf' }
+    gasCall.mockResolvedValue({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' }, data: draftDoc })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+
+    const okFile = new File(['x'], 'ok.pdf', { type: 'application/pdf' })
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [okFile] } })
+    })
+    await screen.findByText('ok.pdf', { exact: true }) // eager draft created on the server
+    await screen.findByText(/Đã tạo hồ sơ nháp/)       // draftId + status 'done' settled
+
+    // Close via the X button → confirm appears → choose "Huỷ" (don't save changes)
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
+
+    // Draft is surfaced to the list (not orphaned), and its fields were NOT saved
+    await waitFor(() => {
+      expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(draftDoc)
+    })
+    expect(gasCall.mock.calls.some(c => c[0] === 'api_finalizeDraft')).toBe(false)
+  })
+
   it('NV with canCreate editing own draft sees create-mode buttons', () => {
     const nvSession = {
       ...MOCK_VIEWER_SESSION,

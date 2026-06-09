@@ -280,6 +280,19 @@ function _mockAdd(list, data) {
   return item
 }
 
+// Append an uploaded file to an existing mock draft and return the updated row.
+function _mockAppendDraftFile(draftId, fileInfo) {
+  const d = _mockData.docs.find(x => String(x.ID) === String(draftId))
+  if (!d) return null
+  let infos = []
+  try { infos = JSON.parse(d['Tệp đính kèm'] || '[]') } catch (_) {}
+  infos.push(fileInfo)
+  d['Tệp đính kèm'] = JSON.stringify(infos)
+  d['Tên file'] = infos.map(f => f.fileName).join(', ')
+  d['Ngày cập nhật'] = new Date().toISOString()
+  return { ...d }
+}
+
 function _mockUpdate(list, id, data) {
   const idx = list.findIndex(i => String(i.ID) === String(id))
   if (idx === -1) throw new Error('Không tìm thấy ID ' + id)
@@ -534,9 +547,9 @@ async function mockCall(fn, ...args) {
       const draftId = args[5]
       const fileInfo = { fileId: 'mock-file-' + (++_nextId), fileName: args[3], mimeType: args[2], size: 1024 }
       if (draftId === 'edit') return { fileInfo }
-      if (draftId) return { fileInfo }
+      if (draftId) return { fileInfo, data: _mockAppendDraftFile(draftId, fileInfo) }
       const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
-      return { draftId: draft.ID, fileInfo }
+      return { draftId: draft.ID, fileInfo, data: { ...draft } }
     }
     case 'api_startResumableUpload':
       return { uploadUri: 'mock-resumable-uri', accessToken: 'mock-token' }
@@ -546,9 +559,9 @@ async function mockCall(fn, ...args) {
       const draftId = args[6]
       const fileInfo = { fileId: 'mock-file-' + (++_nextId), fileName: args[2], mimeType: args[3], size: args[4] }
       if (draftId === 'edit') return { fileInfo }
-      if (draftId) return { fileInfo }
+      if (draftId) return { fileInfo, data: _mockAppendDraftFile(draftId, fileInfo) }
       const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
-      return { draftId: draft.ID, fileInfo }
+      return { draftId: draft.ID, fileInfo, data: { ...draft } }
     }
     case 'api_finalizeDraft': {
       const draftId = args[1]

@@ -809,13 +809,14 @@ function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
 
     var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
     existingInfos.push(fileInfo)
-    updateRow(SHEETS.HO_SO, draftId, {
+    var changes = {
       'Tệp đính kèm': JSON.stringify(existingInfos),
       'Tên file': existingInfos.map(function(f) { return f.fileName }).join(', '),
       'Ngày cập nhật': new Date().toISOString(),
-    })
+    }
+    updateRow(SHEETS.HO_SO, draftId, changes)
     invalidateSheetCache(SHEETS.HO_SO)
-    return { fileInfo: fileInfo }
+    return { fileInfo: fileInfo, data: Object.assign({}, draft, changes) }
   }
 
   var record = {
@@ -830,7 +831,7 @@ function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
   }
   var added = addRow(SHEETS.HO_SO, record)
   invalidateSheetCache(SHEETS.HO_SO)
-  return { draftId: added['ID'], fileInfo: fileInfo }
+  return { draftId: added['ID'], fileInfo: fileInfo, data: added }
 }
 
 function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) {

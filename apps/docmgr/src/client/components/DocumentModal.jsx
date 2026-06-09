@@ -115,6 +115,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const [eagerUploads, setEagerUploads] = useState([])
   const eagerIdCounter = useRef(0)
   const [draftId, setDraftId] = useState(isDraftEdit ? doc.ID : null)
+  const [draftDoc, setDraftDoc] = useState(isDraftEdit ? doc : null)
   const [existingFiles, setExistingFiles] = useState(
     isEdit ? _parseFileInfosClient(doc['Tệp đính kèm']) : []
   )
@@ -234,6 +235,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           setDraftId(result.draftId)
           showToast('Đã tạo hồ sơ nháp', 'success')
         }
+        if (result.data) setDraftDoc(result.data)
         setEagerUploads(prev => prev.map(u =>
           u.id === entry.id ? { ...u, status: 'done', fileId: result.fileInfo.fileId } : u
         ))
@@ -381,9 +383,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   }
 
   async function handleCloseX() {
-    if (!draftId || !_hasFormChanges()) { onClose(); return }
+    if (!draftId) { onClose(); return }
 
-    if (await confirm('Lưu thông tin vừa thay đổi vào hồ sơ nháp?')) {
+    if (_hasFormChanges() && await confirm('Lưu thông tin vừa thay đổi vào hồ sơ nháp?')) {
       setUploading(true)
       try {
         const saveForm = {
@@ -401,9 +403,13 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       } finally {
         setUploading(false)
       }
-    } else {
-      onClose()
+      return
     }
+
+    // No changes, or chose "Huỷ": the eager-created draft already exists on the
+    // server — surface it in the list instead of leaving it orphaned.
+    if (draftDoc) onSaved(draftDoc)
+    else onClose()
   }
 
   async function handleCancel() {
@@ -525,7 +531,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
             <h3 className="font-semibold text-on-surface text-base">{isEdit ? 'Chỉnh sửa hồ sơ' : 'Thêm hồ sơ mới'}</h3>
             <p className="text-xs text-on-surface-variant">{isEdit ? 'Cập nhật thông tin hồ sơ' : 'Điền đầy đủ thông tin bên dưới'}</p>
           </div>
-          <button onClick={handleCloseX} disabled={uploading || hasUploading} className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:pointer-events-none">
+          <button onClick={handleCloseX} disabled={uploading || hasUploading} data-testid="doc-modal-close" className="w-9 h-9 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:pointer-events-none">
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>close</span>
           </button>
         </div>
