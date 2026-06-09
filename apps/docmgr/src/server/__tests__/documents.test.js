@@ -473,6 +473,68 @@ describe('uploadFileEager', () => {
   })
 })
 
+describe('chunked upload (large files)', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+    UrlFetchApp._nextResponse = { code: 200, headers: { Location: 'https://www.googleapis.com/upload/resume-uri' }, body: '{}' }
+  })
+
+  test('startResumableUpload returns uploadUri + accessToken', () => {
+    const r = startResumableUpload(directorToken, 'video/mp4', 'big.mp4', 104857600, 1)
+    expect(r.uploadUri).toBe('https://www.googleapis.com/upload/resume-uri')
+    expect(r.accessToken).toBe('mock-oauth-token')
+    // metadata sent to Drive includes the resolved folder + content length
+    const sent = JSON.parse(UrlFetchApp._lastRequest.params.payload)
+    expect(sent.name).toBe('big.mp4')
+    expect(UrlFetchApp._lastRequest.params.headers['X-Upload-Content-Length']).toBe('104857600')
+  })
+
+  test('startResumableUpload throws without categoryId', () => {
+    expect(() => startResumableUpload(directorToken, 'video/mp4', 'big.mp4', 100, null)).toThrow('Danh mục')
+  })
+
+  test('startResumableUpload throws when Drive init fails', () => {
+    UrlFetchApp._nextResponse = { code: 403, headers: {}, body: 'denied' }
+    expect(() => startResumableUpload(directorToken, 'video/mp4', 'big.mp4', 100, 1)).toThrow('phiên tải lên')
+  })
+
+  test('startResumableUpload throws when ROOT_FOLDER_ID not configured', () => {
+    setConfig('ROOT_FOLDER_ID', '')
+    expect(() => startResumableUpload(directorToken, 'video/mp4', 'big.mp4', 100, 1)).toThrow('thư mục Drive')
+  })
+
+  test('finalizeChunkedUpload resolves file id via status query, creates Nháp row + sets sharing', () => {
+    // Server queries the resumable session → Drive returns the created file resource
+    UrlFetchApp._nextResponse = { code: 200, headers: {}, body: '{"id":"drive-file-99"}' }
+    DriveApp._files['drive-file-99'] = { id: 'drive-file-99', name: 'big.mp4' }
+    const r = finalizeChunkedUpload(directorToken, 'https://upload-uri', 'big.mp4', 'video/mp4', 104857600, 1, null)
+    expect(r.draftId).toBe(1)
+    expect(r.fileInfo.fileId).toBe('drive-file-99')
+    expect(r.fileInfo.size).toBe(104857600)
+    expect(DriveApp._files['drive-file-99'].sharing.access).toBe('ANYONE_WITH_LINK')
+    invalidateSheetCache(SHEETS.HO_SO)
+    const files = JSON.parse(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm'])
+    expect(files[0].fileId).toBe('drive-file-99')
+  })
+
+  test('finalizeChunkedUpload appends to existing draft', () => {
+    const r1 = uploadFileEager(directorToken, 'AQID', 'application/pdf', 'small.pdf', 1, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    UrlFetchApp._nextResponse = { code: 200, headers: {}, body: '{"id":"drive-file-big"}' }
+    DriveApp._files['drive-file-big'] = { id: 'drive-file-big', name: 'big.mp4' }
+    const r2 = finalizeChunkedUpload(directorToken, 'https://upload-uri', 'big.mp4', 'video/mp4', 200000000, 1, r1.draftId)
+    expect(r2.draftId).toBeUndefined()
+    invalidateSheetCache(SHEETS.HO_SO)
+    const files = JSON.parse(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm'])
+    expect(files).toHaveLength(2)
+  })
+
+  test('finalizeChunkedUpload throws when upload not complete (308)', () => {
+    UrlFetchApp._nextResponse = { code: 308, headers: { Range: 'bytes=0-5242879' }, body: '' }
+    expect(() => finalizeChunkedUpload(directorToken, 'https://upload-uri', 'big.mp4', 'video/mp4', 104857600, 1, null)).toThrow('chưa hoàn tất')
+  })
+})
+
 describe('finalizeDraft', () => {
   let draftId
 

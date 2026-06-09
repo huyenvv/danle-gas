@@ -609,6 +609,7 @@ export default function MainApp() {
               if (shouldReturnToPreview) setPreviewDoc(doc)
             }
           }}
+          onDeleted={id => removeDocFromCache(id)}
         />
       )}
 

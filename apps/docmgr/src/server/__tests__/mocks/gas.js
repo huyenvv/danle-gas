@@ -192,6 +192,7 @@ global.DriveApp = {
       setTrashed(v) { files[id].trashed = v },
       getUrl()      { return 'https://drive.google.com/file/d/' + id },
       moveTo(folder) { /* no-op in mock */ },
+      setSharing(access, permission) { files[id].sharing = { access, permission } },
     }
   }
 }
@@ -243,8 +244,25 @@ global.HtmlService = {
 global.ScriptApp = {
   _scriptId: 'test-script-id-1234',
   getScriptId() { return this._scriptId },
+  getOAuthToken() { return 'mock-oauth-token' },
   getService() {
     return { getUrl() { return 'https://script.google.com/macros/s/test-script-id-1234/exec' } }
+  }
+}
+
+// ── UrlFetchApp ────────────────────────────────────────────────────────────────
+// Configurable response for resumable-upload tests. Set _nextResponse before a call.
+global.UrlFetchApp = {
+  _nextResponse: { code: 200, headers: { Location: 'https://www.googleapis.com/upload/resume-uri' }, body: '{}' },
+  _lastRequest: null,
+  fetch(url, params) {
+    this._lastRequest = { url, params }
+    const r = this._nextResponse
+    return {
+      getResponseCode() { return r.code },
+      getAllHeaders()   { return r.headers || {} },
+      getContentText()  { return r.body || '' },
+    }
   }
 }
 

@@ -37,6 +37,8 @@ function parseAssignees(v) {
   return [String(v)]
 }
 const WARN_FILE_MB = 50
+const CHUNK_SIZE = 5 * 1024 * 1024          // 5MB per chunk (Drive resumable upload)
+const CHUNKED_THRESHOLD = 25 * 1024 * 1024   // files > 25MB upload directly to Drive in chunks
 
 function buildCategoryOptions(danhMuc) {
   const opts = []
@@ -69,7 +71,7 @@ function parseSuggestions(raw) {
   return multipliers.map(m => ({ value: n * m, label: formatCompact(n * m) }))
 }
 
-export default function DocumentModal({ mode, doc, lookups: initialLookups, token, session, onClose, onSaved, docs }) {
+export default function DocumentModal({ mode, doc, lookups: initialLookups, token, session, onClose, onSaved, onDeleted, docs }) {
   const isEdit = mode === 'edit'
   const isDraftEdit = isEdit && doc?.['Tình trạng'] === 'Nháp'
 
@@ -195,7 +197,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
     const bigFile = unique.find(f => f.size > WARN_FILE_MB * 1024 * 1024)
     if (bigFile) {
-      showToast(`File "${bigFile.name}" lớn hơn ${WARN_FILE_MB}MB — upload có thể chậm hoặc thất bại`, 'warning')
+      showToast(`File "${bigFile.name}" khá lớn — đang tải lên theo từng phần, vui lòng đợi`, 'info')
     }
 
     // Create placeholder entries
@@ -211,14 +213,21 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     setEagerUploads(prev => [...prev, ...entries])
 
     // Sequential upload
+    setError('')
     let currentDraftId = draftId
     for (const entry of entries) {
       try {
         const isFirstUpload = !currentDraftId && !(isEdit && !isDraftEdit)
         if (isFirstUpload) showToast('Đang tạo hồ sơ nháp + upload file...', 'info')
 
-        const base64 = await toBase64(entry.file)
-        const result = await gasCall('api_uploadFileEager', token, base64, entry.mimeType, entry.fileName, form['Danh mục'], (isEdit && !isDraftEdit) ? 'edit' : (currentDraftId || null))
+        const draftArg = (isEdit && !isDraftEdit) ? 'edit' : (currentDraftId || null)
+        let result
+        if (entry.size > CHUNKED_THRESHOLD) {
+          result = await uploadChunked(entry, form['Danh mục'], draftArg)
+        } else {
+          const base64 = await toBase64(entry.file)
+          result = await gasCall('api_uploadFileEager', token, base64, entry.mimeType, entry.fileName, form['Danh mục'], draftArg)
+        }
         if (result.draftId) {
           currentDraftId = result.draftId
           setDraftId(result.draftId)
@@ -228,11 +237,73 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           u.id === entry.id ? { ...u, status: 'done', fileId: result.fileInfo.fileId } : u
         ))
       } catch (err) {
-        setEagerUploads(prev => prev.map(u =>
-          u.id === entry.id ? { ...u, status: 'error', error: err.message } : u
-        ))
+        const msg = `Lỗi tải "${entry.fileName}": ${err.message}`
+        showToast(msg, 'error')
+        setError(msg)   // persist on the form — toast tự tắt quá nhanh
+        // Upload failed → drop the placeholder so it doesn't look attached
+        setEagerUploads(prev => prev.filter(u => u.id !== entry.id))
       }
     }
+  }
+
+  // Chunked upload for large files (> CHUNKED_THRESHOLD): the server opens a
+  // Drive resumable session, then the browser PUTs each chunk directly to Drive.
+  async function uploadChunked(entry, categoryId, draftArg) {
+    const { uploadUri, accessToken } = await gasCall(
+      'api_startResumableUpload', token,
+      entry.mimeType || 'application/octet-stream', entry.fileName, entry.size, categoryId
+    )
+
+    const totalChunks = Math.max(1, Math.ceil(entry.size / CHUNK_SIZE))
+    setEagerUploads(prev => prev.map(u => u.id === entry.id ? { ...u, totalChunks, progress: 0 } : u))
+
+    // Dev mock returns a non-http uploadUri — simulate progress instead of real PUTs
+    const isMock = !/^https?:/i.test(uploadUri)
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, entry.size)
+      const isLast = i === totalChunks - 1
+
+      if (isMock) {
+        await new Promise(r => setTimeout(r, 150))
+      } else {
+        let attempt = 0
+        while (true) {
+          let res
+          try {
+            res = await fetch(uploadUri, {
+              method: 'PUT',
+              headers: {
+                Authorization: 'Bearer ' + accessToken,
+                'Content-Range': `bytes ${start}-${end - 1}/${entry.size}`,
+              },
+              body: entry.file.slice(start, end),
+            })
+          } catch (netErr) {
+            // The final chunk's response is often blocked cross-origin even though
+            // Drive received the bytes — tolerate it; the server confirms completion.
+            if (attempt++ >= 2) {
+              if (isLast) break
+              throw new Error(`Lỗi mạng khi tải phần ${i + 1}/${totalChunks}`)
+            }
+            await new Promise(r => setTimeout(r, 800 * attempt))
+            continue
+          }
+          // 308 = more chunks; 200/201 = complete. Don't read the body (cross-origin).
+          if (res.status === 308 || res.status === 200 || res.status === 201) break
+          if (attempt++ >= 2) throw new Error(`Tải phần ${i + 1}/${totalChunks} thất bại (HTTP ${res.status})`)
+          await new Promise(r => setTimeout(r, 800 * attempt))
+        }
+      }
+      setEagerUploads(prev => prev.map(u => u.id === entry.id ? { ...u, progress: i + 1 } : u))
+    }
+
+    // Server queries the resumable session for the file id + confirms completion
+    return await gasCall(
+      'api_finalizeChunkedUpload', token,
+      uploadUri, entry.fileName, entry.mimeType, entry.size, categoryId, draftArg
+    )
   }
 
   async function removeEagerUpload(uploadId) {
@@ -355,6 +426,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     try {
       if (hasDraft) {
         await gasCall('api_cancelDraft', token, draftId)
+        if (onDeleted) onDeleted(draftId)   // remove the draft from the list immediately
       } else if (hasEagerFiles) {
         await gasCall('api_deleteFiles', token, doneFiles.map(u => u.fileId))
       }
@@ -609,6 +681,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                         </span>
                         <span className="max-w-[120px] truncate">{u.fileName}</span>
                         <span className="opacity-60">({(u.size / 1024 / 1024).toFixed(1)}MB)</span>
+                        {u.status === 'uploading' && u.totalChunks ? (
+                          <span className="opacity-60">— {u.progress || 0}/{u.totalChunks}</span>
+                        ) : null}
                         {u.status !== 'uploading' && (
                           <button type="button" onClick={() => removeEagerUpload(u.id)}
                             className="ml-0.5 hover:text-error transition-colors">

@@ -7,7 +7,8 @@ import { useToast } from '../context/ToastContext.jsx'
 import { btnPrimary, btnOutline } from './common/formStyles.js'
 import Icon from './common/Icon.jsx'
 
-const MAX_FILE_MB = 5
+const MAX_FILE_MB = 25
+const MAX_ROWS = 1000   // server cap in import.js — keep in sync
 
 function formatBytes(n) {
   const b = Number(n) || 0
@@ -32,6 +33,17 @@ function readFileAsBase64(file) {
 
 const thCls = 'px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide'
 
+// Stat chip — doubles as the legend for the status icons used in the table.
+function StatBadge({ icon, count, label, cls }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm ${cls}`}>
+      <Icon name={icon} size={16} />
+      <b>{count}</b>
+      <span>{label}</span>
+    </span>
+  )
+}
+
 export default function ImportManager({ token, lookups, onImported }) {
   const [stage, setStage] = useState('idle') // idle | parsing | preview | importing | result
   const [fileName, setFileName] = useState('')
@@ -39,21 +51,50 @@ export default function ImportManager({ token, lookups, onImported }) {
   const [orphanErrors, setOrphanErrors] = useState([])
   const [result, setResult] = useState(null)
   const [fileModal, setFileModal] = useState(null) // { stt, group } | null
+  const [showAllRows, setShowAllRows] = useState(false)
   const fileInputRef = useRef(null)
   const { showToast } = useToast()
 
   useEffect(() => {
-    if (!fileModal) return
-    const onKey = e => { if (e.key === 'Escape') setFileModal(null) }
+    if (!fileModal && !showAllRows) return
+    const onKey = e => { if (e.key === 'Escape') { setFileModal(null); setShowAllRows(false) } }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [fileModal])
+  }, [fileModal, showAllRows])
 
   const validGroups = groups.filter(g => g.errors.length === 0)
   const invalidGroups = groups.filter(g => g.errors.length > 0)
+  const cleanGroups = validGroups.filter(g => g.warnings.length === 0)
+  const warnGroups = validGroups.filter(g => g.warnings.length > 0)
+  // Hợp lệ lên trên, lỗi xuống dưới
+  const sortedGroups = [...validGroups, ...invalidGroups]
+
+  // Row-level (dòng) tallies — distinct from hồ sơ (groups), since 1 hồ sơ can span nhiều dòng.
+  const countRows = gs => gs.reduce((s, g) => s + (g.rowIndices || []).length, 0)
+  const validRowCount = countRows(validGroups)
+  const orphanRowCount = orphanErrors.reduce((s, e) => s + ((e.rowIndices || []).length || 1), 0)
+  const invalidRowCount = countRows(invalidGroups) + orphanRowCount
+  const totalDataRows = validRowCount + invalidRowCount
+  const stripDong = s => String(s).replace(/^Dòng\s+[\d,\s]+:\s*/i, '')
+  const invalidRowItems = [
+    ...orphanErrors.map(e => ({ row: (e.rowIndices || [9999])[0], text: e.message })),
+    ...invalidGroups.map(g => {
+      const rows = g.rowIndices || []
+      return {
+        row: rows.length ? Math.min.apply(null, rows) : 9999,
+        text: `Dòng ${rows.join(', ')} — ${g.tenHoSo}: ${g.errors.map(stripDong).join('; ')}`,
+      }
+    }),
+  ].sort((a, b) => a.row - b.row)
+
+  // Resolve a user ID (from resolved docData) back to a readable name for the detail popup.
+  function userName(id) {
+    const u = (lookups.users || []).find(x => String(x['ID']) === String(id))
+    return u ? (u['Tên nhân viên'] || u['Tên đăng nhập'] || u['Email'] || String(id)) : String(id)
+  }
 
   function reset() {
-    setStage('idle'); setFileName(''); setGroups([]); setOrphanErrors([]); setResult(null)
+    setStage('idle'); setFileName(''); setGroups([]); setOrphanErrors([]); setResult(null); setShowAllRows(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -133,7 +174,7 @@ export default function ImportManager({ token, lookups, onImported }) {
               <Icon name="cloud_upload" size={28} className="text-on-surface-variant" />
             </div>
             <p className="text-sm font-medium text-on-surface mb-1">Chọn file Excel (.xlsx)</p>
-            <p className="text-xs text-on-surface-variant mb-5">Tối đa {MAX_FILE_MB}MB · các file phải đã upload sẵn trên Drive</p>
+            <p className="text-xs text-on-surface-variant mb-5">Tối đa {MAX_ROWS} dòng · các tài liệu liệt kê trong file phải đã có sẵn trên Drive</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -161,13 +202,10 @@ export default function ImportManager({ token, lookups, onImported }) {
       {/* Preview */}
       {stage === 'preview' && (
         <>
+          {/* File + actions */}
           <div className="bg-white rounded-2xl shadow-card p-4 flex flex-wrap items-center gap-3">
             <Icon name="description" size={18} className="text-on-surface-variant" />
             <span className="text-sm text-on-surface font-medium truncate max-w-xs">{fileName}</span>
-            <span className="text-sm text-on-surface-variant">
-              {groups.length} hồ sơ · <span className="text-emerald-600">{validGroups.length} hợp lệ</span>
-              {invalidGroups.length > 0 && <> · <span className="text-error">{invalidGroups.length} lỗi</span></>}
-            </span>
             <div className="ml-auto flex items-center gap-2">
               <button onClick={reset} className={btnOutline}>Hủy</button>
               <button onClick={handleImport} disabled={validGroups.length === 0} className={btnPrimary}>
@@ -177,13 +215,51 @@ export default function ImportManager({ token, lookups, onImported }) {
             </div>
           </div>
 
-          {orphanErrors.length > 0 && (
-            <div className="bg-error-container text-on-error-container rounded-2xl px-4 py-3 text-sm space-y-0.5">
-              {orphanErrors.map((e, i) => <div key={i}>{e.message}</div>)}
+          {/* 1) Dòng dữ liệu */}
+          <div className="bg-white rounded-2xl shadow-card p-4 space-y-3">
+            <h3 className="text-base font-semibold text-on-surface">{totalDataRows} dòng dữ liệu</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatBadge icon="check_circle" count={validRowCount} label="hợp lệ" cls="bg-emerald-100 text-emerald-700" />
+              <StatBadge
+                icon={invalidRowCount > 0 ? 'error' : 'check_circle'}
+                count={invalidRowCount}
+                label="chưa hợp lệ"
+                cls={invalidRowCount > 0 ? 'bg-red-100 text-red-700' : 'bg-surface-container text-on-surface-variant'}
+              />
             </div>
-          )}
+            {invalidRowItems.length > 0 && (
+              <div className="border-t border-outline-variant pt-3 space-y-1.5">
+                <ul className="text-xs space-y-1">
+                  {invalidRowItems.slice(0, 10).map((d, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-on-surface-variant">
+                      <Icon name="error" size={14} className="text-error mt-px shrink-0" />
+                      <span>{d.text}</span>
+                    </li>
+                  ))}
+                </ul>
+                {invalidRowItems.length > 10 && (
+                  <button onClick={() => setShowAllRows(true)} className="text-xs text-primary font-medium hover:underline">
+                    Xem thêm {invalidRowItems.length - 10} dòng…
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
+          {/* 2) Hồ sơ */}
           <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+            <div className="p-4 space-y-2 border-b border-outline-variant">
+              <h3 className="text-base font-semibold text-on-surface">{groups.length} hồ sơ</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatBadge icon="check_circle" count={cleanGroups.length} label="hợp lệ" cls="bg-emerald-100 text-emerald-700" />
+                <StatBadge icon="warning" count={warnGroups.length} label="cảnh báo" cls="bg-amber-100 text-amber-700" />
+                <StatBadge icon="error" count={invalidGroups.length} label="lỗi" cls="bg-red-100 text-red-700" />
+              </div>
+              <div className="text-xs text-on-surface-variant space-y-0.5">
+                <div>Hồ sơ <b className="text-amber-700">cảnh báo</b> vẫn được import.</div>
+                <div>Hồ sơ <b className="text-error">lỗi</b> bị bỏ qua.</div>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
@@ -193,11 +269,11 @@ export default function ImportManager({ token, lookups, onImported }) {
                     <th className={thCls}>Tên hồ sơ</th>
                     <th className={thCls}>Danh mục</th>
                     <th className={`${thCls} text-center`}>Số file</th>
-                    <th className={thCls}>Ghi chú</th>
+                    <th className={thCls}>Lỗi / Cảnh báo</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant/40">
-                  {groups.map((g, i) => {
+                  {sortedGroups.map((g, i) => {
                     const ok = g.errors.length === 0
                     const warn = ok && g.warnings.length > 0
                     return (
@@ -210,22 +286,18 @@ export default function ImportManager({ token, lookups, onImported }) {
                             className={ok ? (warn ? 'text-amber-600' : 'text-emerald-600') : 'text-error'}
                           />
                         </td>
-                        <td className="px-4 py-3 font-medium text-on-surface">{g.tenHoSo}</td>
-                        <td className="px-4 py-3 text-on-surface-variant">{g.categoryName || '—'}</td>
-                        <td className="px-4 py-3 text-center">
-                          {g.fileCount > 0 ? (
-                            <button
-                              onClick={() => setFileModal({ stt: i + 1, group: g })}
-                              className="inline-flex items-center gap-1 text-primary font-medium hover:underline"
-                              title="Xem danh sách file"
-                            >
-                              {g.fileCount}
-                              <Icon name="visibility" size={15} />
-                            </button>
-                          ) : (
-                            <span className="text-on-surface-variant">0</span>
-                          )}
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setFileModal({ stt: i + 1, group: g })}
+                            className="font-medium text-primary text-left hover:underline inline-flex items-center gap-1"
+                            title="Xem đầy đủ thông tin hồ sơ"
+                          >
+                            {g.tenHoSo}
+                            <Icon name="visibility" size={13} className="opacity-60" />
+                          </button>
                         </td>
+                        <td className="px-4 py-3 text-on-surface-variant">{g.categoryName || '—'}</td>
+                        <td className="px-4 py-3 text-center text-on-surface-variant">{g.fileCount}</td>
                         <td className="px-4 py-3 text-xs space-y-0.5">
                           {g.errors.map((er, j) => <div key={'e' + j} className="text-error">{er}</div>)}
                           {g.warnings.map((w, j) => <div key={'w' + j} className="text-amber-600">{w}</div>)}
@@ -292,7 +364,7 @@ export default function ImportManager({ token, lookups, onImported }) {
               </div>
               <div className="flex-1 min-w-0">
                 <h2 className="text-base font-semibold text-on-surface truncate">{fileModal.group.tenHoSo}</h2>
-                <p className="text-xs text-on-surface-variant">{fileModal.group.files.length} file</p>
+                <p className="text-xs text-on-surface-variant truncate">{fileModal.group.categoryName || '—'} · {fileModal.group.files.length} file</p>
               </div>
               <button
                 onClick={() => setFileModal(null)}
@@ -304,6 +376,53 @@ export default function ImportManager({ token, lookups, onImported }) {
             </div>
 
             <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const g = fileModal.group
+                const d = g.docData || {}
+                const giaTri = Number(d['Giá trị HĐ']) || 0
+                const fields = [
+                  ['Danh mục', g.categoryName],
+                  ['Số hồ sơ', d['Số hồ sơ']],
+                  ['Ngày ban hành', d['Ngày ban hành']],
+                  ['Ngày kết thúc', d['Ngày kết thúc']],
+                  ['Dự án', d['Dự án (Phòng ban)']],
+                  ['Nhà cung cấp', d['Nhà cung cấp (Nơi ban hành)']],
+                  ['Giá trị HĐ', giaTri ? giaTri.toLocaleString('vi-VN') + ' đ' : ''],
+                  ['Phụ trách', d['Phụ trách'] ? userName(d['Phụ trách']) : ''],
+                  ['Người phối hợp', (d['Người phối hợp'] || []).map(userName).join(', ')],
+                  ['Nơi lưu hồ sơ cứng', d['Nơi lưu hồ sơ cứng']],
+                  ['Ghi chú', d['Ghi chú']],
+                ]
+                return (
+                  <>
+                    {(g.errors.length > 0 || g.warnings.length > 0) && (
+                      <div className="px-6 py-3 border-b border-outline-variant text-xs space-y-1">
+                        {g.errors.map((er, j) => (
+                          <div key={'e' + j} className="flex items-start gap-1.5 text-error">
+                            <Icon name="error" size={14} className="mt-px shrink-0" /><span>{er}</span>
+                          </div>
+                        ))}
+                        {g.warnings.map((w, j) => (
+                          <div key={'w' + j} className="flex items-start gap-1.5 text-amber-700">
+                            <Icon name="warning" size={14} className="mt-px shrink-0" /><span>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <dl className="px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 border-b border-outline-variant">
+                      {fields.map(([label, val]) => (
+                        <div key={label} className="min-w-0">
+                          <dt className="text-xs text-on-surface-variant uppercase tracking-wide">{label}</dt>
+                          <dd className="text-sm text-on-surface break-words">{val || '—'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div className="px-6 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                      Danh sách file ({g.files.length})
+                    </div>
+                  </>
+                )
+              })()}
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant">
@@ -342,6 +461,46 @@ export default function ImportManager({ token, lookups, onImported }) {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showAllRows && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm"
+          onClick={() => setShowAllRows(false)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-md3-3 w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-outline-variant shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-error-container flex items-center justify-center shrink-0">
+                <Icon name="error" size={18} className="text-error" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-semibold text-on-surface">Dòng chưa hợp lệ</h2>
+                <p className="text-xs text-on-surface-variant">{invalidRowItems.length} dòng</p>
+              </div>
+              <button
+                onClick={() => setShowAllRows(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors"
+                aria-label="Đóng"
+              >
+                <Icon name="close" size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <ul className="text-sm space-y-2">
+                {invalidRowItems.map((d, i) => (
+                  <li key={i} className="flex items-start gap-2 text-on-surface-variant">
+                    <Icon name="error" size={16} className="text-error mt-px shrink-0" />
+                    <span>{d.text}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>,

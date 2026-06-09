@@ -74,6 +74,109 @@ describe('DocumentModal', () => {
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(mockDoc)
   })
 
+  // Test 2b: Upload failure (e.g. Drive not configured) surfaces server error as toast
+  it('shows server error as a toast when file upload fails', async () => {
+    gasCall.mockRejectedValue(new Error('Chưa cấu hình thư mục Drive. Vào Cài đặt để thiết lập.'))
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+
+    // Danh mục is required before any upload is attempted
+    const danhMucSelect = screen.getAllByRole('combobox')[0]
+    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+
+    const fileInput = container.querySelector('input[type="file"]')
+    const file = new File(['x'], 'test.pdf', { type: 'application/pdf' })
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [file] } })
+    })
+
+    // Error surfaces (toast + persistent form error)
+    expect((await screen.findAllByText(/Chưa cấu hình thư mục Drive/)).length).toBeGreaterThan(0)
+    // Failed upload is dropped — no leftover "test.pdf" attachment badge
+    expect(screen.queryByText('test.pdf', { exact: true })).not.toBeInTheDocument()
+  })
+
+  // Test 2c: Successful upload KEEPS the file in the attachment list (contrast to 2b)
+  it('keeps the file in the list after a successful upload', async () => {
+    gasCall.mockResolvedValue({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' } })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+
+    const danhMucSelect = screen.getAllByRole('combobox')[0]
+    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+
+    const fileInput = container.querySelector('input[type="file"]')
+    const file = new File(['x'], 'ok.pdf', { type: 'application/pdf' })
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [file] } })
+    })
+
+    // Badge appears only after the upload chain resolves → gasCall has run by then
+    expect(await screen.findByText('ok.pdf', { exact: true })).toBeInTheDocument()
+    expect(gasCall).toHaveBeenCalledWith(
+      'api_uploadFileEager', MOCK_TOKEN, expect.any(String), 'application/pdf', 'ok.pdf', '1', null,
+    )
+  })
+
+  // Test 2d: Large file (>25MB) → chunked resumable upload, PUTs chunks directly to Drive,
+  // then finalizes via uploadUri (server resolves fileId)
+  it('uploads a large file in chunks straight to Drive then finalizes by uploadUri', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ status: 308 })
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_startResumableUpload') return Promise.resolve({ uploadUri: 'https://up', accessToken: 'tok' })
+      if (fn === 'api_finalizeChunkedUpload') return Promise.resolve({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'big.pdf' } })
+      return Promise.resolve({})
+    })
+
+    const SIZE = 30 * 1024 * 1024 // 30MB → > 25MB threshold → 6 chunks of 5MB
+    const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
+    })
+
+    expect(await screen.findByText('big.pdf', { exact: true })).toBeInTheDocument()
+    expect(gasCall).toHaveBeenCalledWith('api_startResumableUpload', MOCK_TOKEN, 'application/pdf', 'big.pdf', SIZE, '1')
+    expect(global.fetch).toHaveBeenCalledTimes(6)
+    expect(gasCall).toHaveBeenCalledWith('api_finalizeChunkedUpload', MOCK_TOKEN, 'https://up', 'big.pdf', 'application/pdf', SIZE, '1', null)
+
+    delete global.fetch
+  })
+
+  // Test 2e: Final chunk's response blocked cross-origin (CORS) → tolerated, still finalizes
+  it('finalizes even when the final chunk response is blocked cross-origin', async () => {
+    jest.useFakeTimers()
+    let n = 0
+    global.fetch = jest.fn(() => {
+      n += 1
+      return n <= 5 ? Promise.resolve({ status: 308 }) : Promise.reject(new TypeError('Failed to fetch'))
+    })
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_startResumableUpload') return Promise.resolve({ uploadUri: 'https://up', accessToken: 'tok' })
+      if (fn === 'api_finalizeChunkedUpload') return Promise.resolve({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'big.pdf' } })
+      return Promise.resolve({})
+    })
+
+    const SIZE = 30 * 1024 * 1024
+    const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
+      await jest.advanceTimersByTimeAsync(5000) // drive the retry backoffs on the final chunk
+    })
+
+    // Last chunk's PUT kept failing the cross-origin read, but finalize is still called
+    expect(gasCall).toHaveBeenCalledWith('api_finalizeChunkedUpload', MOCK_TOKEN, 'https://up', 'big.pdf', 'application/pdf', SIZE, '1', null)
+    expect(screen.getByText('big.pdf', { exact: true })).toBeInTheDocument()
+
+    jest.useRealTimers()
+    delete global.fetch
+  })
+
   // Test 3: Edit pre-fill — mode='edit', doc=MOCK_DOCS[0] → Tên hồ sơ pre-filled
   it('pre-fills Tên hồ sơ in edit mode', () => {
     renderModal({
@@ -313,6 +416,27 @@ describe('DocumentModal', () => {
       )
     })
     expect(gasCall).not.toHaveBeenCalledWith('api_updateDocument', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
+  })
+
+  it('cancelling a draft calls onDeleted so the list updates immediately', async () => {
+    const onDeleted = jest.fn()
+    const draftDoc = { ...MOCK_DOCS[0], ID: '5', 'Tình trạng': 'Nháp', 'Tên hồ sơ': 'Draft Doc' }
+    gasCall.mockResolvedValue({ success: true })
+
+    renderModal({ mode: 'edit', doc: draftDoc, session: MOCK_ADMIN_SESSION, onDeleted })
+
+    fireEvent.click(screen.getByRole('button', { name: /^hủy$/i }))
+
+    // Confirm the "huỷ nháp" dialog
+    await waitFor(() => {
+      const c = screen.queryByRole('button', { name: /đồng ý|xác nhận|có/i })
+      if (c) fireEvent.click(c)
+    })
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith('api_cancelDraft', MOCK_TOKEN, '5')
+    })
+    expect(onDeleted).toHaveBeenCalledWith('5')
   })
 
   it('NV with canCreate editing own draft sees create-mode buttons', () => {

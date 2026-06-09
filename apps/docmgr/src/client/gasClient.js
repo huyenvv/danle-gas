@@ -538,6 +538,18 @@ async function mockCall(fn, ...args) {
       const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
       return { draftId: draft.ID, fileInfo }
     }
+    case 'api_startResumableUpload':
+      return { uploadUri: 'mock-resumable-uri', accessToken: 'mock-token' }
+    case 'api_finalizeChunkedUpload': {
+      // args: token, uploadUri, fileName, mimeType, fileSize, categoryId, draftId
+      const categoryId = args[5]
+      const draftId = args[6]
+      const fileInfo = { fileId: 'mock-file-' + (++_nextId), fileName: args[2], mimeType: args[3], size: args[4] }
+      if (draftId === 'edit') return { fileInfo }
+      if (draftId) return { fileInfo }
+      const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([fileInfo]), 'Tên file': fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
+      return { draftId: draft.ID, fileInfo }
+    }
     case 'api_finalizeDraft': {
       const draftId = args[1]
       const formData = args[2] || {}

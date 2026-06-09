@@ -50,6 +50,29 @@ beforeEach(() => {
   localStorage.setItem('docmgr_access_token', MOCK_TOKEN)
 })
 
+// ── Frozen clock ────────────────────────────────────────────────────────────
+// Deadline assertions read `new Date()` twice — once when daysFromNow() builds a
+// fixture, once when getDeadlineStatus() renders. If real local midnight falls
+// between those two calls, the day-count drifts by one and the test flakes.
+// Freeze the no-arg `new Date()` to a fixed local noon (away from any midnight
+// boundary) so both calls see the same instant. Parameterized `new Date(...)`
+// and timers stay real so date parsing and RTL async still work.
+const RealDate = Date
+const FROZEN_MS = new RealDate(2026, 5, 15, 12, 0, 0).getTime() // local noon, 15 Jun 2026
+
+beforeAll(() => {
+  global.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length === 0 ? [FROZEN_MS] : args))
+    }
+    static now() { return FROZEN_MS }
+  }
+})
+
+afterAll(() => {
+  global.Date = RealDate
+})
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 const MOCK_VT_SESSION = {
@@ -193,10 +216,16 @@ describe('Documents page — MainApp', () => {
 
 // ── Deadline warning badge rendering ─────────────────────────────────────────
 
+// Emit a LOCAL dd/mm/yyyy string. Using toISOString() here would serialize in
+// UTC, so near midnight the date could land ±1 day off the intended local day,
+// drifting "Quá hạn N ngày" by one. getDeadlineStatus parses dd/mm/yyyy in local
+// time, matching its local "today", so the day-count is exact in any timezone.
 function daysFromNow(n) {
   const d = new Date()
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getFullYear()}`
 }
 
 function renderWithDocs(docs) {

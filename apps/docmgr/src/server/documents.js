@@ -780,11 +780,8 @@ function _buildAssignees(input, defaultUserId) {
 
 // ── Eager upload ────────────────────────────────────────────────────────────
 
-function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) {
-  Logger.log('[uploadFileEager] START fileName=' + fileName + ' categoryId=' + categoryId + ' draftId=' + draftId + ' base64len=' + (base64Data ? base64Data.length : 0))
-  var session = requireAuth(token)
-
-  // Permission: same as createDocument
+// Permission check shared by all upload paths (same as createDocument).
+function _checkCreatePermission(session) {
   var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   if (adminRoles.indexOf(session.role) === -1) {
     var roles = getSheetData(SHEETS.APP_ROLES)
@@ -792,20 +789,19 @@ function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draf
     var allowed = appRole && (appRole['Được tạo hồ sơ'] === 'TRUE' || appRole['Được tạo hồ sơ'] === true)
     if (!allowed) throw new Error('Bạn không có quyền tạo hồ sơ')
   }
+}
 
-  if (!categoryId) throw new Error('Danh mục là bắt buộc')
-
-  var catPath = _resolveCategoryPath(categoryId)
-  var result = uploadFile(base64Data, mimeType, fileName, catPath)
-  var fileInfo = { fileId: result.fileId, fileName: result.fileName, mimeType: mimeType, size: result.size || 0 }
-
-  // draftId='edit': upload only, no row changes
+// Attach an already-uploaded file to a draft row. Shared by uploadFileEager
+// (small files) and finalizeChunkedUpload (large files).
+//   draftId === 'edit' → upload only, no row changes
+//   draftId truthy      → append to existing Nháp row
+//   draftId falsy       → create new Nháp row
+function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
   if (draftId === 'edit') {
     return { fileInfo: fileInfo }
   }
 
   if (draftId) {
-    // Append file to existing draft row
     var docs = getSheetData(SHEETS.HO_SO)
     var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
     if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
@@ -822,7 +818,6 @@ function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draf
     return { fileInfo: fileInfo }
   }
 
-  // No draftId: create new Nháp row
   var record = {
     'Tên hồ sơ': '',
     'Danh mục': categoryId,
@@ -836,6 +831,44 @@ function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draf
   var added = addRow(SHEETS.HO_SO, record)
   invalidateSheetCache(SHEETS.HO_SO)
   return { draftId: added['ID'], fileInfo: fileInfo }
+}
+
+function uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) {
+  var session = requireAuth(token)
+  _checkCreatePermission(session)
+  if (!categoryId) throw new Error('Danh mục là bắt buộc')
+
+  var catPath = _resolveCategoryPath(categoryId)
+  var result = uploadFile(base64Data, mimeType, fileName, catPath)
+  var fileInfo = { fileId: result.fileId, fileName: result.fileName, mimeType: mimeType, size: result.size || 0 }
+  return _attachFileToDraft(session, fileInfo, categoryId, draftId)
+}
+
+// Chunked upload — step 1: open a resumable session. The client then uploads
+// chunks directly to Drive (bypassing google.script.run's ~50MB limit).
+function startResumableUpload(token, mimeType, fileName, fileSize, categoryId) {
+  var session = requireAuth(token)
+  _checkCreatePermission(session)
+  if (!categoryId) throw new Error('Danh mục là bắt buộc')
+
+  var catPath = _resolveCategoryPath(categoryId)
+  var folderId = resolveFolderId(catPath)
+  var result = initResumableUpload(mimeType, fileName, fileSize, folderId)
+  return { uploadUri: result.uploadUri, accessToken: result.accessToken }
+}
+
+// Chunked upload — step 2: after the client finishes uploading all chunks,
+// the server queries the resumable session for the file id (the client cannot
+// read the final cross-origin response), sets sharing, attaches to the draft.
+function finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, categoryId, draftId) {
+  var session = requireAuth(token)
+  _checkCreatePermission(session)
+  if (!categoryId) throw new Error('Danh mục là bắt buộc')
+
+  var fileId = getResumableFileId(uploadUri, fileSize)
+  DriveApp.getFileById(fileId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+  var fileInfo = { fileId: fileId, fileName: fileName, mimeType: mimeType, size: fileSize || 0 }
+  return _attachFileToDraft(session, fileInfo, categoryId, draftId)
 }
 
 function finalizeDraft(token, draftId, formData, notifyTarget) {

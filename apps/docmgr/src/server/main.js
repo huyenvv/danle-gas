@@ -376,6 +376,14 @@ function api_uploadFileEager(token, base64Data, mimeType, fileName, categoryId, 
   return _wrap(function() { return uploadFileEager(token, base64Data, mimeType, fileName, categoryId, draftId) })
 }
 
+function api_startResumableUpload(token, mimeType, fileName, fileSize, categoryId) {
+  return _wrap(function() { return startResumableUpload(token, mimeType, fileName, fileSize, categoryId) })
+}
+
+function api_finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, categoryId, draftId) {
+  return _wrap(function() { return finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, categoryId, draftId) })
+}
+
 function api_finalizeDraft(token, draftId, formData, notifyTarget) {
   return _wrap(function() { return finalizeDraft(token, draftId, formData, notifyTarget) })
 }
