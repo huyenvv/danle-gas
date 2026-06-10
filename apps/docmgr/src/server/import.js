@@ -9,9 +9,12 @@ var IMPORT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
 var IMPORT_SOURCE_TAB = 'FileMoi'
 
 function _importCheckRole(session) {
-  if (IMPORT_ROLES.indexOf(session.role) === -1) {
-    throw new Error('Bạn không có quyền import')
-  }
+  // Full-access roles always allowed; others need the "Được import" flag.
+  if (IMPORT_ROLES.indexOf(session.role) !== -1) return
+  var roles = getSheetData(SHEETS.APP_ROLES)
+  var appRole = roles.find(function (r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
+  var allowed = appRole && (appRole['Được import'] === 'TRUE' || appRole['Được import'] === true)
+  if (!allowed) throw new Error('Bạn không có quyền import')
 }
 
 // Normalize a header cell: drop parenthetical annotations, trim, lowercase.

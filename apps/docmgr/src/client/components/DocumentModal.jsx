@@ -252,15 +252,13 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     }
   }
 
-  // Copy files chosen from the deploy owner's Drive into the category folder.
-  // Mirrors handleFileChange's placeholder/draft flow but copies server-side in one call.
+  // Link files chosen from the deploy owner's Drive (no copy). The server derives
+  // the category from each file's folder and validates it; if the form has no
+  // category yet, it's auto-filled from the result. Whole-batch (server throws on
+  // any invalid file), so entries are all attached or all rolled back.
   async function handleDriveFiles(picked) {
     setShowDrivePicker(false)
     if (!picked || !picked.length) return
-    if (!form['Danh mục']) {
-      setError('Vui lòng chọn Danh mục trước')
-      return
-    }
 
     const existingNames = new Set([
       ...eagerUploads.map(u => u.fileName),
@@ -277,6 +275,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       size: f.size,
       status: 'uploading',
       fileId: null,
+      linked: true,
     }))
     setEagerUploads(prev => [...prev, ...entries])
     setError('')
@@ -284,9 +283,10 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     try {
       const draftArg = (isEdit && !isDraftEdit) ? 'edit' : (draftId || null)
       const isFirst = !draftId && !(isEdit && !isDraftEdit)
-      if (isFirst) showToast('Đang tạo hồ sơ nháp + sao chép file từ Drive...', 'info')
+      if (isFirst) showToast('Đang tạo hồ sơ nháp + liên kết file từ Drive...', 'info')
 
-      const res = await gasCall('api_copyDriveFiles', token, unique.map(f => f.id), form['Danh mục'], draftArg)
+      const res = await gasCall('api_linkDriveFiles', token, unique.map(f => f.id), form['Danh mục'] || null, draftArg)
+      if (res.categoryId && !form['Danh mục']) setField('Danh mục', String(res.categoryId))   // auto-fill derived category
       if (res.draftId) {
         setDraftId(res.draftId)
         showToast('Đã tạo hồ sơ nháp', 'success')
@@ -298,15 +298,12 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       setEagerUploads(prev => prev.flatMap(u => {
         if (!entries.find(e => e.id === u.id)) return [u]
         const r = byDrive[u.driveId]
-        if (r && r.ok) return [{ ...u, status: 'done', fileId: r.fileInfo.fileId }]
-        const errMsg = (r && r.error) || 'Lỗi sao chép'
-        showToast(`Lỗi sao chép "${u.fileName}": ${errMsg}`, 'error')
+        if (r && r.ok) return [{ ...u, status: 'done', fileId: r.fileInfo.fileId, linked: true }]
         return []
       }))
     } catch (err) {
-      const msg = `Lỗi sao chép từ Drive: ${err.message}`
-      showToast(msg, 'error')
-      setError(msg)
+      showToast(err.message || 'Lỗi liên kết file từ Drive', 'error')
+      setError(err.message)
       setEagerUploads(prev => prev.filter(u => !entries.find(e => e.id === u.id)))
     }
   }
@@ -374,7 +371,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   async function removeEagerUpload(uploadId) {
     const upload = eagerUploads.find(u => u.id === uploadId)
     if (!upload) return
-    if (upload.status === 'done' && upload.fileId) {
+    // Linked Drive files are only unlinked here — never trashed on Drive
+    if (upload.status === 'done' && upload.fileId && !upload.linked) {
       try {
         await gasCall('api_deleteFiles', token, [upload.fileId])
       } catch (_) {}
@@ -497,7 +495,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         await gasCall('api_cancelDraft', token, draftId)
         if (onDeleted) onDeleted(draftId)   // remove the draft from the list immediately
       } else if (hasEagerFiles) {
-        await gasCall('api_deleteFiles', token, doneFiles.map(u => u.fileId))
+        // Don't trash linked Drive files — only machine uploads
+        const toTrash = doneFiles.filter(u => !u.linked).map(u => u.fileId)
+        if (toTrash.length) await gasCall('api_deleteFiles', token, toTrash)
       }
       showToast('Đã xoá hồ sơ nháp và file đính kèm', 'success')
     } catch (err) {
@@ -798,13 +798,10 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </div>
                 {canPickDrive && (
                   <button type="button"
-                    onClick={() => {
-                      if (!form['Danh mục']) { setError('Vui lòng chọn Danh mục trước'); return }
-                      setShowDrivePicker(true)
-                    }}
+                    onClick={() => setShowDrivePicker(true)}
                     className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl border border-outline-variant text-sm text-on-surface hover:bg-primary/5 hover:border-primary/50 transition-colors">
                     <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>add_to_drive</span>
-                    Chọn từ Google Drive
+                    Link file từ Google Drive
                   </button>
                 )}
               </Field>
@@ -1082,6 +1079,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       {showDrivePicker && (
         <DriveFilePicker
           token={token}
+          lockToAppRoot
+          title="Link file từ Google Drive"
           onConfirm={handleDriveFiles}
           onClose={() => setShowDrivePicker(false)}
         />

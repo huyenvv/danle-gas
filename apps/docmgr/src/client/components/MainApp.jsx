@@ -298,7 +298,7 @@ export default function MainApp() {
     return map
   }, [lookups.users])
   const canCreate = session.canCreate || session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Văn thư'
-  const canImport = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session.role)
+  const canImport = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session.role) || session.canImport
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">

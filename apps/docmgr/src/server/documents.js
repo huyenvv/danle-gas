@@ -584,9 +584,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   // Parse existing file infos
   var existingInfos = _parseFileInfos(doc['Tệp đính kèm'])
 
-  // Delete files that are NOT in keepFileIds
+  // Delete files that are NOT in keepFileIds — but only trash per the policy
+  // (machine uploads in Nháp; linked Drive files never; else leave orphaned)
   existingInfos.forEach(function(ef) {
-    if (ef.fileId && keepFileIds.indexOf(ef.fileId) === -1) {
+    if (ef.fileId && keepFileIds.indexOf(ef.fileId) === -1 && _shouldTrashFile(ef, doc['Tình trạng'])) {
       deleteFile(ef.fileId)
     }
   })
@@ -665,6 +666,14 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   return { data: updated, emailError: emailError }
 }
 
+// Whether a file should be trashed on Drive when removed from a document.
+// Linked Drive files are never trashed; machine-uploaded files only in Nháp.
+// Anything else is left orphaned (a separate cleanup tool handles it).
+function _shouldTrashFile(fileInfo, docStatus) {
+  if (fileInfo && fileInfo.linked) return false
+  return docStatus === 'Nháp'
+}
+
 function deleteDocument(token, id) {
   var session = requireAuth(token)
   var deleteRoles = ['admin', 'Quản trị viên']
@@ -674,10 +683,10 @@ function deleteDocument(token, id) {
   var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
-  // Delete all associated Drive files (JSON array or legacy plain string)
+  // Only trash machine-uploaded files of a Nháp document; otherwise leave orphaned
   var fileInfos = _parseFileInfos(doc['Tệp đính kèm'])
   fileInfos.forEach(function(fi) {
-    if (fi.fileId) deleteFile(fi.fileId)
+    if (fi.fileId && _shouldTrashFile(fi, doc['Tình trạng'])) deleteFile(fi.fileId)
   })
 
   deleteRow(SHEETS.HO_SO, id)
@@ -802,45 +811,91 @@ function _checkPickDrivePermission(session) {
   if (!allowed) throw new Error('Bạn không có quyền chọn file từ Google Drive')
 }
 
-// Copy each Drive file (by id) into the category folder. Returns one result per
-// file; a failure on one file does not abort the others.
-function copyDriveFilesToCategory(fileIds, categoryId) {
-  var catPath = _resolveCategoryPath(categoryId)
-  var targetFolder = DriveApp.getFolderById(resolveFolderId(catPath))
-  return fileIds.map(function(fileId) {
-    try {
-      var src = DriveApp.getFileById(fileId)
-      var copy = src.makeCopy(src.getName(), targetFolder)
-      copy.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
-      return {
-        fileId: fileId,
-        ok: true,
-        fileInfo: { fileId: copy.getId(), fileName: src.getName(), mimeType: src.getMimeType(), size: src.getSize() || 0 },
-      }
-    } catch (e) {
-      return { fileId: fileId, ok: false, error: e.message }
+// Find a category whose name-path equals `names` (e.g. ['Hợp đồng','Hợp đồng XD']).
+function _matchCategoryByPath(names) {
+  if (!names || names.length === 0) return null   // file sits directly in ROOT, not a category
+  var cats = getSheetData(SHEETS.DANH_MUC)
+  for (var i = 0; i < cats.length; i++) {
+    var path = _resolveCategoryPath(cats[i]['ID'])
+    if (path.length !== names.length) continue
+    var same = true
+    for (var j = 0; j < path.length; j++) {
+      if (String(path[j]) !== String(names[j])) { same = false; break }
     }
-  })
+    if (same) return cats[i]['ID']
+  }
+  return null
 }
 
-function copyDriveFiles(token, fileIds, categoryId, draftId) {
+// Resolve which app category a Drive file belongs to, from the folder it lives in.
+// Walks the file's parent chain up to ROOT_FOLDER_ID, builds the folder-name path,
+// and matches it exactly against a category's name path. Returns the category ID,
+// or null if the file is outside the app tree / its folder isn't a known category.
+function _resolveCategoryForFile(fileId) {
+  var rootId = getConfig('ROOT_FOLDER_ID')
+  if (!rootId) throw new Error('Chưa cấu hình thư mục gốc (ROOT_FOLDER_ID) trong Cài đặt')
+
+  var parents = DriveApp.getFileById(fileId).getParents()
+  if (!parents.hasNext()) return null
+
+  var names = []
+  var cur = parents.next()
+  var guard = 0
+  while (cur && guard < 50) {
+    guard++
+    if (cur.getId() === rootId) return _matchCategoryByPath(names)
+    names.unshift(cur.getName())
+    var up = cur.getParents()
+    if (!up.hasNext()) return null   // reached My Drive root without hitting app root → outside tree
+    cur = up.next()
+  }
+  return null
+}
+
+// Link existing Drive files (NO copy) to the document. Each file must live under
+// the app's category tree; the category is derived from the file's folder. If the
+// form already chose a category, every file must match it; otherwise the derived
+// category (shared by all files) is returned for the client to fill in.
+function linkDriveFiles(token, fileIds, categoryId, draftId) {
   var session = requireAuth(token)
   _checkPickDrivePermission(session)
-  if (!categoryId) throw new Error('Danh mục là bắt buộc')
   if (!fileIds || !fileIds.length) throw new Error('Chưa chọn file nào')
 
-  var copied = copyDriveFilesToCategory(fileIds, categoryId)
+  // Pass 1: resolve + validate every file BEFORE attaching anything
+  var resolved = fileIds.map(function(fileId) {
+    var file = DriveApp.getFileById(fileId)
+    var catId = _resolveCategoryForFile(fileId)
+    if (catId === null || catId === undefined) {
+      throw new Error('File "' + file.getName() + '" không nằm trong danh mục nào của app. Hãy đặt file vào đúng thư mục danh mục, hoặc tạo danh mục tương ứng trong app trước.')
+    }
+    return { fileId: fileId, file: file, catId: catId }
+  })
+
+  var targetCat = categoryId || resolved[0].catId
+  resolved.forEach(function(r) {
+    if (String(r.catId) !== String(targetCat)) {
+      throw new Error(categoryId
+        ? 'File "' + r.file.getName() + '" thuộc danh mục khác với danh mục đã chọn của hồ sơ.'
+        : 'Các file được chọn thuộc nhiều danh mục khác nhau. Mỗi hồ sơ chỉ thuộc một danh mục.')
+    }
+  })
+
+  // Pass 2: ensure sharing, attach (linked, no copy)
   var outDraftId = (draftId === 'edit') ? 'edit' : (draftId || null)
   var lastData
-  copied.forEach(function(r) {
-    if (!r.ok) return
-    var attach = _attachFileToDraft(session, r.fileInfo, categoryId, outDraftId)
+  var results = resolved.map(function(r) {
+    r.file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+    var fileInfo = { fileId: r.fileId, fileName: r.file.getName(), mimeType: r.file.getMimeType(), size: r.file.getSize() || 0, linked: true }
+    var attach = _attachFileToDraft(session, fileInfo, targetCat, outDraftId)
     if (attach.draftId) outDraftId = attach.draftId
     if (attach.data) lastData = attach.data
+    return { fileId: r.fileId, ok: true, fileInfo: fileInfo }
   })
+
   return {
+    categoryId: targetCat,
     draftId: (draftId === 'edit') ? undefined : (outDraftId || undefined),
-    results: copied,
+    results: results,
     data: lastData,
   }
 }
@@ -1013,10 +1068,10 @@ function cancelDraft(token, draftId) {
   if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
   if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được huỷ hồ sơ nháp')
 
-  // Delete files from Drive
+  // Delete files from Drive — draft is Nháp, so machine uploads trash, links don't
   var fileInfos = _parseFileInfos(draft['Tệp đính kèm'])
   fileInfos.forEach(function(fi) {
-    if (fi.fileId) deleteFile(fi.fileId)
+    if (fi.fileId && _shouldTrashFile(fi, draft['Tình trạng'])) deleteFile(fi.fileId)
   })
 
   // Delete the draft row

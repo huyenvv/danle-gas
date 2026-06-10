@@ -95,6 +95,7 @@ function getAllData(session) {
       'Quyền': role,
       'Được phát hành': isAdminOrVanThu || r['Được phát hành'] === 'TRUE' || r['Được phát hành'] === true,
       'Được chọn từ Drive': isAdminOrVanThu || r['Được chọn từ Drive'] === 'TRUE' || r['Được chọn từ Drive'] === true,
+      'Được import': isAdminOrVanThu || r['Được import'] === 'TRUE' || r['Được import'] === true,
     }
   })
   var allCats = getSheetData(SHEETS.DANH_MUC)

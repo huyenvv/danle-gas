@@ -18,6 +18,11 @@ const FOLDER_A = {
   folders: [{ id: 'fB', name: 'Folder B' }],
   files: [{ id: 'x2', name: 'c.xlsx', mimeType: 'xlsx', size: 200 }],
 }
+const APP_ROOT = {
+  current: { id: 'app-root', name: 'Tài liệu công ty' },
+  folders: [{ id: 'ar1', name: 'Hợp đồng' }],
+  files: [{ id: 'arx', name: 'm.xlsx', mimeType: 'xlsx', size: 300 }],
+}
 
 beforeEach(() => {
   _clearDriveBrowseCache()             // reset in-memory + localStorage between tests
@@ -25,6 +30,7 @@ beforeEach(() => {
   gasCall.mockImplementation((fn, token, folderId) => {
     if (!folderId) return Promise.resolve(ROOT)
     if (folderId === 'fA') return Promise.resolve(FOLDER_A)
+    if (folderId === '__APP_ROOT__') return Promise.resolve(APP_ROOT)
     return Promise.resolve({ current: { id: folderId, name: 'X' }, folders: [], files: [] })
   })
 })
@@ -89,6 +95,27 @@ describe('DriveFilePicker', () => {
     await screen.findByText('Folder A')                       // 1 call
     await act(async () => { fireEvent.click(screen.getByTitle('Tải lại thư mục này')) })
     expect(gasCall).toHaveBeenCalledTimes(2)                  // forced, bypasses cache
+  })
+
+  it('startAtAppRoot opens the configured folder with a My Drive escape crumb', async () => {
+    renderPicker({ startAtAppRoot: true })
+    await screen.findByText('Hợp đồng')                       // app-root listing shown
+    expect(gasCall).toHaveBeenCalledWith('api_browseDrive', 't', '__APP_ROOT__')
+    expect(screen.getByText('Tài liệu công ty')).toBeInTheDocument()  // app folder crumb
+    expect(screen.getByText('My Drive')).toBeInTheDocument()          // escape crumb
+
+    // Clicking My Drive escapes to the full Drive root
+    await act(async () => { fireEvent.click(screen.getByText('My Drive')) })
+    await screen.findByText('Folder A')
+    expect(gasCall).toHaveBeenCalledWith('api_browseDrive', 't', '')
+  })
+
+  it('lockToAppRoot opens the app folder with NO My Drive escape crumb', async () => {
+    renderPicker({ lockToAppRoot: true })
+    await screen.findByText('Hợp đồng')
+    expect(gasCall).toHaveBeenCalledWith('api_browseDrive', 't', '__APP_ROOT__')
+    expect(screen.getByText('Tài liệu công ty')).toBeInTheDocument()  // app folder crumb
+    expect(screen.queryByText('My Drive')).not.toBeInTheDocument()    // locked — no escape
   })
 
   it('accept filter hides non-matching files', async () => {

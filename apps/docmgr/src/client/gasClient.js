@@ -318,7 +318,7 @@ async function mockCall(fn, ...args) {
     case 'api_ssoLogin':
     case 'api_resume': {
       if (!_mockSession) {
-        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, canCreate: true, canCreateSubCat: true, canPublish: true, canPickDrive: true }
+        _mockSession = { userId: 1, username: 'admin', role: 'admin', email: 'admin@test.com', name: 'Admin', mustChangePass: false, canCreate: true, canCreateSubCat: true, canPublish: true, canPickDrive: true, canImport: true }
       }
       return {
         accessToken: 'mock-access-' + Date.now(),
@@ -544,6 +544,14 @@ async function mockCall(fn, ...args) {
     }
     case 'api_browseDrive': {
       const pid = args[1]
+      if (pid === '__APP_ROOT__') return {
+        current: { id: 'app-root', name: 'Tài liệu công ty (Settings)' },
+        folders: [{ id: 'ar1', name: 'Hợp đồng' }, { id: 'ar2', name: 'Công văn' }],
+        files: [
+          { id: 'arx', name: 'Mẫu hồ sơ.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 40960 },
+          { id: 'arp', name: 'Hướng dẫn.pdf', mimeType: 'application/pdf', size: 102400 },
+        ],
+      }
       if (!pid) return {
         current: { id: 'root', name: 'My Drive' },
         folders: [{ id: 'f1', name: 'Dự án A' }, { id: 'f2', name: 'Hợp đồng' }, { id: 'f3', name: 'Tài liệu nội bộ' }],
@@ -564,27 +572,28 @@ async function mockCall(fn, ...args) {
         ],
       }
     }
-    case 'api_copyDriveFiles': {
+    case 'api_linkDriveFiles': {
+      // Dev mock: link (no copy). Pretend every picked file resolves to category 1.
       const fileIds = args[1] || []
-      const categoryId = args[2]
+      const targetCat = args[2] || 1
       const draftId = args[3]
       const results = fileIds.map(fid => ({
         fileId: fid, ok: true,
-        fileInfo: { fileId: 'mock-copy-' + (++_nextId), fileName: 'Drive ' + fid + '.pdf', mimeType: 'application/pdf', size: 2048 },
+        fileInfo: { fileId: fid, fileName: 'Drive ' + fid + '.pdf', mimeType: 'application/pdf', size: 2048, linked: true },
       }))
-      if (draftId === 'edit') return { results }
+      if (draftId === 'edit') return { categoryId: targetCat, results }
       let outDraftId = draftId || null
       let lastData
       results.forEach(r => {
         if (outDraftId) {
           lastData = _mockAppendDraftFile(outDraftId, r.fileInfo)
         } else {
-          const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': categoryId, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([r.fileInfo]), 'Tên file': r.fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
+          const draft = _mockAdd(_mockData.docs, { 'Tên hồ sơ': '', 'Danh mục': targetCat, 'Tình trạng': 'Nháp', 'Tệp đính kèm': JSON.stringify([r.fileInfo]), 'Tên file': r.fileInfo.fileName, 'Người tạo': 'admin', 'Người cập nhật': 'admin', 'Ngày cập nhật': new Date().toISOString() })
           outDraftId = draft.ID
           lastData = { ...draft }
         }
       })
-      return { draftId: (draftId === 'edit') ? undefined : outDraftId, results, data: lastData }
+      return { categoryId: targetCat, draftId: (draftId === 'edit') ? undefined : outDraftId, results, data: lastData }
     }
     case 'api_uploadFileEager': {
       const categoryId = args[4]

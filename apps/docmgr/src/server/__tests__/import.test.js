@@ -128,3 +128,19 @@ describe('_parseImportBlob validation (empty / over-limit)', () => {
     expect(() => parseImportFileFromDrive(vanThuToken, 'driveXlsx')).toThrow('không có dữ liệu')
   })
 })
+
+describe('_importCheckRole permission flag', () => {
+  test('full-access role passes without the flag', () => {
+    expect(() => _importCheckRole({ role: 'Văn thư', userId: 10 })).not.toThrow()
+  })
+
+  test('non-full-access without flag is rejected', () => {
+    expect(() => _importCheckRole({ role: 'Nhân viên', userId: 20 })).toThrow('không có quyền')
+  })
+
+  test('non-full-access with "Được import" flag passes', () => {
+    SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push([99, 30, 'staff', APP_ID, 'Nhân viên', '', '', '', '', 'TRUE'])
+    invalidateSheetCache(SHEETS.APP_ROLES)
+    expect(() => _importCheckRole({ role: 'Nhân viên', userId: 30 })).not.toThrow()
+  })
+})

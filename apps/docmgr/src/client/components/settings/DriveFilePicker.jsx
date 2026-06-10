@@ -12,6 +12,10 @@ const CACHE_PREFIX = 'driveBrowse:v1:'
 const CACHE_TTL    = 30 * 60 * 1000          // 30 min — stale Drive listings refresh after this
 const CACHE_MAX    = 50                       // keep at most N folders persisted (LRU by timestamp)
 
+// Sentinel telling the server to start at the app's configured ROOT_FOLDER_ID
+// (resolved server-side; the client can't read that config). See api_browseDrive.
+const APP_ROOT_SENTINEL = '__APP_ROOT__'
+
 function _lsKey(key) { return CACHE_PREFIX + key }
 
 function _persistedKeys() {
@@ -77,7 +81,7 @@ export function _clearDriveBrowseCache() {
 //   multiple  — allow selecting several files (default true). false = single-select.
 //   accept    — array of lowercased extensions to show, e.g. ['.xlsx','.xls']. null = all.
 //   title     — dialog header text.
-export default function DriveFilePicker({ token, onConfirm, onClose, multiple = true, accept = null, title = 'Chọn file từ Google Drive' }) {
+export default function DriveFilePicker({ token, onConfirm, onClose, multiple = true, accept = null, title = 'Chọn file từ Google Drive', startAtAppRoot = false, lockToAppRoot = false }) {
   const [loading, setLoading]       = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError]           = useState('')
@@ -89,13 +93,25 @@ export default function DriveFilePicker({ token, onConfirm, onClose, multiple = 
   const [selected, setSelected]     = useState({})     // { fileId: {id, name, mimeType, size} }
 
   useEffect(() => {
-    loadFolder(null) // start at root
+    loadFolder((startAtAppRoot || lockToAppRoot) ? APP_ROOT_SENTINEL : null) // start at app folder or My Drive
   }, [])
 
-  function _applyBreadcrumb(folderId, folderName, res) {
-    if (!folderId) {
-      setBreadcrumb([{ id: res.current.id, name: 'My Drive' }])
+  function _applyResult(folderId, folderName, res) {
+    setCurrent(res.current)
+    setFolders(res.folders || [])
+    setFiles(res.files || [])
+    if (folderId === APP_ROOT_SENTINEL) {
+      // Started inside the app's configured folder. Use its real id from here on.
+      // lockToAppRoot: no My Drive crumb → can't navigate above the app folder.
+      setCurrentFolderId(res.current.id)
+      setBreadcrumb(lockToAppRoot
+        ? [{ id: res.current.id, name: res.current.name }]
+        : [{ id: null, name: 'My Drive' }, { id: res.current.id, name: res.current.name }])
+    } else if (!folderId) {
+      setCurrentFolderId(null)
+      setBreadcrumb([{ id: null, name: 'My Drive' }])
     } else {
+      setCurrentFolderId(folderId)
       setBreadcrumb(prev => {
         const idx = prev.findIndex(b => b.id === folderId)
         if (idx >= 0) return prev.slice(0, idx + 1)
@@ -106,15 +122,11 @@ export default function DriveFilePicker({ token, onConfirm, onClose, multiple = 
 
   async function loadFolder(folderId, folderName, force = false) {
     const key = folderId || 'root'
-    setCurrentFolderId(folderId || null)
     setError('')
 
     const cached = _cacheGet(key)
     if (cached && !force) {
-      setCurrent(cached.current)
-      setFolders(cached.folders || [])
-      setFiles(cached.files || [])
-      _applyBreadcrumb(folderId, folderName, cached)
+      _applyResult(folderId, folderName, cached)
       setLoading(false)        // remount starts with loading=true — clear it on cache hit
       setRefreshing(false)
       return
@@ -125,10 +137,7 @@ export default function DriveFilePicker({ token, onConfirm, onClose, multiple = 
     try {
       const res = await gasCall('api_browseDrive', token, folderId || '')
       _cacheSet(key, res)
-      setCurrent(res.current)
-      setFolders(res.folders || [])
-      setFiles(res.files || [])
-      _applyBreadcrumb(folderId, folderName, res)
+      _applyResult(folderId, folderName, res)
     } catch (err) {
       setError(err.message)
     }

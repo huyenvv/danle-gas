@@ -148,6 +148,17 @@ global.PropertiesService = (() => {
 })()
 
 // ── DriveApp ──────────────────────────────────────────────────────────────────
+// Single-parent iterator for a file/folder entry (parentId or makeCopy's parent).
+function _parentsIter(files, id) {
+  const e = files[id]
+  const pid = e && (e.parentId || e.parent)
+  let done = false
+  return {
+    hasNext() { return !!pid && !done && !!files[pid] },
+    next()    { done = true; return global.DriveApp.getFolderById(pid) },
+  }
+}
+
 global.DriveApp = {
   Access:     { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
   Permission: { VIEW: 'VIEW' },
@@ -179,6 +190,8 @@ global.DriveApp = {
             setSharing(){}
           }
         },
+        getName()    { return f.name },
+        getParents() { return _parentsIter(files, f.id) },
       })
     }
     // Ensure root pseudo-folder exists
@@ -194,6 +207,7 @@ global.DriveApp = {
       getName()     { return files[id].name },
       getMimeType() { return files[id].mimeType || 'application/octet-stream' },
       getSize()     { return files[id].size || 0 },
+      getParents()  { return _parentsIter(files, id) },
       getBlob()     { return { getName() { return files[id].name }, getBytes() { return files[id].bytes || [] }, getDataAsString() { return files[id].content || '' } } },
       moveTo(folder) { /* no-op in mock */ },
       setSharing(access, permission) { files[id].sharing = { access, permission } },

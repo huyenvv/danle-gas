@@ -5,6 +5,7 @@ function _buildSessionFromRows(userRow, roleRow) {
   var canCreateSubCat = roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
   var canPublish = roleRow['Được phát hành'] === 'TRUE' || roleRow['Được phát hành'] === true
   var canPickDrive = roleRow['Được chọn từ Drive'] === 'TRUE' || roleRow['Được chọn từ Drive'] === true
+  var canImport = roleRow['Được import'] === 'TRUE' || roleRow['Được import'] === true
 
   return {
     userId: userRow['ID'],
@@ -16,6 +17,7 @@ function _buildSessionFromRows(userRow, roleRow) {
     canCreateSubCat: !!canCreateSubCat,
     canPublish: !!canPublish,
     canPickDrive: !!canPickDrive,
+    canImport: !!canImport,
   }
 }
 
@@ -392,9 +394,17 @@ function api_browseDrive(token, parentFolderId) {
   return _wrap(function() {
     var session = requireAuth(token)
     _checkPickDrivePermission(session)
-    var parent = parentFolderId
-      ? DriveApp.getFolderById(parentFolderId)
-      : DriveApp.getRootFolder()
+    var parent
+    if (parentFolderId === '__APP_ROOT__') {
+      // Start at the folder configured in Settings (ROOT_FOLDER_ID); fall back to My Drive
+      var rootId = getConfig('ROOT_FOLDER_ID')
+      try { parent = rootId ? DriveApp.getFolderById(rootId) : DriveApp.getRootFolder() }
+      catch (e) { parent = DriveApp.getRootFolder() }
+    } else if (parentFolderId) {
+      parent = DriveApp.getFolderById(parentFolderId)
+    } else {
+      parent = DriveApp.getRootFolder()
+    }
     var folders = []
     var fit = parent.getFolders()
     while (fit.hasNext()) {
@@ -413,10 +423,10 @@ function api_browseDrive(token, parentFolderId) {
   })
 }
 
-// Copy selected Drive files into the document's category folder and attach them
-// to the draft (creating one if needed). Same draftId semantics as uploadFileEager.
-function api_copyDriveFiles(token, fileIds, categoryId, draftId) {
-  return _wrap(function() { return copyDriveFiles(token, fileIds, categoryId, draftId) })
+// Link selected Drive files (no copy) to the document. Category is derived from
+// each file's folder and validated against the chosen one. Same draftId semantics.
+function api_linkDriveFiles(token, fileIds, categoryId, draftId) {
+  return _wrap(function() { return linkDriveFiles(token, fileIds, categoryId, draftId) })
 }
 
 function api_finalizeDraft(token, draftId, formData, notifyTarget) {
@@ -604,6 +614,7 @@ function api_getUsers(token) {
           'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
           'Được phát hành': appRole && (appRole['Được phát hành'] === true || appRole['Được phát hành'] === 'TRUE') ? 'TRUE' : '',
           'Được chọn từ Drive': appRole && (appRole['Được chọn từ Drive'] === true || appRole['Được chọn từ Drive'] === 'TRUE') ? 'TRUE' : '',
+          'Được import': appRole && (appRole['Được import'] === true || appRole['Được import'] === 'TRUE') ? 'TRUE' : '',
           'Phòng ban': u['Phòng ban'] || '',
         }
       })
@@ -654,6 +665,7 @@ function api_updateUser(token, id, data) {
     if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
     if (data['Được phát hành'] !== undefined) roleUpdates['Được phát hành'] = data['Được phát hành'] ? 'TRUE' : ''
     if (data['Được chọn từ Drive'] !== undefined) roleUpdates['Được chọn từ Drive'] = data['Được chọn từ Drive'] ? 'TRUE' : ''
+    if (data['Được import'] !== undefined) roleUpdates['Được import'] = data['Được import'] ? 'TRUE' : ''
     if (existing) {
       updateRow(SHEETS.APP_ROLES, existing['ID'], roleUpdates)
     } else {
@@ -665,6 +677,7 @@ function api_updateUser(token, id, data) {
         'Được tạo hồ sơ': data['Được tạo hồ sơ'] ? 'TRUE' : '',
         'Được tạo danh mục con': data['Được tạo danh mục con'] ? 'TRUE' : '',
         'Được chọn từ Drive': data['Được chọn từ Drive'] ? 'TRUE' : '',
+        'Được import': data['Được import'] ? 'TRUE' : '',
       })
     }
     logAudit(null, 'Phân quyền', 'Người dùng', String(id), JSON.stringify(data))

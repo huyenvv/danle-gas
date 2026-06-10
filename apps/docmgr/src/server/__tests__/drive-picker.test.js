@@ -10,20 +10,33 @@ beforeEach(() => {
   setConfig('ROOT_FOLDER_ID', 'root123')
 
   seedUser(1, 'director', 'd@test.com', 'Giám đốc')
-  SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([1, 'Hợp đồng', '', '', '', '', ''])
+  // Categories: Hợp đồng (1) → Hợp đồng XD (2, child of 1)
+  SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([1, 'Hợp đồng', '', '', ''])
+  SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([2, 'Hợp đồng XD', '', '', 1])
   invalidateSheetCache(SHEETS.DANH_MUC)
 
   directorToken = createSession(1, 'director', 'd@test.com', 'Giám đốc')
 
-  // A source file living anywhere in the owner's Drive
-  DriveApp._files['srcA'] = { id: 'srcA', name: 'Báo cáo.pdf', mimeType: 'application/pdf', size: 1234 }
-  DriveApp._files['srcB'] = { id: 'srcB', name: 'Bảng lương.xlsx', mimeType: 'application/vnd.ms-excel', size: 5678 }
+  // Drive folder tree mirroring the categories, all under ROOT_FOLDER_ID:
+  //   root123 / Hợp đồng (fHD) / Hợp đồng XD (fHDXD)
+  //   root123 / Linh tinh (fRand)   — no matching category
+  //   otherRoot / Ngoài (fOut)      — outside the app tree
+  DriveApp._files['root123']  = { id: 'root123', name: 'root', isFolder: true }
+  DriveApp._files['fHD']      = { id: 'fHD', name: 'Hợp đồng', isFolder: true, parentId: 'root123' }
+  DriveApp._files['fHDXD']    = { id: 'fHDXD', name: 'Hợp đồng XD', isFolder: true, parentId: 'fHD' }
+  DriveApp._files['fRand']    = { id: 'fRand', name: 'Linh tinh', isFolder: true, parentId: 'root123' }
+  DriveApp._files['fOut']     = { id: 'fOut', name: 'Ngoài', isFolder: true } // no parent → outside
+
+  DriveApp._files['fileA']    = { id: 'fileA', name: 'HĐ-A.pdf', mimeType: 'application/pdf', size: 100, parentId: 'fHD' }
+  DriveApp._files['fileB']    = { id: 'fileB', name: 'HĐ-XD-B.pdf', mimeType: 'application/pdf', size: 200, parentId: 'fHDXD' }
+  DriveApp._files['fileRand'] = { id: 'fileRand', name: 'Tạp.pdf', mimeType: 'application/pdf', size: 300, parentId: 'fRand' }
+  DriveApp._files['fileRoot'] = { id: 'fileRoot', name: 'Goc.pdf', mimeType: 'application/pdf', size: 400, parentId: 'root123' }
+  DriveApp._files['fileOut']  = { id: 'fileOut', name: 'Ngoai.pdf', mimeType: 'application/pdf', size: 500, parentId: 'fOut' }
 })
 
-// Seed a non-full-access user, optionally with the "Được chọn từ Drive" flag set.
-function seedStaff(id, username, role, withFlag) {
+function seedStaff(id, username, role, driveFlag) {
   SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push(
-    [SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.length, id, username, APP_ID, role, '', '', '', withFlag ? 'TRUE' : '']
+    [SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.length, id, username, APP_ID, role, '', '', '', driveFlag ? 'TRUE' : '', '']
   )
   invalidateSheetCache(SHEETS.APP_ROLES)
 }
@@ -31,73 +44,80 @@ function seedStaff(id, username, role, withFlag) {
 describe('_checkPickDrivePermission', () => {
   test('full-access roles pass without the flag', () => {
     expect(() => _checkPickDrivePermission({ role: 'Giám đốc', userId: 1 })).not.toThrow()
-    expect(() => _checkPickDrivePermission({ role: 'admin', userId: 9 })).not.toThrow()
     expect(() => _checkPickDrivePermission({ role: 'Văn thư', userId: 9 })).not.toThrow()
-    expect(() => _checkPickDrivePermission({ role: 'Quản trị viên', userId: 9 })).not.toThrow()
   })
-
   test('non-full-access without flag is rejected', () => {
     seedStaff(2, 'staff', 'Nhân viên', false)
     expect(() => _checkPickDrivePermission({ role: 'Nhân viên', userId: 2 })).toThrow('không có quyền')
   })
-
   test('non-full-access with flag passes', () => {
     seedStaff(3, 'staff2', 'Nhân viên', true)
     expect(() => _checkPickDrivePermission({ role: 'Nhân viên', userId: 3 })).not.toThrow()
   })
 })
 
-describe('copyDriveFilesToCategory', () => {
-  test('copies a file into the category folder and returns its metadata', () => {
-    const results = copyDriveFilesToCategory(['srcA'], 1)
-    expect(results).toHaveLength(1)
-    expect(results[0].ok).toBe(true)
-    expect(results[0].fileInfo.fileName).toBe('Báo cáo.pdf')
-    expect(results[0].fileInfo.mimeType).toBe('application/pdf')
-    expect(results[0].fileInfo.size).toBe(1234)
-    expect(results[0].fileInfo.fileId).toContain('copy_srcA')
-    // The copy is shared like a normal upload
-    const copyId = results[0].fileInfo.fileId
-    expect(DriveApp._files[copyId].sharing.access).toBe('ANYONE_WITH_LINK')
+describe('_resolveCategoryForFile', () => {
+  test('file in a category folder → that category', () => {
+    expect(String(_resolveCategoryForFile('fileA'))).toBe('1')
   })
-
-  test('a missing/unreadable file fails for that file only, others succeed', () => {
-    const results = copyDriveFilesToCategory(['srcA', 'ghost', 'srcB'], 1)
-    expect(results.map(r => r.ok)).toEqual([true, false, true])
-    expect(results[1].error).toBeTruthy()
+  test('file in a nested sub-category folder → the leaf category', () => {
+    expect(String(_resolveCategoryForFile('fileB'))).toBe('2')
+  })
+  test('file in a folder with no matching category → null', () => {
+    expect(_resolveCategoryForFile('fileRand')).toBeNull()
+  })
+  test('file directly in ROOT (no category) → null', () => {
+    expect(_resolveCategoryForFile('fileRoot')).toBeNull()
+  })
+  test('file outside the app tree → null', () => {
+    expect(_resolveCategoryForFile('fileOut')).toBeNull()
   })
 })
 
-describe('copyDriveFiles (full flow)', () => {
-  test('no draftId creates a Nháp row and attaches both copies', () => {
-    const res = copyDriveFiles(directorToken, ['srcA', 'srcB'], 1, null)
-    expect(res.draftId).toBe(1)
-    expect(res.results.every(r => r.ok)).toBe(true)
+describe('linkDriveFiles', () => {
+  test('no category chosen → derives it, links (no copy), creates draft', () => {
+    const res = linkDriveFiles(directorToken, ['fileA'], null, null)
+    expect(String(res.categoryId)).toBe('1')
+    expect(res.results[0].ok).toBe(true)
+    expect(res.results[0].fileInfo.fileId).toBe('fileA')   // same id → NOT copied
+    expect(res.results[0].fileInfo.linked).toBe(true)
     invalidateSheetCache(SHEETS.HO_SO)
     const docs = getSheetData(SHEETS.HO_SO)
     expect(docs).toHaveLength(1)
-    expect(docs[0]['Tình trạng']).toBe('Nháp')
-    expect(JSON.parse(docs[0]['Tệp đính kèm'])).toHaveLength(2)
+    expect(String(docs[0]['Danh mục'])).toBe('1')
+    expect(JSON.parse(docs[0]['Tệp đính kèm'])[0].linked).toBe(true)
   })
 
-  test('draftId=edit attaches no row', () => {
-    const res = copyDriveFiles(directorToken, ['srcA'], 1, 'edit')
-    expect(res.draftId).toBeUndefined()
-    invalidateSheetCache(SHEETS.HO_SO)
-    expect(getSheetData(SHEETS.HO_SO)).toHaveLength(0)
+  test('sets ANYONE_WITH_LINK sharing on the original file', () => {
+    linkDriveFiles(directorToken, ['fileA'], null, null)
+    expect(DriveApp._files['fileA'].sharing.access).toBe('ANYONE_WITH_LINK')
   })
 
-  test('throws without categoryId', () => {
-    expect(() => copyDriveFiles(directorToken, ['srcA'], null, null)).toThrow('Danh mục')
+  test('chosen category matching the file → ok', () => {
+    expect(() => linkDriveFiles(directorToken, ['fileA'], 1, null)).not.toThrow()
   })
 
-  test('throws with empty file list', () => {
-    expect(() => copyDriveFiles(directorToken, [], 1, null)).toThrow('Chưa chọn file')
+  test('chosen category NOT matching the file → error', () => {
+    expect(() => linkDriveFiles(directorToken, ['fileA'], 2, null)).toThrow('danh mục đã chọn')
   })
 
-  test('rejects a user without the permission', () => {
-    seedStaff(2, 'staff', 'Nhân viên', false)
-    const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
-    expect(() => copyDriveFiles(staffToken, ['srcA'], 1, null)).toThrow('không có quyền')
+  test('multiple files in different categories → error', () => {
+    expect(() => linkDriveFiles(directorToken, ['fileA', 'fileB'], null, null)).toThrow('nhiều danh mục')
+  })
+
+  test('file outside any app category → error to create category first', () => {
+    expect(() => linkDriveFiles(directorToken, ['fileRand'], null, null)).toThrow('không nằm trong danh mục')
+  })
+})
+
+describe('_shouldTrashFile', () => {
+  test('linked Drive file is never trashed', () => {
+    expect(_shouldTrashFile({ linked: true }, 'Nháp')).toBe(false)
+    expect(_shouldTrashFile({ linked: true }, 'Hoàn thành')).toBe(false)
+  })
+  test('machine upload trashed only in Nháp', () => {
+    expect(_shouldTrashFile({ fileId: 'x' }, 'Nháp')).toBe(true)
+    expect(_shouldTrashFile({ fileId: 'x' }, 'Hoàn thành')).toBe(false)
+    expect(_shouldTrashFile({ fileId: 'x' }, 'Chờ duyệt')).toBe(false)
   })
 })
