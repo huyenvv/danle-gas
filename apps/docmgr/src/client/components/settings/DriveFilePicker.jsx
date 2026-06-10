@@ -79,7 +79,9 @@ export function _clearDriveBrowseCache() {
 // Reuses the api_browseDrive endpoint (folders + files); navigates like FolderPicker.
 // Props:
 //   multiple  — allow selecting several files (default true). false = single-select.
-//   accept    — array of lowercased extensions to show, e.g. ['.xlsx','.xls']. null = all.
+//   accept    — array of matchers to show; an entry with '/' is matched against the
+//               file mimeType, otherwise it's a lowercased name extension.
+//               e.g. ['.xlsx','.xls','application/vnd.google-apps.spreadsheet']. null = all.
 //   title     — dialog header text.
 export default function DriveFilePicker({ token, onConfirm, onClose, multiple = true, accept = null, title = 'Chọn file từ Google Drive', startAtAppRoot = false, lockToAppRoot = false }) {
   const [loading, setLoading]       = useState(true)
@@ -165,9 +167,10 @@ export default function DriveFilePicker({ token, onConfirm, onClose, multiple = 
     })
   }
 
-  // Files filtered by `accept` (by extension on the file name)
+  // Files filtered by `accept`: '/' entries match mimeType, others match name extension.
   const shownFiles = accept
-    ? files.filter(f => accept.some(ext => f.name.toLowerCase().endsWith(ext)))
+    ? files.filter(f => accept.some(a =>
+        a.indexOf('/') >= 0 ? f.mimeType === a : f.name.toLowerCase().endsWith(a)))
     : files
 
   function handleConfirm() {

@@ -63,6 +63,28 @@ describe('bulkImportDocuments', () => {
     expect(JSON.parse(docs[0]['Tệp đính kèm'])[0].fileId).toBe('gid-1')
   })
 
+  test('imported files are stored as linked (never trashed on delete)', () => {
+    bulkImportDocuments(vanThuToken, { groups: [group()] })
+    const docs = getSheetData(SHEETS.HO_SO)
+    expect(JSON.parse(docs[0]['Tệp đính kèm'])[0].linked).toBe(true)
+  })
+
+  test('imported file is NOT trashed when its document is deleted (end-to-end)', () => {
+    DriveApp._files['gid-1'] = { id: 'gid-1', name: 'a.pdf', mimeType: 'application/pdf', size: 100, trashed: false }
+    bulkImportDocuments(vanThuToken, { groups: [group()] })
+    const docId = getSheetData(SHEETS.HO_SO)[0]['ID']
+    seedUser(7, 'qtv', 'q@test.com', 'admin')
+    const adminToken = createSession(7, 'qtv', 'q@test.com', 'admin')
+    deleteDocument(adminToken, docId)
+    expect(DriveApp._files['gid-1'].trashed).toBe(false)
+  })
+
+  test('imported file stays protected even in Nháp (the only trash-prone status)', () => {
+    bulkImportDocuments(vanThuToken, { groups: [group()] })
+    const storedFile = JSON.parse(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm'])[0]
+    expect(_shouldTrashFile(storedFile, 'Nháp')).toBe(false)
+  })
+
   test('Nhân viên is rejected', () => {
     expect(() => bulkImportDocuments(nhanVienToken, { groups: [group()] })).toThrow('không có quyền')
   })
@@ -126,6 +148,28 @@ describe('_parseImportBlob validation (empty / over-limit)', () => {
     SpreadsheetApp._addExternalSheet('tempImportSS', 'FileMoi', [['Tên hồ sơ', 'Tên file']])
     DriveApp._files['driveXlsx'] = { id: 'driveXlsx', name: 'empty.xlsx', mimeType: 'application/vnd.ms-excel', size: 100 }
     expect(() => parseImportFileFromDrive(vanThuToken, 'driveXlsx')).toThrow('không có dữ liệu')
+  })
+
+  test('native Google Sheet is read directly (no blob conversion) and source is NOT trashed', () => {
+    // Conversion path would explode — proves the Sheet is opened by its own id.
+    global.Drive = { Files: { insert: function () { throw new Error('should not convert a native Sheet') } } }
+    SpreadsheetApp._addExternalSheet('driveGSheet', 'FileMoi', [
+      ['Tên hồ sơ', 'G_ID'],
+      ['HS A', 'fileA'],
+    ])
+    DriveApp._files['driveGSheet'] = { id: 'driveGSheet', name: 'Hồ sơ', mimeType: 'application/vnd.google-apps.spreadsheet', size: 0 }
+    var res = parseImportFileFromDrive(vanThuToken, 'driveGSheet')
+    expect(res.totalRows).toBe(1)
+    expect(res.rows[0].tenHoSo).toBe('HS A')
+    expect(DriveApp._files['driveGSheet'].trashed).toBeFalsy()
+  })
+
+  test('source Excel file picked from Drive is NOT trashed (only the temp copy is)', () => {
+    SpreadsheetApp._addExternalSheet('tempImportSS', 'FileMoi', [['Tên hồ sơ', 'G_ID'], ['HS A', 'fileA']])
+    DriveApp._files['srcXlsx'] = { id: 'srcXlsx', name: 'data.xlsx', mimeType: 'application/vnd.ms-excel', size: 100 }
+    var res = parseImportFileFromDrive(vanThuToken, 'srcXlsx')
+    expect(res.totalRows).toBe(1)
+    expect(DriveApp._files['srcXlsx'].trashed).toBeFalsy()
   })
 })
 

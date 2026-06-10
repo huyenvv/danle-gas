@@ -84,8 +84,21 @@ function _mapImportRows(values) {
   return rows
 }
 
+// Read the FileMoi tab (or first sheet) of an open Spreadsheet → rows as JSON.
+function _readImportSpreadsheet(ss, fileName) {
+  var sheet = ss.getSheetByName(IMPORT_SOURCE_TAB) || ss.getSheets()[0]
+  if (!sheet) throw new Error('File không đúng định dạng')
+
+  var values = sheet.getDataRange().getValues()
+  var rows = _mapImportRows(values)
+  if (rows.length === 0) throw new Error('File không có dữ liệu')
+  if (rows.length > 1000) throw new Error('File quá lớn (tối đa 1000 dòng, hiện ' + rows.length + ')')
+
+  return { success: true, rows: rows, totalRows: rows.length, fileName: fileName || '' }
+}
+
 // Convert an xlsx blob → Google Sheet, read the FileMoi tab, return rows as JSON.
-// Shared by parseImportFile (OS upload) and parseImportFileFromDrive (Drive pick).
+// Used for OS uploads and for Excel files picked from Drive.
 function _parseImportBlob(blob, fileName) {
   var ssId = null
   try {
@@ -96,17 +109,7 @@ function _parseImportBlob(blob, fileName) {
       { convert: true }
     )
     ssId = converted.id
-
-    var ss = SpreadsheetApp.openById(ssId)
-    var sheet = ss.getSheetByName(IMPORT_SOURCE_TAB) || ss.getSheets()[0]
-    if (!sheet) throw new Error('File không đúng định dạng')
-
-    var values = sheet.getDataRange().getValues()
-    var rows = _mapImportRows(values)
-    if (rows.length === 0) throw new Error('File không có dữ liệu')
-    if (rows.length > 1000) throw new Error('File quá lớn (tối đa 1000 dòng, hiện ' + rows.length + ')')
-
-    return { success: true, rows: rows, totalRows: rows.length, fileName: fileName || '' }
+    return _readImportSpreadsheet(SpreadsheetApp.openById(ssId), fileName)
   } finally {
     // Always clean up the temp converted file
     if (ssId) {
@@ -127,13 +130,18 @@ function parseImportFile(token, base64Data, fileName) {
   return _parseImportBlob(blob, fileName)
 }
 
-// Read an xlsx picked from the deploy owner's Drive (by fileId) and return its rows.
+// Read a file picked from the deploy owner's Drive (by fileId) and return its rows.
+// Native Google Sheets are opened directly; other formats (xlsx/xls) go through
+// the blob → Google Sheet conversion.
 function parseImportFileFromDrive(token, fileId) {
   var session = requireAuth(token)
   _importCheckRole(session)
 
   if (!fileId) throw new Error('Chưa chọn file')
   var file = DriveApp.getFileById(fileId)
+  if (file.getMimeType() === MimeType.GOOGLE_SHEETS) {
+    return _readImportSpreadsheet(SpreadsheetApp.openById(fileId), file.getName())
+  }
   return _parseImportBlob(file.getBlob(), file.getName())
 }
 
@@ -165,7 +173,10 @@ function bulkImportDocuments(token, payload) {
       if (!doc['Danh mục'] || !catIds[String(doc['Danh mục'])]) {
         throw new Error('Danh mục không tồn tại')
       }
-      var validFiles = files.filter(function (f) { return f && f.fileId })
+      // Imported files reference existing Drive files → linked (never trashed on delete).
+      var validFiles = files.filter(function (f) { return f && f.fileId }).map(function (f) {
+        return { fileId: f.fileId, fileName: f.fileName || '', mimeType: f.mimeType || '', size: f.size || 0, linked: true }
+      })
       if (validFiles.length === 0) throw new Error('Không có file đính kèm')
 
       var fileNameCol = validFiles.map(function (f) { return f.fileName || '' }).join(', ')

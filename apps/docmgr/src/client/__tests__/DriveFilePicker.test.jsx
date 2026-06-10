@@ -124,6 +124,22 @@ describe('DriveFilePicker', () => {
     expect(screen.queryByText('b.pdf')).not.toBeInTheDocument()
   })
 
+  it('accept matches Google Sheets by mimeType (no file extension in the name)', async () => {
+    gasCall.mockImplementation(() => Promise.resolve({
+      current: { id: 'r', name: 'My Drive' },
+      folders: [],
+      files: [
+        { id: 'gs1', name: 'Báo cáo', mimeType: 'application/vnd.google-apps.spreadsheet', size: 0 },
+        { id: 'x1', name: 'a.xlsx', mimeType: 'xlsx', size: 100 },
+        { id: 'p1', name: 'b.pdf', mimeType: 'pdf', size: 50 },
+      ],
+    }))
+    renderPicker({ accept: ['.xlsx', '.xls', 'application/vnd.google-apps.spreadsheet'] })
+    await screen.findByText('Báo cáo')                            // Google Sheet shown by mimeType
+    expect(screen.getByText('a.xlsx')).toBeInTheDocument()        // Excel still shown by extension
+    expect(screen.queryByText('b.pdf')).not.toBeInTheDocument()   // unrelated file hidden
+  })
+
   it('single-select replaces the previous selection', async () => {
     const onConfirm = jest.fn()
     renderPicker({ multiple: false, onConfirm })

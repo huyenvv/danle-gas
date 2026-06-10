@@ -123,7 +123,7 @@ export default function ImportManager({ token, lookups, onImported }) {
     }
   }
 
-  // Parse an Excel file picked from the deploy owner's Drive (no re-upload).
+  // Parse an Excel or Google Sheet file picked from the deploy owner's Drive (no re-upload).
   async function handleDriveFile(picked) {
     setShowDrivePicker(false)
     const file = picked && picked[0]
@@ -541,8 +541,8 @@ export default function ImportManager({ token, lookups, onImported }) {
         <DriveFilePicker
           token={token}
           multiple={false}
-          accept={['.xlsx', '.xls']}
-          title="Chọn file Excel từ Drive"
+          accept={['.xlsx', '.xls', 'application/vnd.google-apps.spreadsheet']}
+          title="Chọn file Excel / Google Sheet từ Drive"
           onConfirm={handleDriveFile}
           onClose={() => setShowDrivePicker(false)}
         />
