@@ -26,8 +26,8 @@
     "deploy:workmgr": "node scripts/deploy.js --app workmgr"
   },
   "devDependencies": {
-    "@babel/preset-env": "^7.29.5",
-    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-react": "^7.29.7",
     "@google/clasp": "^3.3.0",
     "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.9.1",
