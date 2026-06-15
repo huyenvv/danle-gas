@@ -252,7 +252,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
           {isAdminRole && <div className={fieldCls}>
             <label className={labelCls}>Người được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
-              {(lookups.users || []).map(u => {
+              {(lookups.ssoUsers || []).map(u => {
                 const current = parseJsonArray(form['Người được xem'])
                 const active = current.includes(String(u.ID))
                 const name = u['Tên nhân viên'] || u['Tên đăng nhập']
@@ -268,7 +268,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
                   </button>
                 )
               })}
-              {(lookups.users || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có người dùng</span>}
+              {(lookups.ssoUsers || []).length === 0 && <span className="text-xs text-on-surface-variant">Chưa có người dùng</span>}
             </div>
           </div>}
 
@@ -313,7 +313,7 @@ function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isA
     chips.push({ label: g ? g['Tên nhóm'] : gid, type: 'group' })
   })
   userIds.forEach(uid => {
-    const u = (lookups.users || []).find(x => String(x.ID) === uid)
+    const u = (lookups.ssoUsers || []).find(x => String(x.ID) === uid)
     chips.push({ label: u ? (u['Tên nhân viên'] || u['Tên đăng nhập']) : uid, type: 'user' })
   })
   const overflow = chips.length > PERM_MAX_CHIPS ? chips.length - PERM_MAX_CHIPS : 0

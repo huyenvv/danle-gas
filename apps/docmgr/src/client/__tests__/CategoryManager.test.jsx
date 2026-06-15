@@ -71,6 +71,22 @@ describe('CategoryManager — add category', () => {
     })
   })
 
+  test('Người được xem picker lists every active SSO user, including those not yet in docmgr', async () => {
+    // SSO-only user: in the company directory (ssoUsers) but no docmgr role (users)
+    const ssoOnlyUser = {
+      ID: 99, 'Tên đăng nhập': 'newbie', 'Tên nhân viên': 'Người Chưa Vào App',
+      'Email': 'newbie@test.com', 'Trạng thái': 'Active', 'Quyền': '',
+    }
+    const lookups = { ...MOCK_LOOKUPS, ssoUsers: [...MOCK_LOOKUPS.users, ssoOnlyUser] }
+
+    renderCategoryManager({ lookups })
+    fireEvent.click(screen.getByRole('button', { name: /thêm danh mục/i }))
+    await screen.findByRole('heading', { name: /thêm danh mục/i })
+
+    // Would be missing if the picker still read lookups.users
+    expect(screen.getByText('Người Chưa Vào App (newbie@test.com)')).toBeInTheDocument()
+  })
+
   test('submitting empty name does not call api_addCategory and shows error', async () => {
     renderCategoryManager()
     fireEvent.click(screen.getByRole('button', { name: /thêm danh mục/i }))

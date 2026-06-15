@@ -118,7 +118,7 @@ export default function GroupManager({ token, lookups, onUpdate }) {
             )}
             {filtered.map(item => {
               const members = parseMembers(item['Thành viên'])
-              const memberUsers = members.map(id => (lookups.users || []).find(u => String(u.ID) === String(id))).filter(Boolean)
+              const memberUsers = members.map(id => (lookups.ssoUsers || []).find(u => String(u.ID) === String(id))).filter(Boolean)
               return (
                 <tr key={item.ID} className="hover:bg-surface-container-low transition-colors">
                   <td className="px-4 py-3 font-medium text-on-surface">{item['Tên nhóm']}</td>
@@ -176,7 +176,7 @@ export default function GroupManager({ token, lookups, onUpdate }) {
           <div className={fieldCls}>
             <label className={labelCls}>Thành viên</label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
-              {(lookups.users || []).map(u => {
+              {(lookups.ssoUsers || []).map(u => {
                 const members = parseMembers(form['Thành viên']).map(String)
                 const active = members.includes(String(u.ID))
                 const name = u['Tên nhân viên'] || u['Tên đăng nhập']
@@ -189,7 +189,7 @@ export default function GroupManager({ token, lookups, onUpdate }) {
                   </button>
                 )
               })}
-              {(lookups.users || []).length === 0 && (
+              {(lookups.ssoUsers || []).length === 0 && (
                 <span className="text-xs text-on-surface-variant">Chưa có người dùng</span>
               )}
             </div>
