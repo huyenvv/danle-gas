@@ -173,8 +173,15 @@ function bulkImportDocuments(token, payload) {
       if (!doc['Danh mục'] || !catIds[String(doc['Danh mục'])]) {
         throw new Error('Danh mục không tồn tại')
       }
-      // Imported files reference existing Drive files → linked (never trashed on delete).
-      var validFiles = files.filter(function (f) { return f && f.fileId }).map(function (f) {
+      // Bất biến 1-file-1-hồ-sơ: bỏ qua file đã thuộc hồ sơ khác (kèm cảnh báo),
+      // giống cách xử lý G_ID trùng. Index cập nhật ngay sau addRow nên group sau
+      // trong cùng batch cũng không thể chiếm lại file của group trước.
+      var dropped = []
+      var validFiles = files.filter(function (f) { return f && f.fileId }).filter(function (f) {
+        var owner = _indexFindDoc(f.fileId)
+        if (owner !== null && owner !== undefined) { dropped.push(f); return false }
+        return true
+      }).map(function (f) {
         return { fileId: f.fileId, fileName: f.fileName || '', mimeType: f.mimeType || '', size: f.size || 0, linked: true }
       })
       if (validFiles.length === 0) throw new Error('Không có file đính kèm')
@@ -207,6 +214,9 @@ function bulkImportDocuments(token, payload) {
       created++
       totalFiles += validFiles.length
 
+      dropped.forEach(function (f) {
+        warnings.push({ group: name, message: 'File "' + (f.fileName || f.fileId) + '" đã thuộc hồ sơ khác — bỏ qua', rowIndices: rowIndices })
+      })
       if (g.warnings && g.warnings.length) {
         g.warnings.forEach(function (w) {
           warnings.push({ group: name, message: w, rowIndices: rowIndices })

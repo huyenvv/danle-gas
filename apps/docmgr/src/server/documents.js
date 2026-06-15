@@ -607,13 +607,15 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
     }
   })
 
-  // Move kept files to new category folder if category changed
+  // Move kept files to new category folder if category changed.
+  // Fail-loud: nếu move bất kỳ file nào thất bại → ném lỗi TRƯỚC khi ghi row,
+  // không cho đổi danh mục "nửa vời" (doc và vị trí file lệch nhau).
   var oldCatId = String(doc['Danh mục'] || '')
   var newCatId = String(updates['Danh mục'] !== undefined ? updates['Danh mục'] : doc['Danh mục'] || '')
   if (oldCatId !== newCatId && keptFiles.length > 0) {
     var newCatPath = _resolveCategoryPath(newCatId)
     keptFiles.forEach(function(f) {
-      try { moveFile(f.fileId, newCatPath) } catch(e) { Logger.log('Move file error: ' + e.message) }
+      moveFile(f.fileId, newCatPath)
     })
   }
 
@@ -856,7 +858,7 @@ function _resolveCategoryForFile(fileId) {
 // the app's category tree; the category is derived from the file's folder. If the
 // form already chose a category, every file must match it; otherwise the derived
 // category (shared by all files) is returned for the client to fill in.
-function linkDriveFiles(token, fileIds, categoryId, draftId) {
+function linkDriveFiles(token, fileIds, categoryId, draftId, docId) {
   var session = requireAuth(token)
   _checkPickDrivePermission(session)
   if (!fileIds || !fileIds.length) throw new Error('Chưa chọn file nào')
@@ -877,6 +879,16 @@ function linkDriveFiles(token, fileIds, categoryId, draftId) {
       throw new Error(categoryId
         ? 'File "' + r.file.getName() + '" thuộc danh mục khác với danh mục đã chọn của hồ sơ.'
         : 'Các file được chọn thuộc nhiều danh mục khác nhau. Mỗi hồ sơ chỉ thuộc một danh mục.')
+    }
+  })
+
+  // Bất biến 1-file-1-hồ-sơ: từ chối file đang thuộc hồ sơ KHÁC. File của chính
+  // hồ sơ đang thao tác (docId khi sửa, hoặc draftId khi tạo nháp) thì hợp lệ.
+  var currentDoc = docId || ((draftId && draftId !== 'edit') ? draftId : null)
+  resolved.forEach(function(r) {
+    var owner = _indexFindDoc(r.fileId)
+    if (owner !== null && owner !== undefined && String(owner) !== String(currentDoc)) {
+      throw new Error('File "' + r.file.getName() + '" đã thuộc hồ sơ khác, không thể liên kết.')
     }
   })
 
@@ -1023,8 +1035,9 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
     var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
     var newCatPath = _resolveCategoryPath(newCatId)
     Logger.log('[finalizeDraft] moving ' + existingInfos.length + ' files from cat ' + oldCatId + ' to ' + newCatId)
+    // Fail-loud: move lỗi → ném trước khi ghi row, không hoàn tất nháp "nửa vời".
     existingInfos.forEach(function(f) {
-      try { moveFile(f.fileId, newCatPath) } catch(e) { Logger.log('Move file error: ' + e.message) }
+      moveFile(f.fileId, newCatPath)
     })
   }
 

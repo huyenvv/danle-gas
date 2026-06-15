@@ -188,3 +188,42 @@ describe('_importCheckRole permission flag', () => {
     expect(() => _importCheckRole({ role: 'Nhân viên', userId: 30 })).not.toThrow()
   })
 })
+
+// US3 — import tuân bất biến 1-file-1-hồ-sơ: bỏ file đã thuộc hồ sơ khác + cảnh báo.
+describe('bulkImportDocuments — orphaned-only (US3)', () => {
+  function grp(name, fileIds, rowIdx) {
+    return {
+      docData: { 'Tên hồ sơ': name, 'Danh mục': 2 },
+      files: fileIds.map(id => ({ fileId: id, fileName: id + '.pdf' })),
+      warnings: [], rowIndices: [rowIdx || 2],
+    }
+  }
+
+  test('file đã thuộc hồ sơ khác → bỏ + cảnh báo, file orphaned vẫn nhập', () => {
+    bulkImportDocuments(vanThuToken, { groups: [grp('A', ['g1'])] })           // A sở hữu g1
+    const res = bulkImportDocuments(vanThuToken, { groups: [grp('B', ['g1', 'g2'], 3)] })
+    expect(res.created).toBe(1)
+    expect(res.warnings.some(w => /đã thuộc hồ sơ khác/.test(w.message))).toBe(true)
+    const docB = getSheetData(SHEETS.HO_SO).find(d => d['Tên hồ sơ'] === 'B')
+    expect(JSON.parse(docB['Tệp đính kèm']).map(f => f.fileId)).toEqual(['g2'])
+    _assertIndexMatchesDocs()
+  })
+
+  test('group toàn file đã dùng → lỗi "Không có file đính kèm"', () => {
+    bulkImportDocuments(vanThuToken, { groups: [grp('A', ['g1'])] })
+    const res = bulkImportDocuments(vanThuToken, { groups: [grp('C', ['g1'], 4)] })
+    expect(res.created).toBe(0)
+    expect(res.errors.some(e => /Không có file đính kèm/.test(e.message))).toBe(true)
+  })
+
+  test('2 group cùng batch cùng fileId → group sau bỏ file đó (cross-batch)', () => {
+    const res = bulkImportDocuments(vanThuToken, { groups: [
+      grp('D1', ['shared'], 2),
+      grp('D2', ['shared', 'd2extra'], 3),
+    ] })
+    expect(res.created).toBe(2)
+    expect(res.warnings.some(w => w.group === 'D2' && /đã thuộc hồ sơ khác/.test(w.message))).toBe(true)
+    const d2 = getSheetData(SHEETS.HO_SO).find(d => d['Tên hồ sơ'] === 'D2')
+    expect(JSON.parse(d2['Tệp đính kèm']).map(f => f.fileId)).toEqual(['d2extra'])
+  })
+})

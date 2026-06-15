@@ -110,6 +110,52 @@ describe('linkDriveFiles', () => {
   })
 })
 
+// US2 — bất biến 1-file-1-hồ-sơ: chặn link file đã thuộc hồ sơ khác.
+describe('linkDriveFiles — orphaned-only (1 file ≤ 1 hồ sơ)', () => {
+  test('link file orphaned → ok, index ghi nhận chủ', () => {
+    const res = linkDriveFiles(directorToken, ['fileA'], null, null)
+    expect(String(_indexFindDoc('fileA'))).toBe(String(res.draftId))
+    _assertIndexMatchesDocs()
+  })
+
+  test('link file đã thuộc hồ sơ khác → throw', () => {
+    linkDriveFiles(directorToken, ['fileA'], null, null)        // draft 1 sở hữu fileA
+    expect(() => linkDriveFiles(directorToken, ['fileA'], null, null)) // draft mới → xung đột
+      .toThrow('đã thuộc hồ sơ khác')
+  })
+
+  test('re-link file của CHÍNH hồ sơ đang sửa (docId) → ok', () => {
+    const res = linkDriveFiles(directorToken, ['fileA'], null, null)  // draft sở hữu fileA
+    const docId = res.draftId
+    // edit-mode: draftArg='edit' (upload-only) + docId của hồ sơ → không xung đột
+    expect(() => linkDriveFiles(directorToken, ['fileA'], 1, 'edit', docId)).not.toThrow()
+  })
+
+  test('createDocument tự đồng bộ index cho file upload (choke point createDocument)', () => {
+    const res = createDocument(directorToken, { 'Tên hồ sơ': 'Up', 'Danh mục': 1 },
+      [{ base64Data: 'AQID', mimeType: 'application/pdf', fileName: 'u.pdf' }], null)
+    const doc = getSheetData(SHEETS.HO_SO).find(d => String(d.ID) === String(res.data.ID))
+    const fileId = JSON.parse(doc['Tệp đính kèm'])[0].fileId
+    expect(String(_indexFindDoc(fileId))).toBe(String(res.data.ID))
+    _assertIndexMatchesDocs()
+  })
+
+  test('cancelDraft giải phóng file → link lại được (FR-008, choke point cancelDraft)', () => {
+    const res = linkDriveFiles(directorToken, ['fileA'], null, null)
+    expect(_indexFindDoc('fileA')).toBeTruthy()
+    cancelDraft(directorToken, res.draftId)
+    expect(_indexFindDoc('fileA')).toBeNull()                       // orphaned trở lại
+    expect(() => linkDriveFiles(directorToken, ['fileA'], null, null)).not.toThrow() // link lại OK
+    _assertIndexMatchesDocs()
+  })
+
+  test('link nhiều file cùng danh mục, một file đã có chủ → reject cả lượt', () => {
+    DriveApp._files['fileA2'] = { id: 'fileA2', name: 'HĐ-A2.pdf', mimeType: 'application/pdf', size: 120, parentId: 'fHD' }
+    linkDriveFiles(directorToken, ['fileA'], null, null)           // fileA đã có chủ
+    expect(() => linkDriveFiles(directorToken, ['fileA2', 'fileA'], 1, null)).toThrow('đã thuộc hồ sơ khác')
+  })
+})
+
 describe('_shouldTrashFile', () => {
   test('linked Drive file is never trashed', () => {
     expect(_shouldTrashFile({ linked: true }, 'Nháp')).toBe(false)

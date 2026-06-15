@@ -425,8 +425,8 @@ function api_browseDrive(token, parentFolderId) {
 
 // Link selected Drive files (no copy) to the document. Category is derived from
 // each file's folder and validated against the chosen one. Same draftId semantics.
-function api_linkDriveFiles(token, fileIds, categoryId, draftId) {
-  return _wrap(function() { return linkDriveFiles(token, fileIds, categoryId, draftId) })
+function api_linkDriveFiles(token, fileIds, categoryId, draftId, docId) {
+  return _wrap(function() { return linkDriveFiles(token, fileIds, categoryId, draftId, docId) })
 }
 
 function api_finalizeDraft(token, draftId, formData, notifyTarget) {

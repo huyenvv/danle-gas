@@ -41,5 +41,7 @@ npx jest --config apps/docmgr/jest.config.js file-index documents import
 
 ## Lưu ý vận hành
 
-- Sheet `_FileIndex` tạo tự động khi `SCHEMA_V` lên 9 (lần `doGet`/`ensureInitialized` đầu sau deploy).
-- Với spreadsheet đã có dữ liệu: chạy `rebuildFileIndex()` một lần để nạp index từ hồ sơ hiện hữu (backfill).
+- Sheet `_FileIndex` tạo tự động khi `SCHEMA_V` lên 9 (lần `doGet`/`ensureInitialized` đầu sau deploy). Cũng được getOrCreate phòng thủ ở `_indexGetSheet` nếu chưa có.
+- Với spreadsheet đã có dữ liệu: chạy `rebuildFileIndex()` một lần để nạp index từ hồ sơ hiện hữu (backfill) — đồng bộ và self-heal mọi lệch.
+- `linkDriveFiles`/`api_linkDriveFiles` nay có tham số thứ 5 `docId` (id hồ sơ đang sửa, dùng cho re-link không xung đột). `DocumentModal` truyền `doc.ID` khi sửa hồ sơ không-nháp; luồng tạo/nháp truyền null. Dev mock `gasClient.js` bỏ qua tham số này — không cần sửa.
+- Đồng bộ index hoàn toàn TỰ ĐỘNG qua override `addRow`/`updateRow`/`deleteRow` (file-index.js). Tính năng mới ghi file qua CRUD chuẩn không cần biết tới `_FileIndex`.

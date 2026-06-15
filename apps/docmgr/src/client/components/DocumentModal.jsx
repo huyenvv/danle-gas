@@ -285,7 +285,9 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       const isFirst = !draftId && !(isEdit && !isDraftEdit)
       if (isFirst) showToast('Đang tạo hồ sơ nháp + liên kết file từ Drive...', 'info')
 
-      const res = await gasCall('api_linkDriveFiles', token, unique.map(f => f.id), form['Danh mục'] || null, draftArg)
+      // docId: khi sửa hồ sơ không-nháp, truyền ID để re-link file của chính nó không bị coi là xung đột
+      const linkDocId = (isEdit && !isDraftEdit) ? doc.ID : null
+      const res = await gasCall('api_linkDriveFiles', token, unique.map(f => f.id), form['Danh mục'] || null, draftArg, linkDocId)
       if (res.categoryId && !form['Danh mục']) setField('Danh mục', String(res.categoryId))   // auto-fill derived category
       if (res.draftId) {
         setDraftId(res.draftId)

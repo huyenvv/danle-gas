@@ -12,6 +12,7 @@ var SHEETS = {
   NHAT_KY: '_Nhật Ký',
   DA_DOC: '_Đã Đọc',
   COMMENTS: '_Bình Luận',
+  FILE_INDEX: '_FileIndex',
 }
 
 var APP_ID = 'docmgr'
@@ -21,11 +22,14 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '8') { _initDone = true; return }
+  if (props.getProperty('SCHEMA_V') === '9') { _initDone = true; return }
   var central = getCentralSheet()
   _ensureAllTabsExist(central)
   invalidateSheetCache(SHEETS.HO_SO)
-  props.setProperty('SCHEMA_V', '8')
+  // Backfill _FileIndex từ hồ sơ hiện có (lần migrate đầu). Bọc try/catch để
+  // backfill lỗi không chặn khởi tạo app; có thể chạy lại rebuildFileIndex() sau.
+  try { rebuildFileIndex() } catch (e) { Logger.log('rebuildFileIndex on init error: ' + e.message) }
+  props.setProperty('SCHEMA_V', '9')
   _initDone = true
 }
 
@@ -40,6 +44,7 @@ function _ensureAllTabsExist(ss) {
     { name: SHEETS.NHAT_KY,       headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
     { name: SHEETS.DA_DOC,        headers: ['ID', 'UserID', 'DocID', 'Thời gian'] },
     { name: SHEETS.COMMENTS,      headers: ['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },
+    { name: SHEETS.FILE_INDEX,    headers: ['FileID', 'DocID'] },
   ]
 
   tabDefs.forEach(function(def) {

@@ -94,3 +94,35 @@ describe('updateDocument — removing files (keepFileIds)', () => {
     expect(trashed('m6')).toBe(false)
   })
 })
+
+// US1 — đổi danh mục: di chuyển file theo, hoặc thất bại rõ ràng (fail-loud).
+describe('updateDocument / finalizeDraft — đổi danh mục move fail-loud', () => {
+  beforeEach(() => {
+    setConfig('ROOT_FOLDER_ID', 'root123')
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([2, 'Công văn', '', '', ''])
+    invalidateSheetCache(SHEETS.DANH_MUC)
+  })
+
+  test('updateDocument: move ok → hồ sơ đổi danh mục', () => {
+    regFiles(['L'])                                  // file đăng ký Drive → moveTo no-op (thành công)
+    const id = makeDoc('Hoàn thành', [linked('L')])
+    updateDocument(adminToken, id, { 'Danh mục': 2 }, [], ['L'], 'none')
+    const doc = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === String(id))
+    expect(String(doc['Danh mục'])).toBe('2')
+    _assertIndexMatchesDocs()
+  })
+
+  test('updateDocument: move thất bại → throw & danh mục giữ nguyên (không lưu nửa vời)', () => {
+    const id = makeDoc('Hoàn thành', [linked('GHOST')])   // GHOST không đăng ký Drive → moveFile ném
+    expect(() => updateDocument(adminToken, id, { 'Danh mục': 2 }, [], ['GHOST'], 'none')).toThrow()
+    const doc = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === String(id))
+    expect(String(doc['Danh mục'])).toBe('1')             // không đổi
+  })
+
+  test('finalizeDraft: move thất bại → throw & vẫn là Nháp', () => {
+    const id = makeDoc('Nháp', [linked('GHOST2')], 'creator')
+    expect(() => finalizeDraft(creatorToken, id, { 'Tên hồ sơ': 'X', 'Danh mục': 2 }, 'none')).toThrow()
+    const doc = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === String(id))
+    expect(doc['Tình trạng']).toBe('Nháp')                // chưa hoàn tất
+  })
+})
