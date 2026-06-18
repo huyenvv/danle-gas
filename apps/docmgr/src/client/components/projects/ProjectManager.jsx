@@ -8,10 +8,12 @@ import { useToast } from '../../context/ToastContext.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 
 function emptyForm() {
-  return { 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '', 'Địa chỉ': '' }
+  return { 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '', 'Địa chỉ': '', 'Điện thoại': '' }
 }
 
-export default function ProjectManager({ token, lookups, onUpdate }) {
+export default function ProjectManager({ token, lookups, onUpdate, session }) {
+  // Xoá khớp với gate server (requireAdmin): chỉ admin/Quản trị viên/Giám đốc
+  const canDelete = ['admin', 'Quản trị viên', 'Giám đốc'].includes(session?.role)
   const [items, setItems] = useState(lookups.duAn || [])
   const [modal, setModal]   = useState(null)
   const [form, setForm]     = useState(emptyForm())
@@ -70,34 +72,38 @@ export default function ProjectManager({ token, lookups, onUpdate }) {
       </div>
 
       <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-surface-container-low border-b border-outline-variant">
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên viết tắt</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên đầy đủ</th>
-              <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Địa chỉ</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-outline-variant/40">
-            {filtered.length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-10 text-center text-on-surface-variant">Chưa có dự án / nơi nhận</td></tr>
-            )}
-            {filtered.map(item => (
-              <tr key={item.ID} className="hover:bg-surface-container-low transition-colors">
-                <td className="px-4 py-3 font-medium text-on-surface">{item['Tên dự án viết tắt']}</td>
-                <td className="px-4 py-3 text-on-surface-variant">{item['Tên dự án đầy đủ']}</td>
-                <td className="px-4 py-3 text-on-surface-variant">{item['Địa chỉ'] || '—'}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1 justify-end">
-                    <button onClick={() => openEdit(item)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
-                    <button onClick={() => handleDelete(item)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="bg-surface-container-low border-b border-outline-variant">
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên viết tắt</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-44">Tên đầy đủ</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide min-w-[24rem]">Địa chỉ</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Số điện thoại</th>
+                <th className="px-4 py-3"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/40">
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-variant">Chưa có dự án / nơi nhận</td></tr>
+              )}
+              {filtered.map(item => (
+                <tr key={item.ID} className="hover:bg-surface-container-low transition-colors">
+                  <td className="px-4 py-3 font-medium text-on-surface align-top">{item['Tên dự án viết tắt']}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top w-44 whitespace-normal break-words">{item['Tên dự án đầy đủ']}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top min-w-[24rem] whitespace-normal break-words">{item['Địa chỉ'] || '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top whitespace-nowrap">{item['Điện thoại'] || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => openEdit(item)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
+                      {canDelete && <button onClick={() => handleDelete(item)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <FormModal open={!!modal} title={modal?.mode === 'create' ? 'Thêm dự án / Nơi nhận' : 'Sửa dự án / Nơi nhận'}
@@ -118,6 +124,11 @@ export default function ProjectManager({ token, lookups, onUpdate }) {
             <label className={labelCls}>Địa chỉ</label>
             <input className={inputCls} value={form['Địa chỉ']}
               onChange={e => setForm(f => ({ ...f, 'Địa chỉ': e.target.value }))} />
+          </div>
+          <div className={fieldCls}>
+            <label className={labelCls}>Số điện thoại</label>
+            <input className={inputCls} value={form['Điện thoại']}
+              onChange={e => setForm(f => ({ ...f, 'Điện thoại': e.target.value }))} />
           </div>
         </div>
       </FormModal>

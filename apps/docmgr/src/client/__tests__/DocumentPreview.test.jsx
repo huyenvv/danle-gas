@@ -315,6 +315,46 @@ describe('<DocumentPreview />', () => {
     })
   })
 
+  test('giao việc form has a content field and sends it as Nội dung', async () => {
+    const gdSession = { ...MOCK_ADMIN_SESSION, userId: 2, username: 'giamdoc', role: 'Giám đốc' }
+    const choDuyetDoc = { ...MOCK_DOC, 'Tình trạng': 'Chờ duyệt' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_transitionDocument') return Promise.resolve({ data: { ...choDuyetDoc, 'Tình trạng': 'Chờ xử lý' } })
+      return Promise.resolve({})
+    })
+
+    renderPreview({ doc: choDuyetDoc, session: gdSession, isAdmin: false, canDelete: false })
+
+    // Open the giao việc form
+    await waitFor(() => expect(screen.getByRole('button', { name: /giao việc/i })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /giao việc/i }))
+
+    // The new optional content field is present
+    const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (tùy chọn)')
+    fireEvent.change(noiDung, { target: { value: 'Ưu tiên xử lý trong tuần' } })
+
+    // Pick a Phụ trách (single-select picker shows the '-- Chọn --' placeholder when empty)
+    fireEvent.click(screen.getByText('-- Chọn --'))
+    fireEvent.click(screen.getByText('Viewer One'))
+
+    // Confirm giao việc
+    fireEvent.click(screen.getByText('Xác nhận giao việc'))
+    await waitFor(() => {
+      const confirmBtn = screen.getAllByRole('button').find(b => b.textContent.trim() === 'Xác nhận')
+      expect(confirmBtn).toBeTruthy()
+      fireEvent.click(confirmBtn)
+    })
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_transitionDocument', expect.any(String), '1', 'giaoViec',
+        expect.objectContaining({ 'Nội dung': 'Ưu tiên xử lý trong tuần' }),
+      )
+    })
+  })
+
   test('Workflow - renders at least one action button for admin + Chờ duyệt', async () => {
     renderPreview()
     // Admin with 'Chờ duyệt' status → canEditDoc is true (admin role) → "Chỉnh sửa" button visible

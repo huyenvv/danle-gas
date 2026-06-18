@@ -3,9 +3,12 @@ import gasCall from '../gasClient.js'
 import { viMatch } from '../utils/viSearch.js'
 import Icon from './common/Icon.jsx'
 import FormModal from './common/FormModal.jsx'
-import { inputCls, selectCls, textareaCls, labelCls, fieldCls } from './common/formStyles.js'
+import CategoryPickerDropdown from './common/CategoryPickerDropdown.jsx'
+import { inputCls, textareaCls, labelCls, fieldCls } from './common/formStyles.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
+
+const CAT_EXPANDED_KEY = 'docmgr_cat_expanded'
 
 const ICON_OPTIONS = [
   'description', 'contract', 'bar_chart', 'engineering', 'inventory_2',
@@ -25,21 +28,6 @@ function getDescendantIds(cats, rootId) {
   return ids
 }
 
-function buildParentSelectOptions(cats, excludedIds) {
-  const opts = []
-  function walk(parentId, depth) {
-    cats
-      .filter(c => String(c['Danh mục cha'] || '') === String(parentId || '') && !excludedIds.has(String(c.ID)))
-      .forEach(c => {
-        const prefix = '\u00A0'.repeat(depth * 4) + (depth > 0 ? '— ' : '')
-        opts.push({ id: c.ID, label: prefix + c['Tên danh mục'] })
-        walk(c.ID, depth + 1)
-      })
-  }
-  walk('', 0)
-  return opts
-}
-
 function parseJsonArray(val) {
   if (!val) return []
   try { return typeof val === 'string' && val.charAt(0) === '[' ? JSON.parse(val).map(String) : [] } catch(_) { return [] }
@@ -52,12 +40,22 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState(() => {
+    // persisted locally; empty = collapse all by default
+    try {
+      const raw = localStorage.getItem(CAT_EXPANDED_KEY)
+      return new Set(raw ? JSON.parse(raw) : [])
+    } catch (_) {
+      return new Set()
+    }
+  })
   const { showToast } = useToast()
   const confirm = useConfirm()
 
   const role = session?.role || ''
   const isAdminRole = role === 'admin' || role === 'Quản trị viên' || role === 'Giám đốc'
-  const canAddSubCat = isAdminRole || session?.canCreateSubCat
+  const canAddRootCat = isAdminRole || session?.canCreateRootCat
+  const canAddSubCat = isAdminRole || session?.canCreateSubCat || canAddRootCat
 
   useEffect(() => { setCats(lookups.danhMuc || []) }, [lookups.danhMuc])
 
@@ -77,7 +75,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
 
   async function handleSave() {
     if (!form['Tên danh mục']) { setError('Tên danh mục là bắt buộc'); return }
-    if (!isAdminRole && modal.mode === 'create' && !form['Danh mục cha']) { setError('Bạn chỉ được tạo danh mục con'); return }
+    if (!isAdminRole && !canAddRootCat && modal.mode === 'create' && !form['Danh mục cha']) { setError('Bạn chỉ được tạo danh mục con'); return }
     if (modal.cat && String(form['Danh mục cha']) === String(modal.cat.ID)) {
       setError('Danh mục không thể là cha của chính nó'); return
     }
@@ -110,9 +108,8 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
     }
   }
 
-  // Fixed parentOptions: exclude self + all descendants
+  // Parent picker: exclude self + all descendants
   const excludedIds = modal?.cat ? getDescendantIds(cats, modal.cat.ID) : new Set()
-  const parentSelectOpts = buildParentSelectOptions(cats, excludedIds)
 
   const roots = cats.filter(c => !c['Danh mục cha'])
   const childrenList = cats.filter(c => !!c['Danh mục cha'])
@@ -123,13 +120,26 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
     setModal({ mode: 'create' })
   }
 
+  function toggleExpand(id) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      const k = String(id)
+      next.has(k) ? next.delete(k) : next.add(k)
+      try { localStorage.setItem(CAT_EXPANDED_KEY, JSON.stringify([...next])) } catch (_) {}
+      return next
+    })
+  }
+
   function renderTree(parentId, depth) {
     return cats
       .filter(c => String(c['Danh mục cha'] || '') === String(parentId || ''))
-      .flatMap(cat => [
-        <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} lookups={lookups} />,
-        ...renderTree(cat.ID, depth + 1)
-      ])
+      .flatMap(cat => {
+        const isOpen = expanded.has(String(cat.ID))
+        return [
+          <CatRow key={cat.ID} cat={cat} cats={cats} indent={depth} onEdit={openEdit} onDelete={handleDelete} canAddSubCat={canAddSubCat} isAdminRole={isAdminRole} onAddSub={openAddSub} lookups={lookups} isOpen={isOpen} onToggle={toggleExpand} />,
+          ...(isOpen ? renderTree(cat.ID, depth + 1) : [])
+        ]
+      })
   }
 
   const filtered = search
@@ -151,7 +161,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
         </div>
         <span className="text-sm text-on-surface-variant">{cats.length} danh mục</span>
         <div className="ml-auto">
-          {isAdminRole && (
+          {canAddRootCat && (
             <button onClick={openAdd}
               className="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1">
               <Icon name="add" size={18} />
@@ -204,16 +214,14 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
 
           <div className={fieldCls}>
             <label className={labelCls}>Danh mục cha {!isAdminRole && '*'}</label>
-            <select className={selectCls} value={form['Danh mục cha'] || ''}
-              onChange={e => setForm(f => ({ ...f, 'Danh mục cha': e.target.value }))}>
-              {isAdminRole
-                ? <option value="">— Không có (danh mục gốc) —</option>
-                : <option value="">-- Chọn danh mục cha --</option>
-              }
-              {parentSelectOpts.map(o => (
-                <option key={o.id} value={o.id}>{o.label}</option>
-              ))}
-            </select>
+            <CategoryPickerDropdown
+              testId="parent-cat-picker"
+              categories={cats}
+              excludeIds={excludedIds}
+              value={form['Danh mục cha'] || ''}
+              onChange={id => setForm(f => ({ ...f, 'Danh mục cha': id }))}
+              rootOption={isAdminRole ? '— Không có (danh mục gốc) —' : '-- Chọn danh mục cha --'}
+            />
           </div>
 
           <div className={fieldCls}>
@@ -301,9 +309,10 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
 
 const PERM_MAX_CHIPS = 3
 
-function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isAdminRole, onAddSub, lookups }) {
+function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isAdminRole, onAddSub, lookups, isOpen, onToggle }) {
   const childCount = cats.filter(c => String(c['Danh mục cha']) === String(cat.ID)).length
   const isChild = indent > 0
+  const isTree = typeof onToggle === 'function' // tree mode (vs flat search results)
 
   const userIds = parseJsonArray(cat['Người được xem'])
   const groupIds = parseJsonArray(cat['Nhóm được xem'])
@@ -323,11 +332,17 @@ function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isA
     <tr className={`hover:bg-surface-container-low transition-colors ${isChild ? 'bg-surface-container-lowest/50' : ''}`}>
       <td className="px-4 py-3" style={{ paddingLeft: indent * 24 + 16 }}>
         <div className="flex items-center gap-2">
+          {isTree && (childCount > 0
+            ? <button onClick={() => onToggle(cat.ID)} aria-label={isOpen ? 'Thu gọn' : 'Mở rộng'}
+                className="w-5 h-5 shrink-0 flex items-center justify-center rounded text-on-surface-variant hover:bg-primary/10 hover:text-primary transition-colors">
+                <Icon name={isOpen ? 'expand_more' : 'chevron_right'} size={18} />
+              </button>
+            : <span className="w-5 shrink-0" />)}
           <div className={`rounded-lg flex items-center justify-center shrink-0 ${isChild ? 'w-6 h-6' : 'w-8 h-8'} ${orphan ? 'bg-amber-100' : isChild ? 'bg-secondary/10' : 'bg-primary/10'}`}>
             <Icon name={cat.Icon || 'folder_open'} size={isChild ? 14 : 18} className={orphan ? 'text-amber-600' : isChild ? 'text-secondary' : 'text-primary'} />
           </div>
           <span className={`${isChild ? 'text-on-surface' : 'font-semibold text-on-surface'}`}>{cat['Tên danh mục']}</span>
-          {!isChild && childCount > 0 && (
+          {childCount > 0 && (
             <span className="ml-1 text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">{childCount}</span>
           )}
           {orphan && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Orphaned</span>}

@@ -10,6 +10,12 @@ function setupSsoParent(assignments) {
   SpreadsheetApp._addExternalSheet(SSO_PARENT_ID, '_Phân Bổ', rows)
 }
 
+function setupPhongBan(depts) {
+  var rows = [['ID', 'Tên phòng ban']]
+  depts.forEach(function(d) { rows.push([d.id, d.name]) })
+  SpreadsheetApp._addExternalSheet(SSO_PARENT_ID, '_Phòng Ban', rows)
+}
+
 beforeEach(() => {
   resetAll()
   setupRoleSheets()
@@ -97,6 +103,56 @@ describe('_getDeptRole', () => {
     ])
     var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
     expect(_getDeptRole(parentSs, 10)).toBe('Phó GĐ')
+  })
+
+  test('excludes admin — returns null when user only has admin Chức vụ', () => {
+    setupSsoParent([
+      { userId: 20, chucVu: 'admin' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 20)).toBeNull()
+  })
+
+  test('excludes admin but keeps the real position when both exist', () => {
+    setupSsoParent([
+      { userId: 21, chucVu: 'admin' },
+      { userId: 21, chucVu: 'Trưởng phòng' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 21)).toBe('Trưởng phòng')
+  })
+
+  test('Văn thư ranks above Nhân viên', () => {
+    setupSsoParent([
+      { userId: 22, chucVu: 'Nhân viên' },
+      { userId: 22, chucVu: 'Văn thư' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptRole(parentSs, 22)).toBe('Văn thư')
+  })
+})
+
+describe('_getDeptInfo', () => {
+  test('returns highest role + its department name', () => {
+    setupPhongBan([{ id: 1, name: 'Phòng Kế hoạch' }, { id: 2, name: 'Phòng Kỹ thuật' }])
+    setupSsoParent([
+      { userId: 30, chucVu: 'Nhân viên', phongBanId: '2' },
+      { userId: 30, chucVu: 'Trưởng phòng', phongBanId: '1' },
+    ])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptInfo(parentSs, 30)).toEqual({ role: 'Trưởng phòng', phongBan: 'Phòng Kế hoạch' })
+  })
+
+  test('returns empty info for user with no assignment', () => {
+    setupSsoParent([{ userId: 30, chucVu: 'Giám đốc' }])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptInfo(parentSs, 999)).toEqual({ role: '', phongBan: '' })
+  })
+
+  test('empty phongBan when _Phòng Ban sheet missing', () => {
+    setupSsoParent([{ userId: 31, chucVu: 'Giám đốc', phongBanId: '1' }])
+    var parentSs = SpreadsheetApp.openById(SSO_PARENT_ID)
+    expect(_getDeptInfo(parentSs, 31)).toEqual({ role: 'Giám đốc', phongBan: '' })
   })
 })
 

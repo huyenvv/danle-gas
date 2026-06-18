@@ -29,6 +29,7 @@ export default function UserManager({ token, session, lookups }) {
   const [role, setRole]       = useState('Nhân viên')
   const [canCreateDoc, setCanCreateDoc] = useState(false)
   const [canCreateSubCat, setCanCreateSubCat] = useState(false)
+  const [canCreateRootCat, setCanCreateRootCat] = useState(false)
   const [canPublish, setCanPublish] = useState(false)
   const [canPickDrive, setCanPickDrive] = useState(false)
   const [canImport, setCanImport] = useState(false)
@@ -58,6 +59,7 @@ export default function UserManager({ token, session, lookups }) {
     setRole(currentRole)
     setCanCreateDoc(user['Được tạo hồ sơ'] === 'TRUE' || user['Được tạo hồ sơ'] === true)
     setCanCreateSubCat(user['Được tạo danh mục con'] === 'TRUE' || user['Được tạo danh mục con'] === true)
+    setCanCreateRootCat(user['Được tạo danh mục cha'] === 'TRUE' || user['Được tạo danh mục cha'] === true)
     setCanPublish(user['Được phát hành'] === 'TRUE' || user['Được phát hành'] === true)
     setCanPickDrive(user['Được chọn từ Drive'] === 'TRUE' || user['Được chọn từ Drive'] === true)
     setCanImport(user['Được import'] === 'TRUE' || user['Được import'] === true)
@@ -73,7 +75,8 @@ export default function UserManager({ token, session, lookups }) {
       await gasCall('api_updateUser', token, modal.user.ID, {
         'Tên đăng nhập': modal.user['Tên đăng nhập'],
         'Được tạo hồ sơ': canCreateDoc,
-        'Được tạo danh mục con': canCreateSubCat,
+        'Được tạo danh mục con': canCreateSubCat || canCreateRootCat,
+        'Được tạo danh mục cha': canCreateRootCat,
         'Được phát hành': canPublish,
         'Được chọn từ Drive': canPickDrive,
         'Được import': canImport,
@@ -391,13 +394,23 @@ export default function UserManager({ token, session, lookups }) {
                   <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo hồ sơ mới</span>
                 </div>
                 <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
-                  <input type="checkbox" id="canCreateSubCat" checked={canCreateSubCat}
+                  <input type="checkbox" id="canCreateSubCat" checked={canCreateSubCat || canCreateRootCat}
+                    disabled={canCreateRootCat}
                     onChange={e => setCanCreateSubCat(e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                    className="w-4 h-4 rounded accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed" />
                   <label htmlFor="canCreateSubCat" className="text-sm text-on-surface cursor-pointer select-none">
                     Được tạo danh mục con
                   </label>
-                  <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo danh mục con</span>
+                  <span className="text-xs text-on-surface-variant ml-auto">{canCreateRootCat ? 'Đã bao gồm trong quyền tạo danh mục cha' : 'Cho phép tạo danh mục con'}</span>
+                </div>
+                <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
+                  <input type="checkbox" id="canCreateRootCat" checked={canCreateRootCat}
+                    onChange={e => setCanCreateRootCat(e.target.checked)}
+                    className="w-4 h-4 rounded accent-primary cursor-pointer" />
+                  <label htmlFor="canCreateRootCat" className="text-sm text-on-surface cursor-pointer select-none">
+                    Được tạo danh mục cha
+                  </label>
+                  <span className="text-xs text-on-surface-variant ml-auto">Cho phép tạo danh mục cấp 1 (gốc)</span>
                 </div>
                 <div className="flex items-center gap-3 mt-3 bg-surface-container-low rounded-xl px-4 py-3">
                   <input type="checkbox" id="canPublish" checked={canPublish}

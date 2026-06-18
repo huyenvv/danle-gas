@@ -12,13 +12,18 @@ const NAV_ITEMS = [
   { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
 ]
 
-export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, onImport, collapsed, role, canCreateSubCat }) {
+export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, onImport, collapsed, role, canCreateSubCat, canCreateRootCat }) {
   const limitedDocOnlyRoles = ['Nhân viên', 'Trưởng phòng']
+  const canSeeCategories = canCreateSubCat || canCreateRootCat
   const visibleItems = NAV_ITEMS.filter(item => {
     if (limitedDocOnlyRoles.includes(role)) {
       if (item.key === 'documents') return true
-      if (item.key === 'categories' && canCreateSubCat) return true
+      if (item.key === 'categories' && canSeeCategories) return true
       return false
+    }
+    // Role bị ẩn "Danh mục" (vd Văn thư) vẫn thấy khi được cấp quyền tạo danh mục con/cha
+    if (item.key === 'categories' && item.hiddenRoles && item.hiddenRoles.includes(role)) {
+      return canSeeCategories
     }
     return (!item.admin || isAdmin) && (!item.superAdmin || isSuperAdmin) && (!item.hiddenRoles || !item.hiddenRoles.includes(role))
   })

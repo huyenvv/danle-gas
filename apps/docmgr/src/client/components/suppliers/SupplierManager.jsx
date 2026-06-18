@@ -10,14 +10,12 @@ import { useConfirm } from '../../context/ConfirmContext.jsx'
 const PAGE_SIZE = 10
 
 function emptyForm() {
-  return {
-    'Tên NCC viết tắt': '', 'Tên NCC đầy đủ': '', 'Địa chỉ': '',
-    'Mã số thuế': '', 'Điện thoại': '', 'Người đại diện': '',
-    'Số tài khoản': '', 'Tên ngân hàng': '', 'Lĩnh vực kinh doanh': '',
-  }
+  return { 'Tên NCC viết tắt': '', 'Tên NCC đầy đủ': '', 'Địa chỉ': '', 'Điện thoại': '' }
 }
 
-export default function SupplierManager({ token, lookups, onUpdate }) {
+export default function SupplierManager({ token, lookups, onUpdate, session }) {
+  // Xoá khớp với gate server (requireAdmin): chỉ admin/Quản trị viên/Giám đốc
+  const canDelete = ['admin', 'Quản trị viên', 'Giám đốc'].includes(session?.role)
   const [items, setItems] = useState(lookups.nhaCungCap || [])
   const [modal, setModal]   = useState(null)
   const [search, setSearch] = useState('')
@@ -58,8 +56,7 @@ export default function SupplierManager({ token, lookups, onUpdate }) {
   const filtered = items.filter(i => {
     if (!search) return true
     return viMatch(i['Tên NCC viết tắt'], search) ||
-           viMatch(i['Tên NCC đầy đủ'], search) ||
-           viMatch(i['Lĩnh vực kinh doanh'], search)
+           viMatch(i['Tên NCC đầy đủ'], search)
   })
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const page = Math.min(currentPage, totalPages)
@@ -87,28 +84,26 @@ export default function SupplierManager({ token, lookups, onUpdate }) {
             <thead>
               <tr className="bg-surface-container-low border-b border-outline-variant">
                 <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên viết tắt</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Tên đầy đủ</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">MST</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">ĐT</th>
-                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Lĩnh vực</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide w-44">Tên đầy đủ</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide min-w-[24rem]">Địa chỉ</th>
+                <th className="px-4 py-3 text-left font-semibold text-on-surface-variant text-xs uppercase tracking-wide">Số điện thoại</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/40">
               {paged.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-on-surface-variant">Chưa có NCC / Nơi gửi</td></tr>
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-on-surface-variant">Chưa có NCC / Nơi gửi</td></tr>
               )}
               {paged.map(item => (
                 <tr key={item.ID} className="hover:bg-surface-container-low transition-colors">
                   <td className="px-4 py-3 font-medium text-on-surface">{item['Tên NCC viết tắt']}</td>
-                  <td className="px-4 py-3 text-on-surface-variant max-w-xs truncate">{item['Tên NCC đầy đủ']}</td>
-                  <td className="px-4 py-3 text-on-surface-variant">{item['Mã số thuế'] || '—'}</td>
-                  <td className="px-4 py-3 text-on-surface-variant">{item['Điện thoại'] || '—'}</td>
-                  <td className="px-4 py-3 text-on-surface-variant">{item['Lĩnh vực kinh doanh'] || '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top w-44 whitespace-normal break-words">{item['Tên NCC đầy đủ']}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top min-w-[24rem] whitespace-normal break-words">{item['Địa chỉ'] || '—'}</td>
+                  <td className="px-4 py-3 text-on-surface-variant align-top whitespace-nowrap">{item['Điện thoại'] || '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => openEdit(item)} className="text-xs px-2.5 py-1 rounded-lg text-primary hover:bg-primary/10 transition-colors font-medium">Sửa</button>
-                      <button onClick={() => handleDelete(item)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>
+                      {canDelete && <button onClick={() => handleDelete(item)} className="text-xs px-2.5 py-1 rounded-lg text-error hover:bg-error-container transition-colors font-medium">Xóa</button>}
                     </div>
                   </td>
                 </tr>
@@ -131,52 +126,27 @@ export default function SupplierManager({ token, lookups, onUpdate }) {
 
       <FormModal open={!!modal} title={modal?.mode === 'create' ? 'Thêm NCC / Nơi gửi' : 'Sửa NCC / Nơi gửi'}
         icon={modal?.mode === 'create' ? 'add' : 'edit'} onClose={closeModal} onSave={handleSave}
-        saving={saving} error={error} maxWidth="max-w-2xl">
-        <div className="grid grid-cols-3 gap-4">
+        saving={saving} error={error} maxWidth="max-w-md">
+        <div className="space-y-4">
           <div className={fieldCls}>
             <label className={labelCls}>Tên viết tắt *</label>
             <input className={inputCls} value={form['Tên NCC viết tắt']}
               onChange={e => setForm(f => ({ ...f, 'Tên NCC viết tắt': e.target.value }))} />
           </div>
-          <div className={fieldCls + ' col-span-2'}>
+          <div className={fieldCls}>
             <label className={labelCls}>Tên đầy đủ</label>
             <input className={inputCls} value={form['Tên NCC đầy đủ']}
               onChange={e => setForm(f => ({ ...f, 'Tên NCC đầy đủ': e.target.value }))} />
           </div>
-          <div className={fieldCls + ' col-span-2'}>
+          <div className={fieldCls}>
             <label className={labelCls}>Địa chỉ</label>
             <input className={inputCls} value={form['Địa chỉ']}
               onChange={e => setForm(f => ({ ...f, 'Địa chỉ': e.target.value }))} />
           </div>
           <div className={fieldCls}>
-            <label className={labelCls}>Mã số thuế</label>
-            <input className={inputCls} value={form['Mã số thuế']}
-              onChange={e => setForm(f => ({ ...f, 'Mã số thuế': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Điện thoại</label>
+            <label className={labelCls}>Số điện thoại</label>
             <input className={inputCls} value={form['Điện thoại']}
               onChange={e => setForm(f => ({ ...f, 'Điện thoại': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Người đại diện</label>
-            <input className={inputCls} value={form['Người đại diện']}
-              onChange={e => setForm(f => ({ ...f, 'Người đại diện': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Số tài khoản</label>
-            <input className={inputCls} value={form['Số tài khoản']}
-              onChange={e => setForm(f => ({ ...f, 'Số tài khoản': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Tên ngân hàng</label>
-            <input className={inputCls} value={form['Tên ngân hàng']}
-              onChange={e => setForm(f => ({ ...f, 'Tên ngân hàng': e.target.value }))} />
-          </div>
-          <div className={fieldCls}>
-            <label className={labelCls}>Lĩnh vực kinh doanh</label>
-            <input className={inputCls} value={form['Lĩnh vực kinh doanh']}
-              onChange={e => setForm(f => ({ ...f, 'Lĩnh vực kinh doanh': e.target.value }))} />
           </div>
         </div>
       </FormModal>

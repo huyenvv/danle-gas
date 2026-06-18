@@ -499,6 +499,7 @@ async function mockCall(fn, ...args) {
       _mockData.docs[idx]['Tình trạng'] = ACTIONS[action]
       if (action === 'giaoViec' && tData['Phụ trách']) {
         _mockData.docs[idx]['Phụ trách'] = JSON.stringify([String(tData['Phụ trách'])])
+        _mockData.docs[idx]['Nội dung giao việc'] = tData['Nội dung'] || ''
       }
       if (tData['Người phối hợp'] !== undefined) {
         _mockData.docs[idx]['Người phối hợp'] = Array.isArray(tData['Người phối hợp']) ? JSON.stringify(tData['Người phối hợp']) : ''

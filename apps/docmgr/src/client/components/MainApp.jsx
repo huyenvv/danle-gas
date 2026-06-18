@@ -220,7 +220,7 @@ export default function MainApp() {
     // Search is server-side (triggered on Enter) — no client-side text filter here
     if (filters.danhMucId) result = result.filter(d => String(d['Danh mục']) === String(filters.danhMucId))
     if (filters.tinhTrang) result = result.filter(d => d['Tình trạng'] === filters.tinhTrang)
-    if (filters.duAn) result = result.filter(d => d['Dự án (Phòng ban)'] === filters.duAn)
+    if (filters.duAn) result = result.filter(d => parseAssignees(d['Dự án (Phòng ban)']).includes(String(filters.duAn)))
     if (filters.nhaCungCap) result = result.filter(d => d['Nhà cung cấp (Nơi ban hành)'] === filters.nhaCungCap)
     if (filters.phuTrach) result = result.filter(d => parseAssignees(d['Phụ trách']).includes(String(filters.phuTrach)))
     if (filters.readStatus === 'unread') result = result.filter(d => unreadDocIds.has(String(d.ID)))
@@ -312,6 +312,7 @@ export default function MainApp() {
         collapsed={sidebarCollapsed}
         role={session.role}
         canCreateSubCat={session.canCreateSubCat}
+        canCreateRootCat={session.canCreateRootCat}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -553,11 +554,11 @@ export default function MainApp() {
           )}
 
           {page === 'suppliers' && (
-            <SupplierManager token={localStorage.getItem('docmgr_access_token')} lookups={lookups} onUpdate={() => refreshLookups(localStorage.getItem('docmgr_access_token')).then(setLookups)} />
+            <SupplierManager token={localStorage.getItem('docmgr_access_token')} lookups={lookups} session={session} onUpdate={() => refreshLookups(localStorage.getItem('docmgr_access_token')).then(setLookups)} />
           )}
 
           {page === 'projects' && (
-            <ProjectManager token={localStorage.getItem('docmgr_access_token')} lookups={lookups} onUpdate={() => refreshLookups(localStorage.getItem('docmgr_access_token')).then(setLookups)} />
+            <ProjectManager token={localStorage.getItem('docmgr_access_token')} lookups={lookups} session={session} onUpdate={() => refreshLookups(localStorage.getItem('docmgr_access_token')).then(setLookups)} />
           )}
 
           {isAdmin && (
@@ -938,7 +939,7 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         })()}
       </td>
       <td className="px-4 py-3 text-on-surface-variant text-xs">{doc['Số hồ sơ'] || '—'}</td>
-      <td className="px-4 py-3 text-on-surface-variant max-w-[100px] truncate">{doc['Dự án (Phòng ban)'] || '—'}</td>
+      <td className="px-4 py-3 text-on-surface-variant max-w-[100px] truncate">{parseAssignees(doc['Dự án (Phòng ban)']).join(', ') || '—'}</td>
       <td className="px-4 py-3 text-on-surface-variant max-w-[120px] truncate">{doc['Nhà cung cấp (Nơi ban hành)'] || '—'}</td>
       <td className="px-4 py-3 max-w-[120px]">
         {(() => {

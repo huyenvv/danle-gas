@@ -13,7 +13,7 @@ const DEFAULT_TEMPLATES = {
   },
   giaoViec: {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
-    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
   },
   phatHanh: {
     subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
@@ -34,14 +34,18 @@ const TEMPLATE_VARS = [
   { key: '{tênNgườiGửi}', desc: 'Tên người gửi' },
   { key: '{ngườiGửi}', desc: 'Tên đăng nhập người gửi' },
   { key: '{emailNgườiGửi}', desc: 'Email người gửi' },
+  { key: '{vaiTròNgườiGửi}', desc: 'Vai trò người gửi (chức vụ cao nhất, loại Admin)' },
+  { key: '{phòngBanNgườiGửi}', desc: 'Phòng ban người gửi' },
   { key: '{tênNgườiNhận}', desc: 'Tên người nhận' },
   { key: '{vaiTròNgườiNhận}', desc: 'Vai trò người nhận' },
+  { key: '{phòngBanNgườiNhận}', desc: 'Phòng ban người nhận' },
   { key: '{linkHệThống}', desc: 'Link đăng nhập hệ thống' },
   { key: '{linkTàiLiệu}', desc: 'Link file đính kèm (nhiều file = nhiều link)' },
   { key: '{ngàyBanHành}', desc: 'Ngày ban hành (dd/mm/yyyy)' },
   { key: '{ngàyKếtThúc}', desc: 'Ngày kết thúc (dd/mm/yyyy)' },
   { key: '{ghiChú}', desc: 'Ghi chú của hồ sơ' },
   { key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' },
+  { key: '{nộiDungGiaoViec}', desc: 'Nội dung giao việc (chỉ dùng trong email Giao việc)' },
   { key: '{hoảTốc}', desc: 'Tiền tố [HOẢ TỐC] nếu hồ sơ đánh dấu Khẩn' },
 ]
 

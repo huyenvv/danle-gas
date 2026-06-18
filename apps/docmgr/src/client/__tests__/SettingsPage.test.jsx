@@ -28,6 +28,16 @@ test('renders COMPANY_NAME value in an input', () => {
   expect(input).toBeInTheDocument()
 })
 
+test('Email tab lists the new sender/recipient role & department variables', () => {
+  renderWithProviders(
+    <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />
+  )
+  fireEvent.click(screen.getByText('Email thông báo'))
+  expect(screen.getByText(/\{vaiTròNgườiGửi\}/)).toBeInTheDocument()
+  expect(screen.getByText(/\{phòngBanNgườiGửi\}/)).toBeInTheDocument()
+  expect(screen.getByText(/\{phòngBanNgườiNhận\}/)).toBeInTheDocument()
+})
+
 test('save button calls api_setConfig with updated company name', async () => {
   renderWithProviders(
     <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />

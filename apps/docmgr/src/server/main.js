@@ -3,6 +3,7 @@
 function _buildSessionFromRows(userRow, roleRow) {
   var canCreate = roleRow['Được tạo hồ sơ'] === 'TRUE' || roleRow['Được tạo hồ sơ'] === true
   var canCreateSubCat = roleRow['Được tạo danh mục con'] === 'TRUE' || roleRow['Được tạo danh mục con'] === true
+  var canCreateRootCat = roleRow['Được tạo danh mục cha'] === 'TRUE' || roleRow['Được tạo danh mục cha'] === true
   var canPublish = roleRow['Được phát hành'] === 'TRUE' || roleRow['Được phát hành'] === true
   var canPickDrive = roleRow['Được chọn từ Drive'] === 'TRUE' || roleRow['Được chọn từ Drive'] === true
   var canImport = roleRow['Được import'] === 'TRUE' || roleRow['Được import'] === true
@@ -15,6 +16,7 @@ function _buildSessionFromRows(userRow, roleRow) {
     role: roleRow['Quyền'],
     canCreate: !!canCreate,
     canCreateSubCat: !!canCreateSubCat,
+    canCreateRootCat: !!canCreateRootCat,
     canPublish: !!canPublish,
     canPickDrive: !!canPickDrive,
     canImport: !!canImport,
@@ -467,11 +469,15 @@ function api_addCategory(token, data) {
     var adminRoles = ['admin', 'Quản trị viên', 'Giám đốc']
     var isAdmin = adminRoles.indexOf(session.role) !== -1
     if (!isAdmin) {
-      // Re-check permission from sheet (not cached session)
+      // Re-check permission from sheet (not cached session). Root category (no parent)
+      // needs 'Được tạo danh mục cha'; sub-category needs 'Được tạo danh mục con'.
       var roles = getSheetData(SHEETS.APP_ROLES)
       var appRole = roles.find(function(r) { return String(r['UserID']) === String(session.userId) && r['AppID'] === APP_ID })
-      var allowed = appRole && (appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true)
-      if (!allowed || !data['Danh mục cha']) {
+      var hasSub = appRole && (appRole['Được tạo danh mục con'] === 'TRUE' || appRole['Được tạo danh mục con'] === true)
+      var hasRoot = appRole && (appRole['Được tạo danh mục cha'] === 'TRUE' || appRole['Được tạo danh mục cha'] === true)
+      // Quyền tạo danh mục cha bao hàm quyền tạo danh mục con.
+      var allowed = !data['Danh mục cha'] ? hasRoot : (hasSub || hasRoot)
+      if (!allowed) {
         throw new Error('Bạn không có quyền tạo danh mục')
       }
     }
@@ -545,7 +551,7 @@ function api_addNhaCungCap(token, data) {
 
 function api_updateNhaCungCap(token, id, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    _requireAdminOrVanThu(token)
     return updateRow(SHEETS.NHA_CUNG_CAP, id, data)
   })
 }
@@ -568,7 +574,7 @@ function api_addDuAn(token, data) {
 
 function api_updateDuAn(token, id, data) {
   return _wrap(function() {
-    requireAdmin(token)
+    _requireAdminOrVanThu(token)
     return updateRow(SHEETS.DU_AN, id, data)
   })
 }
@@ -612,6 +618,7 @@ function api_getUsers(token) {
           'Quyền': appRole ? appRole['Quyền'] : '',
           'Được tạo hồ sơ': appRole && (appRole['Được tạo hồ sơ'] === true || appRole['Được tạo hồ sơ'] === 'TRUE') ? 'TRUE' : '',
           'Được tạo danh mục con': appRole && (appRole['Được tạo danh mục con'] === true || appRole['Được tạo danh mục con'] === 'TRUE') ? 'TRUE' : '',
+          'Được tạo danh mục cha': appRole && (appRole['Được tạo danh mục cha'] === true || appRole['Được tạo danh mục cha'] === 'TRUE') ? 'TRUE' : '',
           'Được phát hành': appRole && (appRole['Được phát hành'] === true || appRole['Được phát hành'] === 'TRUE') ? 'TRUE' : '',
           'Được chọn từ Drive': appRole && (appRole['Được chọn từ Drive'] === true || appRole['Được chọn từ Drive'] === 'TRUE') ? 'TRUE' : '',
           'Được import': appRole && (appRole['Được import'] === true || appRole['Được import'] === 'TRUE') ? 'TRUE' : '',
@@ -663,6 +670,7 @@ function api_updateUser(token, id, data) {
     if (data['Quyền'] !== undefined) roleUpdates['Quyền'] = data['Quyền']
     if (data['Được tạo hồ sơ'] !== undefined) roleUpdates['Được tạo hồ sơ'] = data['Được tạo hồ sơ'] ? 'TRUE' : ''
     if (data['Được tạo danh mục con'] !== undefined) roleUpdates['Được tạo danh mục con'] = data['Được tạo danh mục con'] ? 'TRUE' : ''
+    if (data['Được tạo danh mục cha'] !== undefined) roleUpdates['Được tạo danh mục cha'] = data['Được tạo danh mục cha'] ? 'TRUE' : ''
     if (data['Được phát hành'] !== undefined) roleUpdates['Được phát hành'] = data['Được phát hành'] ? 'TRUE' : ''
     if (data['Được chọn từ Drive'] !== undefined) roleUpdates['Được chọn từ Drive'] = data['Được chọn từ Drive'] ? 'TRUE' : ''
     if (data['Được import'] !== undefined) roleUpdates['Được import'] = data['Được import'] ? 'TRUE' : ''
@@ -676,6 +684,7 @@ function api_updateUser(token, id, data) {
         'Quyền': data['Quyền'] || 'Xem',
         'Được tạo hồ sơ': data['Được tạo hồ sơ'] ? 'TRUE' : '',
         'Được tạo danh mục con': data['Được tạo danh mục con'] ? 'TRUE' : '',
+        'Được tạo danh mục cha': data['Được tạo danh mục cha'] ? 'TRUE' : '',
         'Được chọn từ Drive': data['Được chọn từ Drive'] ? 'TRUE' : '',
         'Được import': data['Được import'] ? 'TRUE' : '',
       })

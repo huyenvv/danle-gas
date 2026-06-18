@@ -41,6 +41,61 @@ describe('CategoryManager — rendering', () => {
     renderCategoryManager({ session: MOCK_VIEWER_SESSION })
     expect(screen.queryByRole('button', { name: /Thêm danh mục/i })).not.toBeInTheDocument()
   })
+
+  test('non-admin WITH canCreateRootCat sees Thêm danh mục button', () => {
+    renderCategoryManager({ session: { ...MOCK_VIEWER_SESSION, role: 'Văn thư', canCreateRootCat: true } })
+    expect(screen.getByRole('button', { name: /Thêm danh mục/i })).toBeInTheDocument()
+  })
+})
+
+describe('CategoryManager — collapse tree', () => {
+  const NESTED_LOOKUPS = {
+    ...MOCK_LOOKUPS,
+    danhMuc: [
+      { ID: '1', 'Tên danh mục': 'Hợp đồng', 'Danh mục cha': '' },
+      { ID: '10', 'Tên danh mục': 'Hợp đồng mua', 'Danh mục cha': '1' },
+    ],
+  }
+
+  test('children are collapsed by default and shown after expanding', () => {
+    renderCategoryManager({ lookups: NESTED_LOOKUPS })
+
+    // Root visible, child hidden initially
+    expect(screen.getByText('Hợp đồng')).toBeInTheDocument()
+    expect(screen.queryByText('Hợp đồng mua')).not.toBeInTheDocument()
+
+    // Child count badge shows on the root
+    expect(screen.getByText('1')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /mở rộng/i }))
+    expect(screen.getByText('Hợp đồng mua')).toBeInTheDocument()
+  })
+
+  test('expanded child can be collapsed again', () => {
+    renderCategoryManager({ lookups: NESTED_LOOKUPS })
+
+    fireEvent.click(screen.getByRole('button', { name: /mở rộng/i }))
+    expect(screen.getByText('Hợp đồng mua')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /thu gọn/i }))
+    expect(screen.queryByText('Hợp đồng mua')).not.toBeInTheDocument()
+  })
+
+  test('expand state persists to localStorage and is restored on remount', () => {
+    localStorage.removeItem('docmgr_cat_expanded')
+
+    const { unmount } = renderCategoryManager({ lookups: NESTED_LOOKUPS })
+    fireEvent.click(screen.getByRole('button', { name: /mở rộng/i }))
+    expect(JSON.parse(localStorage.getItem('docmgr_cat_expanded'))).toContain('1')
+
+    unmount()
+
+    // Remount: previously-expanded node stays open, child visible without clicking
+    renderCategoryManager({ lookups: NESTED_LOOKUPS })
+    expect(screen.getByText('Hợp đồng mua')).toBeInTheDocument()
+
+    localStorage.removeItem('docmgr_cat_expanded')
+  })
 })
 
 describe('CategoryManager — add category', () => {

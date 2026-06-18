@@ -24,6 +24,12 @@ function renderModal(overrides = {}) {
   return renderWithProviders(<DocumentModal {...DEFAULT_PROPS} {...overrides} />)
 }
 
+// Danh mục is now a searchable tree picker (not a <select>): open it then click the option.
+function selectDanhMuc(id) {
+  fireEvent.click(screen.getByTestId('danhmuc-picker'))
+  fireEvent.click(screen.getByTestId(`danhmuc-picker-opt-${id}`))
+}
+
 beforeEach(() => {
   gasCall.mockReset()
   DEFAULT_PROPS.onClose.mockReset()
@@ -55,8 +61,7 @@ describe('DocumentModal', () => {
     })
 
     // Select Danh mục (required field)
-    const danhMucSelect = screen.getAllByRole('combobox')[0]
-    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+    selectDanhMuc('1')
 
     const submitBtn = screen.getByRole('button', { name: /lưu tài liệu/i })
     fireEvent.click(submitBtn)
@@ -81,8 +86,7 @@ describe('DocumentModal', () => {
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
 
     // Danh mục is required before any upload is attempted
-    const danhMucSelect = screen.getAllByRole('combobox')[0]
-    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+    selectDanhMuc('1')
 
     const fileInput = container.querySelector('input[type="file"]')
     const file = new File(['x'], 'test.pdf', { type: 'application/pdf' })
@@ -102,8 +106,7 @@ describe('DocumentModal', () => {
 
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
 
-    const danhMucSelect = screen.getAllByRole('combobox')[0]
-    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+    selectDanhMuc('1')
 
     const fileInput = container.querySelector('input[type="file"]')
     const file = new File(['x'], 'ok.pdf', { type: 'application/pdf' })
@@ -131,7 +134,7 @@ describe('DocumentModal', () => {
     const SIZE = 30 * 1024 * 1024 // 30MB → > 25MB threshold → 6 chunks of 5MB
     const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+    selectDanhMuc('1')
 
     await act(async () => {
       fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
@@ -162,7 +165,7 @@ describe('DocumentModal', () => {
     const SIZE = 30 * 1024 * 1024
     const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+    selectDanhMuc('1')
 
     await act(async () => {
       fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
@@ -190,7 +193,7 @@ describe('DocumentModal', () => {
     const SIZE = 55 * 1024 * 1024 // 55MB → 11 chunks of 5MB, > 50MB → percent display
     const bigFile = { name: 'big.pdf', type: 'application/pdf', size: SIZE, slice: () => new Blob(['x']) }
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+    selectDanhMuc('1')
 
     await act(async () => {
       fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [bigFile] } })
@@ -478,7 +481,7 @@ describe('DocumentModal', () => {
     gasCall.mockResolvedValue({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' }, data: draftDoc })
 
     const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '1' } })
+    selectDanhMuc('1')
 
     const okFile = new File(['x'], 'ok.pdf', { type: 'application/pdf' })
     await act(async () => {
@@ -528,8 +531,7 @@ describe('DocumentModal', () => {
     fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), {
       target: { value: 'Test Doc' },
     })
-    const danhMucSelect = screen.getAllByRole('combobox')[0]
-    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+    selectDanhMuc('1')
 
     fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
 
@@ -659,8 +661,7 @@ describe('DocumentModal', () => {
     fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), {
       target: { value: 'Test Doc' },
     })
-    const danhMucSelect = screen.getAllByRole('combobox')[0]
-    fireEvent.change(danhMucSelect, { target: { value: '1' } })
+    selectDanhMuc('1')
 
     fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
 
@@ -859,6 +860,55 @@ describe('DocumentModal', () => {
     })
     expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
     jest.useRealTimers()
+  })
+
+  // ── Dự án (Nơi nhận) multi-select ─────────────────────────────────────────
+  describe('Dự án multi-select', () => {
+    const lookups = {
+      ...MOCK_LOOKUPS,
+      duAn: [
+        { ID: 1, 'Tên dự án viết tắt': 'DA-01' },
+        { ID: 2, 'Tên dự án viết tắt': 'DA-02' },
+      ],
+    }
+
+    it('keeps a legacy single value selected and appends a 2nd project as a JSON array', async () => {
+      gasCall.mockResolvedValue({ ...MOCK_DOCS[0] })
+      const doc = { ...MOCK_DOCS[0], 'Dự án (Phòng ban)': 'DA-01' } // legacy single value
+
+      renderModal({ mode: 'edit', doc, session: MOCK_ADMIN_SESSION, lookups })
+
+      fireEvent.click(screen.getByTestId('duan-picker'))            // open dropdown
+      fireEvent.click(screen.getByTestId('duan-picker-opt-DA-02'))  // add second project
+      fireEvent.click(screen.getByRole('button', { name: /cập nhật/i }))
+
+      await waitFor(() => {
+        expect(gasCall).toHaveBeenCalledWith(
+          'api_updateDocument', MOCK_TOKEN, doc.ID,
+          expect.objectContaining({ 'Dự án (Phòng ban)': JSON.stringify(['DA-01', 'DA-02']) }),
+          expect.any(Array), expect.any(Array), null, expect.any(Array),
+        )
+      })
+    })
+
+    it('toggling the only selected project off stores an empty string', async () => {
+      gasCall.mockResolvedValue({ ...MOCK_DOCS[0] })
+      const doc = { ...MOCK_DOCS[0], 'Dự án (Phòng ban)': 'DA-01' }
+
+      renderModal({ mode: 'edit', doc, session: MOCK_ADMIN_SESSION, lookups })
+
+      fireEvent.click(screen.getByTestId('duan-picker'))            // open dropdown
+      fireEvent.click(screen.getByTestId('duan-picker-opt-DA-01'))  // toggle off
+      fireEvent.click(screen.getByRole('button', { name: /cập nhật/i }))
+
+      await waitFor(() => {
+        expect(gasCall).toHaveBeenCalledWith(
+          'api_updateDocument', MOCK_TOKEN, doc.ID,
+          expect.objectContaining({ 'Dự án (Phòng ban)': '' }),
+          expect.any(Array), expect.any(Array), null, expect.any(Array),
+        )
+      })
+    })
   })
 
   // Test: trinhDuyetLai shows real errors (not swallowed)

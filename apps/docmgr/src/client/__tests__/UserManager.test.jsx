@@ -118,3 +118,35 @@ describe('UserManager — canPublish toggle', () => {
     })
   })
 })
+
+describe('UserManager — danh mục cha bao hàm danh mục con', () => {
+  async function openViewerEdit() {
+    renderUserManager()
+    await screen.findByText('viewer1')
+    const row = screen.getByText('viewer1').closest('tr')
+    fireEvent.click(within(row).getByRole('button', { name: /sửa quyền/i }))
+    await screen.findByText('Phân quyền')
+  }
+
+  test('checking "danh mục cha" auto-checks and locks "danh mục con"', async () => {
+    await openViewerEdit()
+    const sub = screen.getByRole('checkbox', { name: /được tạo danh mục con/i })
+    const root = screen.getByRole('checkbox', { name: /được tạo danh mục cha/i })
+    expect(sub).not.toBeChecked()
+
+    fireEvent.click(root)
+    expect(sub).toBeChecked()
+    expect(sub).toBeDisabled()
+  })
+
+  test('saving with only "danh mục cha" still sends "danh mục con" = true', async () => {
+    await openViewerEdit()
+    fireEvent.click(screen.getByRole('checkbox', { name: /được tạo danh mục cha/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith('api_updateUser', MOCK_TOKEN, 2,
+        expect.objectContaining({ 'Được tạo danh mục cha': true, 'Được tạo danh mục con': true }))
+    })
+  })
+})

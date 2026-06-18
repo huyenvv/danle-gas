@@ -192,8 +192,14 @@ function checkReferences(sheetName, id) {
 
   var targetData = getSheetData(ref.targetSheet)
   var matches = targetData.filter(function(row) {
-    return String(row[ref.targetColumn]) === String(recordName) ||
-           String(row[ref.targetColumn]) === String(id)
+    var cell = row[ref.targetColumn]
+    // Multi-value columns (e.g. 'Dự án (Phòng ban)') store a JSON array of names
+    if (typeof cell === 'string' && cell.charAt(0) === '[') {
+      var arr = []
+      try { arr = JSON.parse(cell).map(String) } catch(e) {}
+      return arr.indexOf(String(recordName)) !== -1 || arr.indexOf(String(id)) !== -1
+    }
+    return String(cell) === String(recordName) || String(cell) === String(id)
   })
 
   return {
