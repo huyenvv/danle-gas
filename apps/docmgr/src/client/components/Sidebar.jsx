@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { key: 'settings',    icon: 'settings',      label: 'Cài đặt',       admin: false, superAdmin: true  },
 ]
 
-export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, onImport, collapsed, role, canCreateSubCat, canCreateRootCat }) {
+export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateDoc, onImport, onExport, collapsed, role, canCreateSubCat, canCreateRootCat }) {
   const limitedDocOnlyRoles = ['Nhân viên', 'Trưởng phòng']
   const canSeeCategories = canCreateSubCat || canCreateRootCat
   const visibleItems = NAV_ITEMS.filter(item => {
@@ -45,9 +45,9 @@ export default function Sidebar({ page, onPage, isAdmin, isSuperAdmin, onCreateD
       </div>
 
       {/* "Tạo hồ sơ mới" CTA — split button with import dropdown */}
-      {(onCreateDoc || onImport) && (
+      {(onCreateDoc || onImport || onExport) && (
         <div className={`pt-4 pb-2 shrink-0 ${collapsed ? 'px-2' : 'px-3'}`}>
-          <CreateMenu onCreate={onCreateDoc} onImport={onImport} collapsed={collapsed} />
+          <CreateMenu onCreate={onCreateDoc} onImport={onImport} onExport={onExport} collapsed={collapsed} />
         </div>
       )}
 

@@ -93,6 +93,41 @@ global.SpreadsheetApp = {
     }
     this._externalSpreadsheets[ssId].sheets[sheetName] = sheetObj
   },
+  _createdCount: 0,
+  flush() {},
+  /** Create a new spreadsheet (used by export). Registers a Drive file so
+   *  getFileById(id).setTrashed(...) is observable in tests. */
+  create(name) {
+    const id = 'created-ss-' + (++this._createdCount)
+    if (global.DriveApp && global.DriveApp._files) {
+      global.DriveApp._files[id] = { id, name, isFolder: false, trashed: false }
+    }
+    const sheet = {
+      _name: 'Sheet1',
+      _rows: [],
+      getName() { return this._name },
+      setName(n) { this._name = n; return this },
+      getRange(row, col, numRows, numCols) {
+        const s = this
+        return {
+          setValues(vals) {
+            for (let i = 0; i < numRows; i++) s._rows[row - 1 + i] = (vals[i] || []).slice()
+            return this
+          },
+          getValues() {
+            const out = []
+            for (let i = 0; i < numRows; i++) out.push((s._rows[row - 1 + i] || []).slice(0, numCols))
+            return out
+          },
+        }
+      },
+    }
+    return {
+      getId() { return id },
+      getSheets() { return [sheet] },
+      _sheet: sheet,
+    }
+  },
 }
 
 // ── CacheService ──────────────────────────────────────────────────────────────
@@ -232,6 +267,7 @@ global.Utilities = {
     return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
   }) },
   base64Decode(s) { return Array.from(Buffer.from(s, 'base64')) },
+  base64Encode(bytes) { return Buffer.from(bytes || []).toString('base64') },
   newBlob(bytes, mime, name) {
     return {
       getBytes()  { return bytes },
@@ -290,6 +326,10 @@ global.UrlFetchApp = {
       getResponseCode() { return r.code },
       getAllHeaders()   { return r.headers || {} },
       getContentText()  { return r.body || '' },
+      getBlob() {
+        const bytes = r.bytes || [80, 75, 3, 4] // 'PK..' xlsx magic by default
+        return { getBytes() { return bytes }, getName() { return 'export.xlsx' } }
+      },
     }
   }
 }
@@ -298,7 +338,8 @@ global.UrlFetchApp = {
 let _sessionEmail = 'test@example.com'
 global.Session = {
   _setEmail(email) { _sessionEmail = email },
-  getActiveUser() { return { getEmail: () => _sessionEmail } }
+  getActiveUser() { return { getEmail: () => _sessionEmail } },
+  getScriptTimeZone() { return 'Asia/Ho_Chi_Minh' }
 }
 
 // ── Logger ────────────────────────────────────────────────────────────────────

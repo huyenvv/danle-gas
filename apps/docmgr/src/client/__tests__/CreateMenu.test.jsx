@@ -35,6 +35,25 @@ describe('<CreateMenu />', () => {
     expect(screen.queryByText('Nhập từ Excel')).not.toBeInTheDocument()
   })
 
+  test('caret opens dropdown and "In danh mục hồ sơ" calls onExport', () => {
+    const onExport = jest.fn()
+    render(<CreateMenu onCreate={() => {}} onImport={() => {}} onExport={onExport} label="Tạo hồ sơ mới" />)
+    expect(screen.queryByText('In danh mục hồ sơ')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText('Thêm tùy chọn'))
+    const exportItem = screen.getByText('In danh mục hồ sơ')
+    expect(exportItem).toBeInTheDocument()
+    fireEvent.click(exportItem)
+    expect(onExport).toHaveBeenCalledTimes(1)
+  })
+
+  test('caret appears when only onExport provided (no onImport)', () => {
+    const onExport = jest.fn()
+    render(<CreateMenu onCreate={() => {}} onExport={onExport} label="Tạo hồ sơ mới" />)
+    fireEvent.click(screen.getByLabelText('Thêm tùy chọn'))
+    fireEvent.click(screen.getByText('In danh mục hồ sơ'))
+    expect(onExport).toHaveBeenCalledTimes(1)
+  })
+
   test('renders nothing when no actions provided', () => {
     const { container } = render(<CreateMenu />)
     expect(container.firstChild).toBeNull()

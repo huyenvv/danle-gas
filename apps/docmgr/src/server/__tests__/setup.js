@@ -31,6 +31,7 @@ const APP_FILES = [
   'documents.js',
   'file-index.js',
   'import.js',
+  'export-catalog.js',
   'main.js',
 ]
 

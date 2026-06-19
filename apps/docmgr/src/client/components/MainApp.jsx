@@ -20,6 +20,7 @@ import ProjectManager from './projects/ProjectManager.jsx'
 import DocumentPreview from './documents/DocumentPreview.jsx'
 import AuditLogPage from './AuditLogPage.jsx'
 import ImportManager from './ImportManager.jsx'
+import ExportCatalogModal from './ExportCatalogModal.jsx'
 import CreateMenu from './CreateMenu.jsx'
 import TopHeader from './layout/TopHeader.jsx'
 import { getDeadlineStatus } from '../utils/deadlineStatus.js'
@@ -44,6 +45,7 @@ export default function MainApp() {
   const confirm = useConfirm()
 
   const [page, setPage]            = useState('documents')
+  const [exportModalOpen, setExportModalOpen] = useState(false)
   const [allDocs, setAllDocs]      = useState([])
   const [stats, setStats]          = useState(null)
   const [lookups, setLookups]      = useState({ danhMuc: [], nhom: [], duAn: [], nhaCungCap: [] })
@@ -299,6 +301,7 @@ export default function MainApp() {
   }, [lookups.users])
   const canCreate = session.canCreate || session.role === 'admin' || session.role === 'Quản trị viên' || session.role === 'Văn thư'
   const canImport = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session.role) || session.canImport
+  const canExport = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session.role)
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
@@ -309,6 +312,7 @@ export default function MainApp() {
         isSuperAdmin={isSuperAdmin}
         onCreateDoc={canCreate ? () => { setPage('documents'); setDocModal({ mode: 'create' }) } : undefined}
         onImport={canImport ? () => setPage('import') : undefined}
+        onExport={canExport ? () => setExportModalOpen(true) : undefined}
         collapsed={sidebarCollapsed}
         role={session.role}
         canCreateSubCat={session.canCreateSubCat}
@@ -474,12 +478,13 @@ export default function MainApp() {
                   >
                     <span className="material-symbols-outlined text-base leading-none">refresh</span>
                   </button>
-                  {(canCreate || canImport) && (
+                  {(canCreate || canImport || canExport) && (
                     <CreateMenu
                       label="Thêm hồ sơ"
                       compact
                       onCreate={canCreate ? () => setDocModal({ mode: 'create' }) : undefined}
                       onImport={canImport ? () => setPage('import') : undefined}
+                      onExport={canExport ? () => setExportModalOpen(true) : undefined}
                     />
                   )}
                 </div>
@@ -587,6 +592,15 @@ export default function MainApp() {
           </div>
         </main>
       </div>
+
+      {canExport && (
+        <ExportCatalogModal
+          open={exportModalOpen}
+          onClose={() => setExportModalOpen(false)}
+          token={localStorage.getItem('docmgr_access_token')}
+          lookups={lookups}
+        />
+      )}
 
       {docModal && (
         <DocumentModal

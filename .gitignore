@@ -9,6 +9,10 @@
 dist/
 apps/*/dist/
 
+# Spec Kit local caches
+.specify/extensions/.cache/
+.specify/workflows/.cache/
+
 # Dependencies
 node_modules/
 

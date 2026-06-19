@@ -586,6 +586,16 @@ function api_deleteDuAn(token, id) {
   })
 }
 
+// ===== Export catalog API =====
+// Xuất mục lục hồ sơ ra Excel — chỉ Văn thư / Admin / Giám đốc.
+
+function api_exportCatalog(token, categoryId) {
+  return _wrap(function() {
+    _requireAdminOrVanThu(token)
+    return exportCatalog(token, categoryId)
+  })
+}
+
 // ===== User Management API (authorization-only) =====
 // Users are managed by SSO Portal. This app only manages local roles (_Phân Quyền).
 

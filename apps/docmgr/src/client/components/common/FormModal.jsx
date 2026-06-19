@@ -23,6 +23,7 @@ export default function FormModal({
   onClose,
   onSave,
   saving = false,
+  saveDisabled = false,
   error = '',
   children,
   maxWidth = 'max-w-lg',
@@ -33,10 +34,10 @@ export default function FormModal({
   // Close on Escape
   useEffect(() => {
     if (!open) return
-    function onKey(e) { if (e.key === 'Escape') onClose() }
+    function onKey(e) { if (e.key === 'Escape' && !saving) onClose() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, saving])
 
   if (!open) return null
 
@@ -59,7 +60,8 @@ export default function FormModal({
           <h2 className="text-base font-semibold text-on-surface flex-1">{title}</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors"
+            disabled={saving}
+            className="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
             aria-label="Đóng"
           >
             <Icon name="close" size={20} />
@@ -91,7 +93,7 @@ export default function FormModal({
           <button
             type="button"
             onClick={onSave}
-            disabled={saving}
+            disabled={saving || saveDisabled}
             className="px-5 py-2 rounded-full bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors shadow-md3-1 disabled:opacity-50 flex items-center gap-2"
           >
             {saving && (

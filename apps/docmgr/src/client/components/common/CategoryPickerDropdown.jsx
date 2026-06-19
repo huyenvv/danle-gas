@@ -11,13 +11,26 @@ import { viMatch } from '../../utils/viSearch.js'
 //  - onChange(id): called with the chosen ID ('' when picking the root option)
 //  - rootOption: label for the value='' entry (e.g. "— Không có (gốc) —"); omitted = no root row
 //  - excludeIds: Set of IDs to hide (self + descendants when editing a category)
+//  - defaultCollapsed: if true, start with every parent collapsed (only roots shown)
 //  - testId: base test id; trigger = testId, options = `${testId}-opt-<id>`
-export default function CategoryPickerDropdown({ categories, value, onChange, placeholder = '-- Chọn --', rootOption, excludeIds, testId }) {
+export default function CategoryPickerDropdown({ categories, value, onChange, placeholder = '-- Chọn --', rootOption, excludeIds, defaultCollapsed = false, testId }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set()) // ids whose children are hidden; empty = all expanded
   const ref = useRef(null)
   const searchRef = useRef(null)
+
+  // defaultCollapsed: mỗi lần mở dropdown, thu gọn mọi danh mục cha (chỉ hiện gốc).
+  // Tính tại thời điểm mở để dùng categories đã tải xong (lookups async).
+  useEffect(() => {
+    if (!open || !defaultCollapsed) return
+    const parents = new Set()
+    ;(categories || []).forEach(c => {
+      const p = String(c['Danh mục cha'] || '')
+      if (p) parents.add(p)
+    })
+    setCollapsed(parents)
+  }, [open])
 
   useEffect(() => {
     if (!open) return
