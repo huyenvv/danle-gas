@@ -27,7 +27,7 @@ import { getDeadlineStatus } from '../utils/deadlineStatus.js'
 import Icon from './common/Icon.jsx'
 import PublishHistory from './documents/PublishHistory.jsx'
 
-const ROOT_FOLDER_BATCH_SIZE = 25
+const ROOT_FOLDER_BATCH_SIZE = 10
 
 function parseAssignees(value) {
   if (!value) return []
