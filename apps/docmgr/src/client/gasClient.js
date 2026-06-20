@@ -397,6 +397,8 @@ async function mockCall(fn, ...args) {
       const updated = _mockUpdate(_mockData.docs, args[1], args[2] || {})
       return updated
     }
+    case 'api_setDocumentViewers':
+      return _mockUpdate(_mockData.docs, args[1], { 'Người được xem': args[2] || '' })
     case 'api_deleteDocument':
       return _mockDelete(_mockData.docs, args[1])
     case 'api_addCategory':

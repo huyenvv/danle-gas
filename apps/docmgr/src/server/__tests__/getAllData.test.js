@@ -66,6 +66,16 @@ describe('getAllData — users list', () => {
     expect(u['Tên đăng nhập']).toBe('orphan@test.com')
   })
 
+  test('KHÔNG lọc danh mục theo quyền user — non-privileged thấy TẤT CẢ danh mục (008)', () => {
+    installMockSsoParent([{ ID: 5, 'Tên đăng nhập': 'nv', Email: 'nv@test.com', 'Tên nhân viên': 'NV' }])
+    // Danh mục 1 giới hạn cho user khác (999); danh mục 2 công khai.
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([1, 'Bí mật', '', '', '', JSON.stringify(['999']), '', ''])
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push([2, 'Công khai', '', '', '', '', '', ''])
+    invalidateSheetCache(SHEETS.DANH_MUC)
+    const result = getAllData({ role: 'Nhân viên', userId: 5, username: 'nv' })
+    expect(result.danhMuc.map(c => String(c.ID)).sort()).toEqual(['1', '2']) // thấy cả danh mục bị giới hạn
+  })
+
   test('falls back gracefully when SSO parent sheet is unavailable', () => {
     // No SSO_PARENT_SHEET_ID configured
     SpreadsheetApp._sheets[SHEETS.APP_ROLES]._rows.push([1, 30, 'alone@test.com', APP_ID, 'Nhân viên', ''])

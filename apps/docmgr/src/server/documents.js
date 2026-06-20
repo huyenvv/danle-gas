@@ -42,7 +42,7 @@ var _DEFAULT_MAIL_TEMPLATES = {
   },
   giaoViec: {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
-    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
   },
   phatHanh: {
     subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
@@ -193,19 +193,38 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
     // Single recipient name for personalized templates, generic for bulk
     var recipientName = toRecipients.length === 1 ? (toRecipients[0].name || '') : 'Quý Anh/Chị'
     var recipientRole = toRecipients.length === 1 ? (toRecipients[0].role || '') : ''
+    var recipientPhongBan = toRecipients.length === 1 ? (toRecipients[0].phongBan || '') : ''
+
+    // Vai trò + phòng ban của người gửi (người tác động cuối lên hệ thống), từ SSO _Phân Bổ
+    var senderRole = ''
+    var senderPhongBan = ''
+    if (session && session.userId) {
+      try {
+        var _parentId = ssoGetParentSheetId()
+        if (_parentId) {
+          var _senderInfo = _getDeptInfo(SpreadsheetApp.openById(_parentId), session.userId)
+          senderRole = _senderInfo.role || ''
+          senderPhongBan = _senderInfo.phongBan || ''
+        }
+      } catch(e) { Logger.log('sender dept info error: ' + e.message) }
+    }
     var vars = {
       '{tênHồSơ}': docName,
       '{tênNgườiGửi}': session ? (session.name || session.username || '') : 'Hệ thống',
       '{ngườiGửi}': session ? session.username : 'Hệ thống',
       '{emailNgườiGửi}': session ? (session.email || '') : '',
+      '{vaiTròNgườiGửi}': senderRole,
+      '{phòngBanNgườiGửi}': senderPhongBan,
       '{tênNgườiNhận}': recipientName,
       '{vaiTròNgườiNhận}': recipientRole,
+      '{phòngBanNgườiNhận}': recipientPhongBan,
       '{linkHệThống}': appLink,
       '{linkTàiLiệu}': fileLinks,
       '{ngàyBanHành}': ngayBanHanh,
       '{ngàyKếtThúc}': ngayKetThuc,
       '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : '',
       '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : '',
+      '{nộiDungGiaoViec}': (typeof doc === 'object') ? (doc['Nội dung giao việc'] || '') : '',
       '{hoảTốc}': (typeof doc === 'object' && (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true)) ? '[HOẢ TỐC] ' : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
@@ -259,17 +278,14 @@ function _getRecipientsByUsernames(usernames) {
     var sheet = ss.getSheetByName('_Người Dùng')
     if (!sheet) return []
     var users = rowsToObjects(sheet.getDataRange().getValues())
-    var roles = getSheetData(SHEETS.APP_ROLES)
     var result = []
     usernames.forEach(function(uname) {
       var user = users.find(function(u) {
         return u['Tên đăng nhập'] === uname || String(u['ID']) === String(uname)
       })
       if (user && user['Email']) {
-        var appRole = roles.find(function(r) {
-          return (r['Tên đăng nhập'] === uname || String(r['UserID']) === String(uname)) && r['AppID'] === APP_ID
-        })
-        result.push({ email: user['Email'], name: user['Tên nhân viên'] || user['Tên đăng nhập'] || uname, role: appRole ? appRole['Quyền'] : '' })
+        var info = _getDeptInfo(ss, user['ID'])
+        result.push({ email: user['Email'], name: user['Tên nhân viên'] || user['Tên đăng nhập'] || uname, role: info.role || '', phongBan: info.phongBan || '' })
       }
     })
     return result
@@ -292,11 +308,13 @@ function _getRecipientsByIds(userIds) {
     userIds.forEach(function(uid) {
       var user = data.find(function(u) { return String(u['ID']) === String(uid) })
       if (user && user['Email']) {
+        var info = _getDeptInfo(ss, uid)
         result.push({
           userId: user['ID'],
           email: user['Email'],
           name: user['Tên nhân viên'] || user['Email'],
-          role: _getDeptRole(ss, uid) || ''
+          role: info.role || '',
+          phongBan: info.phongBan || ''
         })
       }
     })
@@ -367,22 +385,9 @@ function getDocuments(token, filters) {
       }
     })
 
-    docs = docs.filter(function(d) {
-      var catId = String(d['Danh mục'] || '')
-      var cat = categories.find(function(c) { return String(c.ID) === catId })
-      if (!cat) return true // uncategorized docs are visible
-      var allowedUsers = _parseAssignees(cat['Người được xem'])
-      var allowedGroups = _parseAssignees(cat['Nhóm được xem'])
-      // Empty = everyone can see
-      if (allowedUsers.length === 0 && allowedGroups.length === 0) return true
-      // Check user in allowed users
-      if (allowedUsers.indexOf(userIdStr) !== -1 || allowedUsers.indexOf(session.username) !== -1) return true
-      // Check user's groups intersect with allowed groups
-      for (var i = 0; i < userGroupIds.length; i++) {
-        if (allowedGroups.indexOf(userGroupIds[i]) !== -1) return true
-      }
-      return false
-    })
+    // Lifecycle + document/category view permission (feature 008)
+    var _viewCtx = { categories: categories, userGroupIds: userGroupIds, userIdStr: userIdStr, username: session.username }
+    docs = docs.filter(function(d) { return _canViewDocument(d, session, _viewCtx) })
   }
 
   // Status filter
@@ -395,9 +400,9 @@ function getDocuments(token, filters) {
     docs = docs.filter(function(d) { return String(d['Danh mục']) === String(filters.danhMucId) })
   }
 
-  // Project filter
+  // Project filter (multi-value: match if the doc contains the selected project)
   if (filters.duAn) {
-    docs = docs.filter(function(d) { return String(d['Dự án (Phòng ban)']) === String(filters.duAn) })
+    docs = docs.filter(function(d) { return _parseAssignees(d['Dự án (Phòng ban)']).indexOf(String(filters.duAn)) !== -1 })
   }
 
   // Supplier filter
@@ -491,6 +496,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     'Tên file': fileNameCol,
     'Phụ trách': data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : '',
     'Người phối hợp': _buildAssignees(data['Người phối hợp'], null),
+    'Người được xem': data['Người được xem'] || '',
     'Ghi chú': data['Ghi chú'] || '',
     'Nơi lưu hồ sơ cứng': data['Nơi lưu hồ sơ cứng'] || '',
     'Ngày cập nhật': new Date().toISOString(),
@@ -567,8 +573,10 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   var textFields = [
     'Tên hồ sơ', 'Danh mục', 'Số hồ sơ',
     'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ngày ban hành', 'Ngày kết thúc',
-    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Khẩn'
+    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Khẩn',
+    'Người được xem'
   ]
+  // Phân quyền xem đặt qua màn tạo/sửa (data['Người được xem']) hoặc setDocumentViewers (màn chi tiết).
   textFields.forEach(function(f) {
     if (data[f] !== undefined) updates[f] = typeof data[f] === 'string' ? data[f].trim() : data[f]
   })
@@ -789,6 +797,84 @@ function _buildAssignees(input, defaultUserId) {
   return ''
 }
 
+// ── Document-level view permission (feature 008) ─────────────────────────────
+// Empty allowed lists → everyone. Otherwise match by userId/username or group.
+function _matchPerm(allowedUserIds, allowedGroupIds, userIdStr, username, userGroupIds) {
+  if (allowedUserIds.length === 0 && allowedGroupIds.length === 0) return true
+  if (allowedUserIds.indexOf(userIdStr) !== -1 || allowedUserIds.indexOf(username) !== -1) return true
+  for (var i = 0; i < userGroupIds.length; i++) {
+    if (allowedGroupIds.indexOf(userGroupIds[i]) !== -1) return true
+  }
+  return false
+}
+
+// A user "participates" in a doc if they created it or are assigned (Phụ trách / Người phối hợp).
+function _isParticipant(doc, session) {
+  if (doc['Người tạo'] === session.username) return true
+  var uid = String(session.userId)
+  var pt = _parseAssignees(doc['Phụ trách'])
+  if (pt.indexOf(uid) !== -1 || pt.indexOf(session.username) !== -1) return true
+  var ph = _parseAssignees(doc['Người phối hợp'])
+  if (ph.indexOf(uid) !== -1 || ph.indexOf(session.username) !== -1) return true
+  return false
+}
+
+// Người-được-xem suy ra từ một danh mục: người trực tiếp + khai triển thành viên các nhóm-được-xem.
+// Dùng cho snapshot lúc tạo/import-trống và migration backfill (revise 2026-06-19).
+function _categoryViewerIds(catId) {
+  var cats = getSheetData(SHEETS.DANH_MUC)
+  var groupsSheet = getSheetData(SHEETS.NHOM)
+  var ids = {}
+  var seen = {}
+  var cur = String(catId || '')
+  // Đi ngược chuỗi "Danh mục cha" → gộp quyền của danh mục con + mọi danh mục tổ tiên.
+  while (cur && !seen[cur]) {
+    seen[cur] = true
+    var cat = cats.find(function(c) { return String(c['ID']) === cur })
+    if (!cat) break
+    _parseAssignees(cat['Người được xem']).forEach(function(u) { ids[String(u)] = true })
+    var groupIds = _parseAssignees(cat['Nhóm được xem'])
+    if (groupIds.length) {
+      groupsSheet.forEach(function(g) {
+        if (groupIds.indexOf(String(g['ID'])) !== -1) {
+          _parseAssignees(g['Thành viên']).forEach(function(u) { ids[String(u)] = true })
+        }
+      })
+    }
+    cur = String(cat['Danh mục cha'] || '')
+  }
+  return Object.keys(ids)
+}
+
+// Migration backfill (FR-013): snapshot quyền danh mục vào các tài liệu cũ đang rỗng "Người được xem",
+// để dữ liệu cũ không bị ẩn khi bỏ fallback danh mục động. Idempotent qua cờ ScriptProperties.
+function _backfillDocViewers() {
+  var props = PropertiesService.getScriptProperties()
+  if (props.getProperty('BACKFILL_DOCVIEWERS_DONE') === '1') return
+  getSheetData(SHEETS.HO_SO).forEach(function(d) {
+    if (_parseAssignees(d['Người được xem']).length === 0) {
+      var ids = _categoryViewerIds(d['Danh mục'])
+      if (ids.length) updateRow(SHEETS.HO_SO, d['ID'], { 'Người được xem': JSON.stringify(ids) })
+    }
+  })
+  props.setProperty('BACKFILL_DOCVIEWERS_DONE', '1')
+}
+
+// Lifecycle-aware visibility for a NON-full-access user (full-access bypass is in getDocuments).
+// ctx: { categories, userGroupIds, userIdStr, username }
+function _canViewDocument(doc, session, ctx) {
+  // Người tham gia luôn thấy (mọi trạng thái)
+  if (_isParticipant(doc, session)) return true
+  // Chưa hoàn thành → chỉ người tham gia (đã xử lý ở trên) → ẩn
+  if (doc['Tình trạng'] !== 'Hoàn thành') return false
+  // Snapshot là nguồn chân lý (revise 2026-06-19): chỉ người trong "Người được xem" thấy,
+  // BẤT KỂ danh mục. Rỗng → siết: chỉ người tham gia (đã true ở trên) + vai trò toàn quyền
+  // (bypass ở getDocuments). KHÔNG còn fallback kế thừa danh mục động.
+  var docUsers = _parseAssignees(doc['Người được xem'])
+  return docUsers.indexOf(ctx.userIdStr) !== -1 || docUsers.indexOf(ctx.username) !== -1
+}
+
+// Whether a recipient (by userId) can view a category per its viewer fields.
 // ── Eager upload ────────────────────────────────────────────────────────────
 
 // Permission check shared by all upload paths (same as createDocument).
@@ -1177,7 +1263,7 @@ function transitionDocument(token, id, action, data, updateData) {
     'Ngày cập nhật': new Date().toISOString(),
   }
 
-  // Giao việc: require Phụ trách
+  // Giao việc: require Phụ trách; nội dung giao việc (tùy chọn) lưu chung cột 'Lý do từ chối'
   if (action === 'giaoViec') {
     data = data || {}
     if (!data['Phụ trách']) throw new Error('Phải chọn người phụ trách')
@@ -1185,6 +1271,7 @@ function transitionDocument(token, id, action, data, updateData) {
     if (data['Người phối hợp'] !== undefined) {
       updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
     }
+    updates['Nội dung giao việc'] = data['Nội dung'] || ''
   }
 
   // Phụ trách can add collaborators when nhanViec
@@ -1333,10 +1420,49 @@ function publishDocument(token, docId, toUserIds, ccUserIds) {
     publishUpdates['Tình trạng'] = 'Hoàn thành'
     publishUpdates['Lý do từ chối'] = ''
   }
+  // FR-005 (revise 2026-06-19): VT/GĐ/admin phát hành → LUÔN thêm mọi người nhận (TO+CC)
+  // vào "Người được xem", KỂ CẢ khi danh sách rỗng. Theo mô hình snapshot, rỗng = chưa nhân
+  // viên nào thấy (chỉ toàn quyền + người tham gia) nên cộng người nhận không khóa nhầm ai.
+  // Người chỉ có cờ "Được phát hành" → chỉ gửi mail.
+  if (isAdminOrVanThu) {
+    var newViewers = _parseAssignees(doc['Người được xem'])
+    var addedViewer = false
+    allUserIds.forEach(function(rid) {
+      rid = String(rid)
+      if (newViewers.indexOf(rid) === -1) { newViewers.push(rid); addedViewer = true }
+    })
+    if (addedViewer) publishUpdates['Người được xem'] = JSON.stringify(newViewers)
+  }
   updateRow(SHEETS.HO_SO, docId, publishUpdates)
   var updated = Object.assign({}, doc, publishUpdates)
 
   return { success: true, lan: history.length, data: updated }
+}
+
+// Đặt phân quyền XEM cho tài liệu — TÁCH khỏi luồng sửa hồ sơ, nên đặt được kể cả khi
+// tài liệu đã Hoàn thành (đã khóa sửa). Chỉ vai trò toàn quyền (admin/QTV/GĐ/VT).
+function setDocumentViewers(token, docId, nguoiDuocXem) {
+  var session = requireAuth(token)
+  var FULL_ACCESS = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  if (FULL_ACCESS.indexOf(session.role) === -1) {
+    throw new Error('Bạn không có quyền phân quyền xem tài liệu')
+  }
+  var docs = getSheetData(SHEETS.HO_SO)
+  var doc = docs.find(function(d) { return String(d['ID']) === String(docId) })
+  if (!doc) throw new Error('Không tìm thấy hồ sơ')
+  var oldViewers = _parseAssignees(doc['Người được xem'])
+  var newViewers = _parseAssignees(nguoiDuocXem)
+  var updates = {
+    'Người được xem': nguoiDuocXem || '',
+    'Người cập nhật': session.username,
+    'Ngày cập nhật': new Date().toISOString(),
+  }
+  updateRow(SHEETS.HO_SO, docId, updates)
+  // Báo (unread) cho những người MỚI được thêm vào danh sách xem — không re-báo người đã có.
+  var addedViewers = newViewers.filter(function(v) { return oldViewers.indexOf(v) === -1 })
+  if (addedViewers.length) _markUnreadForUsers(addedViewers, docId)
+  logAudit(session, 'Phân quyền xem', 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: docId }))
+  return { data: Object.assign({}, doc, updates) }
 }
 
 // ── Comment functions ────────────────────────────────────────────────────────

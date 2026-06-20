@@ -125,49 +125,30 @@ describe('getDocuments', () => {
     expect(result.data).toHaveLength(1)
   })
 
-  test('nhan vien sees docs from open categories and categories assigned directly or via group', () => {
+  test('nhan vien chỉ thấy tài liệu mình nằm trong Người được xem (snapshot model 008)', () => {
     seedUser(2, 'staff', 'staff@test.com', 'Nhân viên')
     const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
 
-    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
-      [2, 'Direct', '', '', '', JSON.stringify(['2']), '', ''],
-      [3, 'Grouped', '', '', '', '', JSON.stringify(['1']), ''],
-      [4, 'Restricted', '', '', '', JSON.stringify(['999']), JSON.stringify(['9']), '']
-    )
-    SpreadsheetApp._sheets[SHEETS.NHOM]._rows.push(
-      [1, 'Team A', '', JSON.stringify(['2'])]
-    )
-    invalidateSheetCache(SHEETS.DANH_MUC)
-    invalidateSheetCache(SHEETS.NHOM)
-
-    createDocument(directorToken, { 'Tên hồ sơ': 'Open Doc', 'Danh mục': 1 }, null)
-    createDocument(directorToken, { 'Tên hồ sơ': 'Direct Doc', 'Danh mục': 2 }, null)
-    createDocument(directorToken, { 'Tên hồ sơ': 'Group Doc', 'Danh mục': 3 }, null)
-    createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Doc', 'Danh mục': 4 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'For Staff', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['2']) }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Not For Staff', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['999']) }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
+    // Snapshot model: chỉ "Người được xem" quyết định. Doc A/Doc B (rỗng, do director tạo) → staff
+    // không thấy; chỉ thấy 'For Staff'. KHÔNG còn kế thừa danh mục.
     const result = getDocuments(staffToken, {})
-    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['Direct Doc', 'Doc A', 'Doc B', 'Group Doc', 'Open Doc'])
+    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['For Staff'])
   })
 
-  test('truong phong follows the same category visibility rule as nhan vien', () => {
+  test('truong phong KHÔNG phải vai trò toàn quyền → cũng chỉ thấy theo Người được xem', () => {
     seedUser(3, 'manager', 'manager@test.com', 'Trưởng phòng')
     const managerToken = createSession(3, 'manager', 'manager@test.com', 'Trưởng phòng')
 
-    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(
-      [2, 'Open 2', '', '', '', '', '', ''],
-      [3, 'Direct Manager', '', '', '', JSON.stringify(['3']), '', ''],
-      [4, 'Blocked Manager', '', '', '', JSON.stringify(['999']), JSON.stringify(['9']), '']
-    )
-    invalidateSheetCache(SHEETS.DANH_MUC)
-
-    createDocument(directorToken, { 'Tên hồ sơ': 'Open Manager Doc', 'Danh mục': 2 }, null)
-    createDocument(directorToken, { 'Tên hồ sơ': 'Direct Manager Doc', 'Danh mục': 3 }, null)
-    createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Manager Doc', 'Danh mục': 4 }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'For Manager', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['3']) }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Manager Doc', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['999']) }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
     const result = getDocuments(managerToken, {})
-    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['Direct Manager Doc', 'Doc A', 'Doc B', 'Open Manager Doc'])
+    expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['For Manager'])
   })
 })
 
@@ -207,6 +188,46 @@ describe('transitionDocument', () => {
     expect(result.data['Người cập nhật']).toBe('director')
     expect(result.data['Phụ trách']).toBe(JSON.stringify(['staff1']))
     expect(result.data['Người phối hợp']).toBe(JSON.stringify(['staff2']))
+  })
+
+  test('giaoViec stores optional Nội dung in its own Nội dung giao việc column', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc ND', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const result = transitionDocument(directorToken, 1, 'giaoViec', {
+      'Phụ trách': 'staff1',
+      'Nội dung': 'Xử lý gấp trước thứ 6',
+    })
+
+    expect(result.data['Tình trạng']).toBe('Chờ xử lý')
+    expect(result.data['Nội dung giao việc']).toBe('Xử lý gấp trước thứ 6')
+    expect(result.data['Lý do từ chối'] || '').toBe('') // không đụng cột lý do từ chối
+  })
+
+  test('giaoViec without Nội dung leaves the content empty (optional)', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc No ND', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const result = transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1' })
+
+    expect(result.data['Tình trạng']).toBe('Chờ xử lý')
+    expect(result.data['Nội dung giao việc']).toBe('')
+  })
+
+  test('Nội dung giao việc persists through nhanViec → hoanThanh (not cleared)', () => {
+    seedUser(3, 'staff1', 's@test.com', 'Nhân viên')
+    const staffToken = createSession(3, 'staff1', 's@test.com', 'Nhân viên')
+    createDocument(directorToken, { 'Tên hồ sơ': 'Doc Persist', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Nội dung': 'Giữ nguyên nội dung này' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(staffToken, 1, 'nhanViec', {})
+    invalidateSheetCache(SHEETS.HO_SO)
+    const result = transitionDocument(staffToken, 1, 'hoanThanh', {})
+
+    expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
+    expect(result.data['Nội dung giao việc']).toBe('Giữ nguyên nội dung này')
   })
 })
 
@@ -842,5 +863,49 @@ describe('getDocumentStats', () => {
     expect(stats.byStatus['Chờ duyệt']).toBe(1)
     expect(stats.byStatus['Hoàn thành']).toBe(1)
     expect(stats.totalValue).toBe(300)
+  })
+})
+
+describe('getDocuments — Dự án multi-value filter', () => {
+  beforeEach(() => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Multi Doc', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-01', 'DA-02']) }, null)
+    createDocument(directorToken, { 'Tên hồ sơ': 'Legacy Doc', 'Danh mục': 1, 'Dự án (Phòng ban)': 'DA-03' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('matches a doc that contains the selected project (JSON array)', () => {
+    const r = getDocuments(directorToken, { duAn: 'DA-02' })
+    expect(r.data.map(d => d['Tên hồ sơ'])).toEqual(['Multi Doc'])
+  })
+
+  test('still matches a legacy single-value doc', () => {
+    const r = getDocuments(directorToken, { duAn: 'DA-03' })
+    expect(r.data.map(d => d['Tên hồ sơ'])).toEqual(['Legacy Doc'])
+  })
+
+  test('no match when the project is absent', () => {
+    expect(getDocuments(directorToken, { duAn: 'DA-99' }).data).toHaveLength(0)
+  })
+})
+
+describe('checkReferences — Dự án used inside a multi-value doc', () => {
+  beforeEach(() => {
+    SpreadsheetApp._addSheet(SHEETS.DU_AN, [['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ']])
+    SpreadsheetApp._sheets[SHEETS.DU_AN]._rows.push([1, 'DA-01', 'Dự án 1', ''])
+    invalidateSheetCache(SHEETS.DU_AN)
+  })
+
+  test('detects a project referenced inside a JSON-array column', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Uses DA-01', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-01', 'DA-02']) }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const ref = checkReferences(SHEETS.DU_AN, 1)
+    expect(ref.inUse).toBe(true)
+    expect(ref.count).toBe(1)
+  })
+
+  test('not in use when no doc references it', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'Uses other', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-09']) }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(checkReferences(SHEETS.DU_AN, 1).inUse).toBe(false)
   })
 })

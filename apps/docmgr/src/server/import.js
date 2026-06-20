@@ -43,6 +43,7 @@ var _IMPORT_HEADER_MAP = {
   'mimetype': 'mimeType',
   'size': 'size',
   'danh mục': 'danhMuc',
+  'phân quyền': 'phanQuyen',
 }
 
 // Convert a 2D values matrix (incl. header row) → array of ImportRow objects.
@@ -146,6 +147,23 @@ function parseImportFileFromDrive(token, fileId) {
 }
 
 // Create HO_SO rows from pre-resolved groups (client already resolved lookups).
+// Tách cột "Phân quyền" kiểu CSV: dấu phẩy là dấu tách ở cấp ngoài; tên nhóm chứa dấu phẩy
+// phải bọc trong dấu nháy kép "..."; trim mỗi tên, bỏ token rỗng. Nháy kép lệch cặp → lỗi.
+function _parseGroupNames(s) {
+  var out = [], cur = '', inQuote = false
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i)
+    if (ch === '"') { inQuote = !inQuote; continue }
+    if (ch === ',' && !inQuote) { out.push(cur); cur = ''; continue }
+    cur += ch
+  }
+  if (inQuote) throw new Error('Cột "Phân quyền" có dấu nháy kép lệch cặp')
+  out.push(cur)
+  var res = []
+  out.forEach(function (t) { t = t.trim(); if (t) res.push(t) })
+  return res
+}
+
 function bulkImportDocuments(token, payload) {
   var session = requireAuth(token)
   _importCheckRole(session)
@@ -156,6 +174,13 @@ function bulkImportDocuments(token, payload) {
   var cats = getSheetData(SHEETS.DANH_MUC)
   var catIds = {}
   cats.forEach(function (c) { catIds[String(c['ID'])] = true })
+
+  // Map tên nhóm → danh sách thành viên (userId) cho cột "Phân quyền".
+  // Tài liệu chỉ lưu theo NGƯỜI → khai triển nhóm thành thành viên (snapshot lúc import).
+  var groupMembersByName = {}
+  getSheetData(SHEETS.NHOM).forEach(function (g) {
+    groupMembersByName[String(g['Tên nhóm']).trim()] = _parseAssignees(g['Thành viên'])
+  })
 
   var created = 0
   var totalFiles = 0
@@ -188,6 +213,23 @@ function bulkImportDocuments(token, payload) {
 
       var fileNameCol = validFiles.map(function (f) { return f.fileName || '' }).join(', ')
 
+      // Cột "Phân quyền": tên nhóm (CSV-quoting) → khai triển thành viên vào "Người được xem".
+      // Thiếu bất kỳ tên nhóm → không tạo tài liệu. Trống → snapshot quyền danh mục cha (FR-012).
+      var nguoiDuocXem = ''
+      if (doc['Phân quyền']) {
+        var memberIds = {}
+        _parseGroupNames(String(doc['Phân quyền'])).forEach(function (nm) {
+          var members = groupMembersByName[nm]
+          if (!members) throw new Error('Nhóm "' + nm + '" không tồn tại')
+          members.forEach(function (uid) { memberIds[String(uid)] = true })
+        })
+        var ids = Object.keys(memberIds)
+        nguoiDuocXem = ids.length ? JSON.stringify(ids) : ''
+      } else {
+        var snap = _categoryViewerIds(doc['Danh mục'])
+        nguoiDuocXem = snap.length ? JSON.stringify(snap) : ''
+      }
+
       var record = {
         'Tên hồ sơ': name,
         'Danh mục': doc['Danh mục'],
@@ -202,6 +244,7 @@ function bulkImportDocuments(token, payload) {
         'Tên file': fileNameCol,
         'Phụ trách': _buildAssignees(doc['Phụ trách'], null),
         'Người phối hợp': _buildAssignees(doc['Người phối hợp'], null),
+        'Người được xem': nguoiDuocXem,
         'Ghi chú': doc['Ghi chú'] || '',
         'Nơi lưu hồ sơ cứng': doc['Nơi lưu hồ sơ cứng'] || '',
         'Ngày cập nhật': new Date().toISOString(),

@@ -71,9 +71,13 @@ export function getAvailableActions(doc, session) {
   } else if (role === 'Giám đốc') {
     keys = GIAM_DOC_ACTIONS[status] || []
   } else if (role === 'Văn thư') {
-    keys = VAN_THU_ACTIONS[status] || []
+    keys = [...(VAN_THU_ACTIONS[status] || [])]
     if (keys.includes('trinhDuyetLai') && doc['Người tạo'] !== session.username) {
       keys = []
+    }
+    // VT được giao làm Phụ trách thì cũng nhận/hoàn thành việc như PT (nhanViec, hoanThanh…)
+    if (isPhuTrach(doc, session)) {
+      (PHUTRACH_ACTIONS[status] || []).forEach(k => { if (!keys.includes(k)) keys.push(k) })
     }
   } else if (isPhuTrach(doc, session)) {
     keys = PHUTRACH_ACTIONS[status] || []

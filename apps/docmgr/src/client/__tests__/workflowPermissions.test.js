@@ -89,6 +89,18 @@ describe('getAvailableActions — Văn thư', () => {
   test('returns [] when Văn thư views a doc they are not Phụ trách of', () => {
     expect(getAvailableActions(doc({ 'Tình trạng': 'Chờ xử lý' }), session({ role: 'Văn thư' }))).toEqual([])
   })
+
+  test('VĂN THƯ được giao làm Phụ trách thì có "nhanViec" khi status="Chờ xử lý"', () => {
+    const d = doc({ 'Tình trạng': 'Chờ xử lý', 'Phụ trách': '["vt"]' })
+    const actions = getAvailableActions(d, session({ role: 'Văn thư', username: 'vt' }))
+    expect(actions.map(a => a.key)).toContain('nhanViec')
+  })
+
+  test('VĂN THƯ là Phụ trách thì có "hoanThanh" khi status="Đang xử lý"', () => {
+    const d = doc({ 'Tình trạng': 'Đang xử lý', 'Phụ trách': '["vt"]' })
+    const actions = getAvailableActions(d, session({ role: 'Văn thư', username: 'vt' }))
+    expect(actions.map(a => a.key)).toContain('hoanThanh')
+  })
 })
 
 describe('getAvailableActions — Giám đốc', () => {

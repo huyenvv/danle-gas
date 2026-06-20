@@ -258,7 +258,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
 
           {/* Người được xem — admin only */}
           {isAdminRole && <div className={fieldCls}>
-            <label className={labelCls}>Người được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
+            <label className={labelCls}>Người được xem <span className="font-normal text-on-surface-variant">(trống = chưa phân quyền)</span></label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
               {(lookups.ssoUsers || []).map(u => {
                 const current = parseJsonArray(form['Người được xem'])
@@ -282,7 +282,7 @@ export default function CategoryManager({ token, lookups, onUpdate, session }) {
 
           {/* Nhóm được xem — admin only */}
           {isAdminRole && <div className={fieldCls}>
-            <label className={labelCls}>Nhóm được xem <span className="font-normal text-on-surface-variant">(trống = tất cả)</span></label>
+            <label className={labelCls}>Nhóm được xem <span className="font-normal text-on-surface-variant">(trống = chưa phân quyền)</span></label>
             <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-container-low rounded-xl min-h-[42px]">
               {(lookups.nhom || []).map(g => {
                 const current = parseJsonArray(form['Nhóm được xem'])
@@ -353,7 +353,7 @@ function CatRow({ cat, cats, indent, orphan, onEdit, onDelete, canAddSubCat, isA
         {isChild
           ? <span className="text-xs text-on-surface-variant italic">Kế thừa</span>
           : chips.length === 0
-            ? <span className="text-xs text-on-surface-variant">Tất cả</span>
+            ? <span className="text-xs text-on-surface-variant italic">Chưa phân quyền</span>
             : <div className="flex flex-wrap gap-1" title={chips.map(c => c.label).join(', ')}>
                 {visible.map((c, i) => (
                   <span key={i} className={`px-2 py-0.5 rounded-full text-xs font-medium ${c.type === 'group' ? 'bg-secondary/10 text-secondary' : 'bg-accent/10 text-accent'}`}>

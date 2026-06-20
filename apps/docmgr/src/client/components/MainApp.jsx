@@ -1009,9 +1009,22 @@ function DocRow({ doc, depth, rowIndex, unreadDocIds, selectedIds, onToggleSelec
         )}
       </td>
       <td className="hidden">{formatCurrency(doc['Giá trị HĐ'])}</td>
-      <td className="px-4 py-3 text-on-surface-variant max-w-xs truncate text-xs"
-        title={doc['Ghi chú'] || ''}>
-        {doc['Ghi chú'] || '—'}
+      <td className="px-4 py-3 text-on-surface-variant max-w-xs text-xs">
+        <div className="flex items-center gap-1">
+          {(() => {
+            const pu = String(doc['Người được xem'] || '').trim()
+            if (!(pu && pu !== '[]')) return null
+            return (
+              <span className="relative group inline-flex shrink-0">
+                <span className="material-symbols-outlined text-secondary" style={{ fontSize: 14 }}>lock</span>
+                <span className="pointer-events-none absolute bottom-full left-0 mb-1 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <span className="bg-on-surface text-surface text-[11px] rounded-lg px-2 py-1 whitespace-nowrap shadow-lg">Có phân quyền xem riêng</span>
+                </span>
+              </span>
+            )
+          })()}
+          <span className="truncate" title={doc['Ghi chú'] || ''}>{doc['Ghi chú'] || '—'}</span>
+        </div>
       </td>
       <td className="px-4 py-3 text-on-surface-variant">
         <div>{formatDate(doc['Ngày ban hành'])}</div>

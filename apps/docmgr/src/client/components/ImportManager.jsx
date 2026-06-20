@@ -412,6 +412,7 @@ export default function ImportManager({ token, lookups, onImported }) {
                 const giaTri = Number(d['Giá trị HĐ']) || 0
                 const fields = [
                   ['Danh mục', g.categoryName],
+                  ['Phân quyền', d['Phân quyền']],
                   ['Số hồ sơ', d['Số hồ sơ']],
                   ['Ngày ban hành', d['Ngày ban hành']],
                   ['Ngày kết thúc', d['Ngày kết thúc']],

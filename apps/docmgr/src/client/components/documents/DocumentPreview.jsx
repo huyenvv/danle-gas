@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import gasCall from '../../gasClient.js'
 import { formatCurrency, formatDate, formatDateTime, statusColor, statusTooltip } from '../../utils/format.js'
+import { formatMulti } from '../../utils/multiValue.js'
 import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
@@ -8,6 +9,7 @@ import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from 
 import WorkflowButtons from './WorkflowButtons.jsx'
 import PublishDialog from './PublishDialog.jsx'
 import UserPickerDropdown from '../common/UserPickerDropdown.jsx'
+import ViewerPickerModal from '../common/ViewerPickerModal.jsx'
 import PublishHistory from './PublishHistory.jsx'
 
 function parseFileInfos(fileIdCol) {
@@ -51,6 +53,59 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   const [showPublishDialog, setShowPublishDialog] = useState(false)
   const [showPublishHistory, setShowPublishHistory] = useState(false)
   const [publishing, setPublishing] = useState(false)
+
+  // Phân quyền xem (008) — đặt được kể cả khi tài liệu đã Hoàn thành (khóa sửa).
+  const canManageViewers = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(session?.role)
+  const [showViewerModal, setShowViewerModal] = useState(false)
+  const [savingViewers, setSavingViewers] = useState(false)
+
+  // Options chọn "Người được xem": TOÀN BỘ user SSO active, BỎ những người mặc định đã xem
+  // (Admin/Quản trị viên + Giám đốc/Văn thư — họ luôn xem được nên không cần chọn).
+  const _defaultViewerIds = new Set()
+  ;(lookups.assignments || []).forEach(a => {
+    if (['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(a['Chức vụ'])) _defaultViewerIds.add(String(a['UserID']))
+  })
+  const eligibleViewerUsers = (lookups.ssoUsers || lookups.users || [])
+    .filter(u => !_defaultViewerIds.has(String(u.ID)) && u['Quyền'] !== 'Quản trị')
+
+  // Người-xem của danh mục (cho chế độ "Theo danh mục" trong popup) — giống DocumentModal:
+  // gộp quyền của danh mục + kế thừa ngược lên các danh mục CHA.
+  function categoryViewerIds(catId) {
+    const cats = lookups.danhMuc || []
+    const eligibleSet = new Set(eligibleViewerUsers.map(u => String(u.ID)))
+    const ids = new Set()
+    const seen = new Set()
+    let cur = String(catId || '')
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      const cat = cats.find(c => String(c.ID) === cur)
+      if (!cat) break
+      parsePhuTrach(cat['Người được xem']).forEach(id => ids.add(String(id)))
+      parsePhuTrach(cat['Nhóm được xem']).forEach(gid => {
+        const g = (lookups.nhom || []).find(x => String(x.ID) === String(gid))
+        if (g) parsePhuTrach(g['Thành viên']).forEach(id => ids.add(String(id)))
+      })
+      cur = String(cat['Danh mục cha'] || '')
+    }
+    return [...ids].filter(id => eligibleSet.has(id))
+  }
+
+  // Lưu phân quyền từ popup (api_setDocumentViewers — đặt được kể cả khi tài liệu đã khóa sửa).
+  async function handleConfirmViewers(ids) {
+    setSavingViewers(true)
+    try {
+      const res = await gasCall('api_setDocumentViewers', token, doc['ID'],
+        ids.length ? JSON.stringify(ids) : '')
+      setDoc(res.data)
+      if (onDocUpdated) onDocUpdated(res.data)
+      setShowViewerModal(false)
+      showToast('Đã cập nhật phân quyền xem', 'success')
+    } catch (e) {
+      showToast('Lỗi phân quyền: ' + e.message, 'error')
+    } finally {
+      setSavingViewers(false)
+    }
+  }
 
   const currentFile = fileInfos[slideIdx] || null
   const previewUrl = currentFile
@@ -125,6 +180,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     return cat ? (cat.Icon || 'folder_open') : 'folder_open'
   }
 
+
   function handleDownload() {
     if (!currentFile) return
     window.open('https://drive.google.com/file/d/' + encodeURIComponent(currentFile.fileId) + '/view?usp=sharing', '_blank')
@@ -183,7 +239,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       setGiaoViecForm({ phoiHop: parsePhuTrach(doc['Người phối hợp']), mode: 'nhanViec' })
     } else {
       // Giám đốc/Admin giao việc
-      setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), mode: 'giaoViec' })
+      setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), noiDung: '', mode: 'giaoViec' })
     }
   }
 
@@ -199,6 +255,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     await handleTransition('giaoViec', {
       'Phụ trách': giaoViecForm.phuTrach,
       'Người phối hợp': giaoViecForm.phoiHop,
+      'Nội dung': (giaoViecForm.noiDung || '').trim(),
     })
   }
 
@@ -450,7 +507,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phụ trách *</label>
                     <UserPickerDropdown
-                      users={lookups.users || []}
+                      users={lookups.ssoUsers || lookups.users || []}
                       phongBan={lookups.phongBan || []}
                       assignments={lookups.assignments || []}
                       value={giaoViecForm.phuTrach}
@@ -461,7 +518,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phối hợp</label>
                     <UserPickerDropdown
-                      users={lookups.users || []}
+                      users={lookups.ssoUsers || lookups.users || []}
                       phongBan={lookups.phongBan || []}
                       assignments={lookups.assignments || []}
                       value={giaoViecForm.phoiHop}
@@ -472,6 +529,18 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       multiple
                     />
                   </div>
+                  {!isNhanViec && (
+                  <div>
+                    <label className="text-xs text-on-surface-variant mb-1 block">Nội dung giao việc</label>
+                    <textarea
+                      value={giaoViecForm.noiDung || ''}
+                      onChange={e => setGiaoViecForm(f => ({ ...f, noiDung: e.target.value }))}
+                      placeholder="Nhập nội dung giao việc… (tùy chọn)"
+                      rows={3}
+                      className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-primary/20 focus:border-primary/40 focus:outline-none resize-none"
+                    />
+                  </div>
+                  )}
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => setGiaoViecForm(null)}
                       className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
@@ -519,6 +588,19 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <p className={`text-xs font-semibold ${status === 'YC Phát hành' ? 'text-amber-700' : 'text-red-700'} mb-1`}>{status === 'YC Phát hành' ? 'Lý do yêu cầu phát hành' : 'Lý do từ chối'}</p>
                     <p className={`text-sm ${status === 'YC Phát hành' ? 'text-amber-800' : 'text-red-800'} whitespace-pre-wrap`}>{doc['Lý do từ chối']}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Nội dung giao việc banner — cột riêng, hiện bất cứ khi nào có nội dung */}
+            {doc['Nội dung giao việc'] && (
+              <div className="mx-4 mt-3 p-3 bg-primary/5 border border-primary/20 rounded-xl">
+                <div className="flex items-start gap-2">
+                  <Icon name="assignment_ind" size={16} className="text-primary mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-primary mb-1">Nội dung giao việc</p>
+                    <p className="text-sm text-on-surface whitespace-pre-wrap">{doc['Nội dung giao việc']}</p>
                   </div>
                 </div>
               </div>
@@ -574,7 +656,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     {(() => {
                       const list = parsePhuTrach(doc['Phụ trách'])
                       if (!list.length) return <p className="text-sm text-on-surface">—</p>
-                      const u0 = (lookups.users || []).find(u => u['Tên đăng nhập'] === list[0])
+                      const u0 = (lookups.ssoUsers || lookups.users || []).find(u => u['Tên đăng nhập'] === list[0])
                       const dn = u0?.['Tên nhân viên'] || list[0]
                       return (
                         <div className="relative group inline-block mt-0.5">
@@ -604,7 +686,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       return (
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                           {list.map((a, i) => {
-                            const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
+                            const u = (lookups.ssoUsers || lookups.users || []).find(u => u['Tên đăng nhập'] === a)
                             const dn = u?.['Tên nhân viên'] || a
                             return (
                               <div key={i} className="relative group inline-block">
@@ -633,13 +715,63 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
             {/* Business Context */}
             <div className="p-4 border-b border-outline-variant">
               <div className="grid grid-cols-2 gap-3">
-                <InfoRow icon="apartment" label="Dự án (Nơi nhận)" value={doc['Dự án (Phòng ban)']} />
+                <InfoRow icon="apartment" label="Dự án (Nơi nhận)" value={formatMulti(doc['Dự án (Phòng ban)'])} />
                 <InfoRow icon="send" label="NCC (Nơi gửi)" value={doc['Nhà cung cấp (Nơi ban hành)']} />
                 {doc['Giá trị HĐ'] && (
                   <InfoRow icon="payments" label="Giá trị HĐ" value={formatCurrency(doc['Giá trị HĐ'])} />
                 )}
               </div>
             </div>
+
+            {/* Phân quyền xem (008) — đặt được kể cả khi tài liệu đã Hoàn thành */}
+            {(canManageViewers || doc['Người được xem']) && (
+              <div className="p-4 border-b border-outline-variant">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">Phân quyền xem</p>
+                  {canManageViewers && (
+                    <button data-testid="edit-viewers-btn" onClick={() => setShowViewerModal(true)} className="text-xs text-primary hover:underline flex items-center gap-1">
+                      <Icon name="edit" size={14} /> Sửa
+                    </button>
+                  )}
+                </div>
+                {doc['Người được xem'] ? (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {parsePhuTrach(doc['Người được xem']).map((id, i) => {
+                      const u = (lookups.ssoUsers || lookups.users || []).find(x => String(x.ID) === String(id) || x['Tên đăng nhập'] === id)
+                      const dn = u?.['Tên nhân viên'] || u?.['Tên đăng nhập'] || id
+                      return (
+                        <div key={i} className="relative group inline-block">
+                          <span className="inline-flex items-center gap-1 bg-secondary/10 text-secondary text-xs px-2 py-0.5 rounded-full cursor-default">
+                            <span className="w-4 h-4 rounded-full bg-secondary text-on-secondary flex items-center justify-center text-[9px] font-bold shrink-0">{String(dn).charAt(0).toUpperCase()}</span>
+                            {dn}
+                          </span>
+                          {u?.['Email'] && (
+                            <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg"><p className="text-surface/70">{u['Email']}</p></div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-on-surface-variant">Trống — chỉ người tham gia + vai trò toàn quyền xem</p>
+                )}
+              </div>
+            )}
+            {showViewerModal && (
+              <ViewerPickerModal
+                users={eligibleViewerUsers}
+                phongBan={lookups.phongBan}
+                assignments={lookups.assignments}
+                value={parsePhuTrach(doc['Người được xem'])}
+                categoryViewerIds={categoryViewerIds(doc['Danh mục'])}
+                catName={(lookups.danhMuc || []).find(c => String(c.ID) === String(doc['Danh mục']))?.['Tên danh mục'] || ''}
+                saving={savingViewers}
+                onConfirm={handleConfirmViewers}
+                onClose={() => setShowViewerModal(false)}
+              />
+            )}
 
             {/* Ghi chú */}
             {doc['Ghi chú'] && (
@@ -822,7 +954,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       {showPublishHistory && (
         <PublishHistory
           history={publishHistory}
-          users={lookups.users || []}
+          users={lookups.ssoUsers || lookups.users || []}
           onClose={() => setShowPublishHistory(false)}
         />
       )}

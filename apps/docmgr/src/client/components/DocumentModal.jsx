@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { flushSync } from 'react-dom'
 import gasCall from '../gasClient.js'
 import { dataCache } from '../utils/dataCache.js'
@@ -8,6 +8,9 @@ import { useToast } from '../context/ToastContext.jsx'
 import { useConfirm } from '../context/ConfirmContext.jsx'
 import LoadingOverlay from './common/LoadingOverlay.jsx'
 import UserPickerDropdown from './common/UserPickerDropdown.jsx'
+import OptionPickerDropdown from './common/OptionPickerDropdown.jsx'
+import ViewerPickerModal from './common/ViewerPickerModal.jsx'
+import CategoryPickerDropdown from './common/CategoryPickerDropdown.jsx'
 import PublishDialog from './documents/PublishDialog.jsx'
 import DriveFilePicker from './settings/DriveFilePicker.jsx'
 
@@ -41,21 +44,6 @@ const WARN_FILE_MB = 50
 const CHUNK_SIZE = 5 * 1024 * 1024          // 5MB per chunk (Drive resumable upload)
 const CHUNKED_THRESHOLD = 25 * 1024 * 1024   // files > 25MB upload directly to Drive in chunks
 const PERCENT_THRESHOLD = 50 * 1024 * 1024   // files > 50MB show % progress instead of chunk count
-
-function buildCategoryOptions(danhMuc) {
-  const opts = []
-  function walk(parentId, depth) {
-    danhMuc
-      .filter(c => String(c['Danh mục cha'] || '') === String(parentId || ''))
-      .forEach(c => {
-        const prefix = '\u00A0'.repeat(depth * 4) + (depth > 0 ? '— ' : '')
-        opts.push({ id: c.ID, label: prefix + c['Tên danh mục'] })
-        walk(c.ID, depth + 1)
-      })
-  }
-  walk('', 0)
-  return opts
-}
 
 function formatCompact(n) {
   if (n >= 1000000000) return (n / 1000000000).toFixed(n % 1000000000 === 0 ? 0 : 1) + 'B'
@@ -111,6 +99,57 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const [phuTrach, setPhuTrach] = useState(initialPhuTrach)
   const [collaborators, setCollaborators] = useState(initialCollaborators)
   const [currencyTyping, setCurrencyTyping] = useState(null)
+
+  // Phân quyền xem (008) — chỉ theo NGƯỜI. Options = SSO active trừ vai trò mặc định đã xem.
+  const initialLookups2 = initialLookups || {}
+  const _defaultViewerIds = new Set()
+  ;(initialLookups2.assignments || []).forEach(a => {
+    if (['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].includes(a['Chức vụ'])) _defaultViewerIds.add(String(a['UserID']))
+  })
+  const eligibleViewerUsers = (initialLookups2.ssoUsers || initialLookups2.users || [])
+    .filter(u => !_defaultViewerIds.has(String(u.ID)) && u['Quyền'] !== 'Quản trị')
+  const eligibleIdSet = new Set(eligibleViewerUsers.map(u => String(u.ID)))
+
+  // Người xem được của một danh mục = (trực tiếp + thành viên Nhóm được xem) của danh mục
+  // VÀ kế thừa ngược lên các danh mục CHA (đi theo chuỗi 'Danh mục cha').
+  function categoryViewerIds(catId) {
+    const cats = initialLookups2.danhMuc || []
+    const ids = new Set()
+    const seen = new Set()
+    let cur = String(catId || '')
+    while (cur && !seen.has(cur)) {
+      seen.add(cur)
+      const cat = cats.find(c => String(c.ID) === cur)
+      if (!cat) break
+      parseAssignees(cat['Người được xem']).forEach(id => ids.add(String(id)))
+      parseAssignees(cat['Nhóm được xem']).forEach(gid => {
+        const g = (initialLookups2.nhom || []).find(x => String(x.ID) === String(gid))
+        if (g) parseAssignees(g['Thành viên']).forEach(id => ids.add(String(id)))
+      })
+      cur = String(cat['Danh mục cha'] || '')
+    }
+    return [...ids].filter(id => eligibleIdSet.has(id))
+  }
+
+  const [viewers, setViewers] = useState(isEdit ? parseAssignees(doc?.['Người được xem']) : [])
+  const [showViewerModal, setShowViewerModal] = useState(false) // popup "Phân quyền xem" (008)
+  // Đổi danh mục (CẢ tạo & sửa) → tự đặt lại "Người được xem" theo danh mục + cảnh báo.
+  // Ref bỏ qua lần mount để KHÔNG ghi đè danh sách đã có khi mở form (chỉ khi đổi thật).
+  const catSnapRef = useRef(form['Danh mục'])
+  useEffect(() => {
+    const prev = catSnapRef.current
+    if (prev === form['Danh mục']) return
+    catSnapRef.current = form['Danh mục']
+    setViewers(categoryViewerIds(form['Danh mục']))
+    // Cảnh báo chỉ khi GHI ĐÈ một lựa chọn trước (đổi từ danh mục đã có sang danh mục khác);
+    // lần đầu chọn danh mục (tạo mới) thì auto-tích lặng lẽ.
+    if (prev && form['Danh mục']) showToast('Đã đặt lại "Người được xem" theo danh mục mới', 'info')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form['Danh mục']])
+
+  // Dự án (Nơi nhận): multi-select. Stored in form as JSON array string; legacy single value parses too.
+  const selectedDuAn = parseAssignees(form['Dự án (Phòng ban)'])
+  const setDuAn = (next) => setField('Dự án (Phòng ban)', next.length ? JSON.stringify(next) : '')
 
   // Eager upload state: [{id, fileName, mimeType, size, status:'uploading'|'done'|'error', fileId?, error?}]
   const [eagerUploads, setEagerUploads] = useState([])
@@ -398,9 +437,12 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         const fresh = await gasCall('api_getAllData', token)
         dataCache.set('lookups', fresh)
         setLookups(fresh)
-        // Auto-select newly added
+        // Auto-select newly added (append to current multi-selection)
         const newItem = fresh.duAn[fresh.duAn.length - 1]
-        if (newItem) setField('Dự án (Phòng ban)', newItem['Tên dự án viết tắt'])
+        if (newItem) {
+          const next = [...selectedDuAn, newItem['Tên dự án viết tắt']]
+          setField('Dự án (Phòng ban)', JSON.stringify(next))
+        }
       } else if (quickAdd === 'nhaCungCap') {
         if (!quickForm['Tên NCC viết tắt']) return
         await gasCall('api_addNhaCungCap', token, quickForm)
@@ -455,6 +497,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           'Tình trạng': 'Nháp',
           'Phụ trách': phuTrach || '',
           'Người phối hợp': collaborators.length ? collaborators : [],
+          'Người được xem': viewers.length ? JSON.stringify(viewers) : '',
         }
         const result = await gasCall('api_finalizeDraft', token, draftId, saveForm, null)
         showToast('Đã lưu nháp', 'success')
@@ -529,6 +572,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         'Tình trạng': statusOverrideRef.current !== null ? statusOverrideRef.current : (isDraftEdit ? 'Chờ duyệt' : form['Tình trạng']),
         'Phụ trách': phuTrach || '',
         'Người phối hợp': collaborators.length ? collaborators : [],
+        'Người được xem': viewers.length ? JSON.stringify(viewers) : '',
       }
       if (publishDataRef.current) {
         submitForm._publishTo = publishDataRef.current.to
@@ -622,27 +666,26 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
               {/* Danh mục */}
               <Field label="Danh mục *">
-                <select className={iCls} value={form['Danh mục']} onChange={e => {
-                  const catId = e.target.value
-                  setField('Danh mục', catId)
-                  // Auto-fill Nơi lưu hồ sơ cứng from category
-                  const cat = (lookups.danhMuc || []).find(c => String(c.ID) === catId)
-                  if (cat && cat['Nơi lưu hồ sơ cứng']) {
-                    setField('Nơi lưu hồ sơ cứng', cat['Nơi lưu hồ sơ cứng'])
-                  }
-                }}>
-                  <option value="">-- Chọn --</option>
-                  {buildCategoryOptions(lookups.danhMuc || []).map(o => (
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  ))}
-                </select>
+                <CategoryPickerDropdown
+                  testId="danhmuc-picker"
+                  categories={lookups.danhMuc || []}
+                  value={form['Danh mục']}
+                  onChange={catId => {
+                    setField('Danh mục', catId)
+                    // Auto-fill Nơi lưu hồ sơ cứng from category
+                    const cat = (lookups.danhMuc || []).find(c => String(c.ID) === catId)
+                    if (cat && cat['Nơi lưu hồ sơ cứng']) {
+                      setField('Nơi lưu hồ sơ cứng', cat['Nơi lưu hồ sơ cứng'])
+                    }
+                  }}
+                />
               </Field>
 
               {/* Phụ trách (single person) — only admin/GĐ can change */}
               {canEditPhuTrach ? (
                 <Field label="Phụ trách">
                   <UserPickerDropdown
-                    users={lookups.users || []}
+                    users={lookups.ssoUsers || lookups.users || []}
                     phongBan={lookups.phongBan || []}
                     assignments={lookups.assignments || []}
                     value={phuTrach}
@@ -652,7 +695,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               ) : phuTrach ? (
                 <Field label="Phụ trách">
                   {(() => {
-                    const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === phuTrach)
+                    const u = (lookups.ssoUsers || lookups.users || []).find(u => u['Tên đăng nhập'] === phuTrach)
                     const name = u?.['Tên nhân viên'] || phuTrach
                     const email = u?.['Email'] || ''
                     return (
@@ -674,7 +717,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               {canEditPhoiHop ? (
                 <Field label="Người phối hợp">
                   <UserPickerDropdown
-                    users={lookups.users || []}
+                    users={lookups.ssoUsers || lookups.users || []}
                     phongBan={lookups.phongBan || []}
                     assignments={lookups.assignments || []}
                     value={collaborators}
@@ -688,7 +731,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 <Field label="Người phối hợp">
                   <div className="flex flex-wrap gap-1.5 bg-surface-container-low rounded-xl px-3 py-2.5">
                     {collaborators.map(a => {
-                      const u = (lookups.users || []).find(u => u['Tên đăng nhập'] === a)
+                      const u = (lookups.ssoUsers || lookups.users || []).find(u => u['Tên đăng nhập'] === a)
                       const dn = u?.['Tên nhân viên'] || a
                       const email = u?.['Email'] || ''
                       return (
@@ -709,6 +752,31 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   </div>
                 </Field>
               ) : null}
+
+              {/* Phân quyền xem (008) — nút mở popup chọn người */}
+              <button type="button" onClick={() => setShowViewerModal(true)}
+                className="w-full flex items-center justify-between border border-outline-variant rounded-xl px-3 py-2.5 text-left hover:bg-surface-container-low transition-colors">
+                <span className="flex items-center gap-2 text-sm font-medium text-on-surface">
+                  <span className="material-symbols-outlined text-[18px] text-on-surface-variant">lock</span>
+                  Phân quyền xem
+                  <span className="text-xs font-normal text-on-surface-variant">
+                    {viewers.length > 0 ? `— ${viewers.length} người` : '— trống (chỉ người tham gia + toàn quyền)'}
+                  </span>
+                </span>
+                <span className="text-on-surface-variant text-base">›</span>
+              </button>
+              {showViewerModal && (
+                <ViewerPickerModal
+                  users={eligibleViewerUsers}
+                  phongBan={initialLookups.phongBan}
+                  assignments={initialLookups.assignments}
+                  value={viewers}
+                  categoryViewerIds={categoryViewerIds(form['Danh mục'])}
+                  catName={(initialLookups2.danhMuc || []).find(c => String(c.ID) === String(form['Danh mục']))?.['Tên danh mục'] || ''}
+                  onConfirm={ids => { setViewers(ids); setShowViewerModal(false) }}
+                  onClose={() => setShowViewerModal(false)}
+                />
+              )}
 
               {/* Ngày ban hành + Ngày kết thúc */}
               <div className="grid grid-cols-2 gap-4">
@@ -814,12 +882,16 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               {/* Dự án (Nơi nhận) */}
               <Field label="Dự án (Nơi nhận)">
                 <div className="flex gap-2">
-                  <select className={iCls + ' flex-1'} value={form['Dự án (Phòng ban)']} onChange={e => setField('Dự án (Phòng ban)', e.target.value)}>
-                    <option value="">-- Chọn dự án --</option>
-                    {(lookups.duAn || []).map(p => <option key={p.ID} value={p['Tên dự án viết tắt']}>
-                      {p['Tên dự án đầy đủ'] ? `${p['Tên dự án đầy đủ']} (${p['Tên dự án viết tắt']})` : p['Tên dự án viết tắt']}
-                    </option>)}
-                  </select>
+                  <OptionPickerDropdown
+                    testId="duan-picker"
+                    options={(lookups.duAn || []).map(p => ({
+                      value: p['Tên dự án viết tắt'],
+                      label: p['Tên dự án đầy đủ'] ? `${p['Tên dự án đầy đủ']} (${p['Tên dự án viết tắt']})` : p['Tên dự án viết tắt'],
+                    }))}
+                    value={selectedDuAn}
+                    onChange={setDuAn}
+                    placeholder="-- Chọn dự án --"
+                  />
                   {canQuickAddLookup && (
                   <button type="button"
                     onClick={() => { setQuickAdd('duAn'); setQuickForm({ 'Tên dự án viết tắt': '', 'Tên dự án đầy đủ': '' }) }}
@@ -1069,7 +1141,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
       {showPublishDialog && (
         <PublishDialog
-          users={lookups.users || []}
+          users={lookups.ssoUsers || lookups.users || []}
           phongBan={lookups.phongBan || []}
           assignments={lookups.assignments || []}
           onPublish={handlePublishFromDialog}

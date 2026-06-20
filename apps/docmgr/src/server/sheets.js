@@ -101,29 +101,10 @@ function getAllData(session) {
   var allCats = getSheetData(SHEETS.DANH_MUC)
   var allGroups = getSheetData(SHEETS.NHOM)
 
-  // Filter categories by visibility permissions
-  var CAT_EXEMPT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
+  // KHÔNG lọc danh mục theo quyền user nữa (008): quyền danh mục chỉ còn là TEMPLATE cho
+  // snapshot `Người được xem` của tài liệu. Hiển thị tài liệu hoàn toàn theo quyền cấp TÀI LIỆU;
+  // client tự ẩn danh mục không có tài liệu nào user xem được (CatGroup total === 0 → null).
   var danhMuc = allCats
-  if (session && CAT_EXEMPT_ROLES.indexOf(session.role) === -1) {
-    var userIdStr = String(session.userId)
-    var userGroupIds = []
-    allGroups.forEach(function(g) {
-      var members = _parseAssignees(g['Thành viên'])
-      if (members.indexOf(userIdStr) !== -1 || members.indexOf(session.username) !== -1) {
-        userGroupIds.push(String(g.ID))
-      }
-    })
-    danhMuc = allCats.filter(function(c) {
-      var allowedUsers = _parseAssignees(c['Người được xem'])
-      var allowedGroups = _parseAssignees(c['Nhóm được xem'])
-      if (allowedUsers.length === 0 && allowedGroups.length === 0) return true
-      if (allowedUsers.indexOf(userIdStr) !== -1 || allowedUsers.indexOf(session.username) !== -1) return true
-      for (var i = 0; i < userGroupIds.length; i++) {
-        if (allowedGroups.indexOf(userGroupIds[i]) !== -1) return true
-      }
-      return false
-    })
-  }
 
   return {
     danhMuc:     danhMuc,

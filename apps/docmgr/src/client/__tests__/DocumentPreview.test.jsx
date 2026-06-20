@@ -43,6 +43,13 @@ describe('<DocumentPreview />', () => {
     })
   })
 
+  test('Phân quyền xem: vai trò toàn quyền bấm "Sửa" → mở CÙNG ViewerPickerModal (popup)', () => {
+    renderPreview() // MOCK_ADMIN_SESSION (role admin) → canManageViewers
+    expect(screen.queryByTestId('vpm')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('edit-viewers-btn'))
+    expect(screen.getByTestId('vpm')).toBeInTheDocument() // popup dùng chung với add/edit
+  })
+
   test('Details - shows creator name', async () => {
     renderPreview()
     // creator 'admin' → looks up MOCK_USERS → 'Tên nhân viên': 'Admin'

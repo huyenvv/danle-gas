@@ -32,6 +32,12 @@ describe('CategoryManager — rendering', () => {
     expect(screen.getByText('Công văn')).toBeInTheDocument()
   })
 
+  test('danh mục rỗng quyền hiển thị "Chưa phân quyền" (không phải "Tất cả")', () => {
+    renderCategoryManager() // MOCK_LOOKUPS: 2 danh mục top-level đều rỗng quyền
+    expect(screen.getAllByText('Chưa phân quyền').length).toBe(2)
+    expect(screen.queryByText('Tất cả')).not.toBeInTheDocument()
+  })
+
   test('admin sees Thêm danh mục button', () => {
     renderCategoryManager()
     expect(screen.getByRole('button', { name: /Thêm danh mục/i })).toBeInTheDocument()

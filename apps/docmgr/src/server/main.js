@@ -447,6 +447,10 @@ function api_publishDocument(token, docId, toUserIds, ccUserIds) {
   return _wrap(function() { return publishDocument(token, docId, toUserIds, ccUserIds) })
 }
 
+function api_setDocumentViewers(token, docId, nguoiDuocXem) {
+  return _wrap(function() { return setDocumentViewers(token, docId, nguoiDuocXem) })
+}
+
 // ===== Bulk import API =====
 
 function api_parseImportFile(token, base64Data, fileName) {

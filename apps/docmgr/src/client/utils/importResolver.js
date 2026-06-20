@@ -16,6 +16,7 @@ const DOC_FIELDS = [
   { key: 'nguoiPhoiHop', label: 'Người phối hợp' },
   { key: 'giaTriHD', label: 'Giá trị HĐ' },
   { key: 'danhMuc', label: 'Danh mục' },
+  { key: 'phanQuyen', label: 'Phân quyền' },
 ]
 
 function norm(s) {
@@ -56,6 +57,7 @@ function resolveEmail(email, users) {
 export function groupAndResolve(rows, lookups) {
   const danhMuc = lookups.danhMuc || []
   const users = lookups.users || []
+  const nhom = lookups.nhom || []
 
   const groupMap = new Map() // tenHoSo → group accumulator
   const orphanErrors = []
@@ -95,6 +97,15 @@ export function groupAndResolve(rows, lookups) {
     // Resolve category
     const cat = resolveCategoryPath(first.danhMuc, danhMuc)
     if (cat.error) errors.push(cat.error)
+
+    // Validate "Phân quyền": mỗi tên nhóm phải tồn tại — thiếu thì báo LỖI để bỏ qua hồ sơ
+    // (khớp đúng cách server resolve: trim, phân biệt hoa/thường).
+    if (first.phanQuyen) {
+      String(first.phanQuyen).split(',').map(s => s.trim()).filter(Boolean).forEach(nm => {
+        const exists = nhom.some(g => String(g['Tên nhóm']).trim() === nm)
+        if (!exists) errors.push(`Nhóm phân quyền "${nm}" không tồn tại`)
+      })
+    }
 
     // Build files from every row; flag rows with missing G_ID, skip duplicate G_ID
     const files = []
@@ -157,6 +168,8 @@ export function groupAndResolve(rows, lookups) {
         'Phụ trách': phuTrach,
         'Người phối hợp': nguoiPhoiHop,
         'Giá trị HĐ': first.giaTriHD || 0,
+        // Tên nhóm thô; server xác thực + ánh xạ sang ID (bulkImportDocuments).
+        'Phân quyền': first.phanQuyen || '',
       },
       files,
     })

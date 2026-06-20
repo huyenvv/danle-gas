@@ -10,6 +10,10 @@ const lookups = {
     { ID: 100, 'Email': 'a@test.com' },
     { ID: 200, 'Email': 'b@test.com' },
   ],
+  nhom: [
+    { ID: 1, 'Tên nhóm': 'Kế toán' },
+    { ID: 2, 'Tên nhóm': 'Nhân sự' },
+  ],
 }
 
 function row(over) {
@@ -58,6 +62,17 @@ describe('groupAndResolve', () => {
       row({ gId: '', danhMuc: 'Không tồn tại' }),
     ], lookups)
     expect(groups[0].errors.length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('Phân quyền: tên nhóm hợp lệ → đưa vào docData, không lỗi', () => {
+    const { groups } = groupAndResolve([row({ phanQuyen: 'Kế toán, Nhân sự' })], lookups)
+    expect(groups[0].docData['Phân quyền']).toBe('Kế toán, Nhân sự')
+    expect(groups[0].errors).toEqual([])
+  })
+
+  test('Phân quyền: tên nhóm không tồn tại → báo lỗi (bỏ qua hồ sơ)', () => {
+    const { groups } = groupAndResolve([row({ phanQuyen: 'Kế toán, KhôngCó' })], lookups)
+    expect(groups[0].errors.some(e => e.includes('KhôngCó') && e.includes('không tồn tại'))).toBe(true)
   })
 
   test('warns on doc-level conflict between rows', () => {

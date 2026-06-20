@@ -2,13 +2,14 @@
 // Updated for SSO model: users are managed by parent app, this app only manages roles.
 
 // ── Header constants matching config.js ──────────────────────────────────────
-var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành', 'Được chọn từ Drive', 'Được import']
+var ROLE_HEADERS = ['ID', 'UserID', 'Tên đăng nhập', 'AppID', 'Quyền', 'Được tạo hồ sơ', 'Được tạo danh mục con', 'Được phát hành', 'Được chọn từ Drive', 'Được import', 'Được tạo danh mục cha']
 var DOC_HEADERS = [
   'ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc',
   'Tệp đính kèm', 'Tên file',
   'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ',
   'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng',
-  'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn'
+  'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn', 'Nội dung giao việc',
+  'Người được xem'
 ]
 var CAT_HEADERS = ['ID', 'Tên danh mục', 'Icon', 'Mô tả', 'Danh mục cha', 'Người được xem', 'Nhóm được xem', 'Nơi lưu hồ sơ cứng']
 var NHOM_HEADERS = ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên']
