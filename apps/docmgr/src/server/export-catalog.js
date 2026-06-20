@@ -34,8 +34,10 @@ function _categoryNameMap() {
   return map
 }
 
-// Map ID danh mục → đường dẫn đầy đủ 'Ông / Cha / Hiện tại' (lần ngược 'Danh mục cha').
-function _categoryPathMap() {
+// Map ID danh mục → đường dẫn 'Cha / Hiện tại' (lần ngược 'Danh mục cha').
+// Chỉ truy ngược tới danh mục được chọn (stopAtId) làm gốc, không lên tận root.
+function _categoryPathMap(stopAtId) {
+  var stop = stopAtId == null ? '' : String(stopAtId)
   var cats = getSheetData(SHEETS.DANH_MUC)
   var nameById = {}, parentById = {}
   for (var i = 0; i < cats.length; i++) {
@@ -51,6 +53,7 @@ function _categoryPathMap() {
     while (cur && nameById[cur] != null && !guard[cur]) {
       guard[cur] = true
       parts.unshift(nameById[cur])
+      if (cur === stop) break // dừng ở danh mục được chọn
       cur = parentById[cur]
     }
     map[key] = parts.join(' / ')
@@ -84,7 +87,7 @@ function _compareSoHoSo(a, b) {
 function _buildCatalogRows(categoryId) {
   var docs = getSheetData(SHEETS.HO_SO)
   var catSet = _categoryDescendantSet(categoryId)
-  var catPaths = _categoryPathMap()
+  var catPaths = _categoryPathMap(categoryId)
 
   var picked = []
   for (var i = 0; i < docs.length; i++) {

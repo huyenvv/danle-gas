@@ -50,10 +50,21 @@ describe('_buildCatalogRows — filter, recursion, sort, mapping', () => {
     expect(a).toEqual([2, 'SH-02', 'A', '2026-01-02 09:00', 'g1', 'Hợp đồng', 'Kệ 1'])
   })
 
-  test('cột Danh mục là đường dẫn đầy đủ từ gốc xuống (Cha / Con)', () => {
+  test('cột Danh mục là đường dẫn từ danh mục được chọn xuống (Cha / Con)', () => {
     const rows = _buildCatalogRows(1)
     const b = rows.find(r => r[2] === 'B') // doc thuộc danh mục con (ID 2)
     expect(b[5]).toBe('Hợp đồng / Hợp đồng con')
+  })
+
+  test('đường dẫn dừng ở danh mục được chọn, không truy ngược lên trên nó', () => {
+    pushCat(4, 'Hợp đồng cháu', 2) // cháu của 1, con của 2
+    pushDoc({ ID: 7, 'Tên hồ sơ': 'G', 'Danh mục': 4, 'Số hồ sơ': 'SH-50', 'Tình trạng': 'Hoàn thành' })
+    refresh()
+    const rows = _buildCatalogRows(2) // xuất từ danh mục con (ID 2)
+    const g = rows.find(r => r[2] === 'G')
+    expect(g[5]).toBe('Hợp đồng con / Hợp đồng cháu') // không có 'Hợp đồng' ở đầu
+    const b = rows.find(r => r[2] === 'B')
+    expect(b[5]).toBe('Hợp đồng con')
   })
 
   test('chỉ lấy đúng danh mục được chọn + con, không lấy danh mục khác', () => {
