@@ -50,6 +50,12 @@ describe('_buildCatalogRows — filter, recursion, sort, mapping', () => {
     expect(a).toEqual([2, 'SH-02', 'A', '2026-01-02 09:00', 'g1', 'Hợp đồng', 'Kệ 1'])
   })
 
+  test('cột Danh mục là đường dẫn đầy đủ từ gốc xuống (Cha / Con)', () => {
+    const rows = _buildCatalogRows(1)
+    const b = rows.find(r => r[2] === 'B') // doc thuộc danh mục con (ID 2)
+    expect(b[5]).toBe('Hợp đồng / Hợp đồng con')
+  })
+
   test('chỉ lấy đúng danh mục được chọn + con, không lấy danh mục khác', () => {
     const rows = _buildCatalogRows(3) // 'Báo cáo' — chỉ doc 4 (D), Hoàn thành
     expect(rows.map(r => r[2])).toEqual(['D'])

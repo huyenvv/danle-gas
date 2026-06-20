@@ -34,6 +34,30 @@ function _categoryNameMap() {
   return map
 }
 
+// Map ID danh mục → đường dẫn đầy đủ 'Ông / Cha / Hiện tại' (lần ngược 'Danh mục cha').
+function _categoryPathMap() {
+  var cats = getSheetData(SHEETS.DANH_MUC)
+  var nameById = {}, parentById = {}
+  for (var i = 0; i < cats.length; i++) {
+    var id = String(cats[i]['ID'])
+    nameById[id] = cats[i]['Tên danh mục']
+    parentById[id] = String(cats[i]['Danh mục cha'] || '')
+  }
+  var map = {}
+  for (var key in nameById) {
+    var parts = []
+    var cur = key
+    var guard = {} // chặn vòng lặp nếu dữ liệu cha-con bị tham chiếu vòng
+    while (cur && nameById[cur] != null && !guard[cur]) {
+      guard[cur] = true
+      parts.unshift(nameById[cur])
+      cur = parentById[cur]
+    }
+    map[key] = parts.join(' / ')
+  }
+  return map
+}
+
 // Định dạng Ngày ban hành → 'yyyy-MM-dd HH:mm'. Chấp nhận Date hoặc chuỗi.
 function _formatExportDate(value) {
   if (!value) return ''
@@ -60,7 +84,7 @@ function _compareSoHoSo(a, b) {
 function _buildCatalogRows(categoryId) {
   var docs = getSheetData(SHEETS.HO_SO)
   var catSet = _categoryDescendantSet(categoryId)
-  var catNames = _categoryNameMap()
+  var catPaths = _categoryPathMap()
 
   var picked = []
   for (var i = 0; i < docs.length; i++) {
@@ -81,7 +105,7 @@ function _buildCatalogRows(categoryId) {
       doc['Tên hồ sơ'] || '',
       _formatExportDate(doc['Ngày ban hành']),
       doc['Ghi chú'] || '',
-      catNames[String(doc['Danh mục'] || '')] || '',
+      catPaths[String(doc['Danh mục'] || '')] || '',
       doc['Nơi lưu hồ sơ cứng'] || '',
     ])
   }
