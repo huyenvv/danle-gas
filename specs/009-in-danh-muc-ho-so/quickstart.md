@@ -26,7 +26,7 @@ npm run build:docmgr                # build + bundle server (kiểm export-catal
 - Lọc đúng `_normalizeStatus(Tình trạng) !== 'Nháp'` (loại Nháp; giữ Chờ duyệt/Đang xử lý/Hoàn thành/Từ chối…).
 - Gộp đệ quy hồ sơ ở danh mục con nhiều cấp.
 - STT 1..n theo thứ tự Số hồ sơ tăng dần; Số hồ sơ rỗng xuống cuối.
-- Ánh xạ đúng 7 cột; cột "Danh mục" = tên danh mục theo ID; ngày format `yyyy-mm-dd HH:mm`.
+- Ánh xạ đúng 7 cột; cột "Danh mục" = đường dẫn `Cha / Con` lần ngược tới danh mục được chọn (không lên trên nó); ngày format `yyyy-mm-dd HH:mm`.
 - Thiếu danh mục (bắt buộc) → ném `Vui lòng chọn danh mục để xuất`.
 - Danh mục không có hồ sơ hợp lệ → ném `Không có hồ sơ để xuất`.
 - Gác quyền: Văn thư/Admin/Giám đốc qua được; Nhân viên/Trưởng phòng bị chặn `Không có quyền...`.

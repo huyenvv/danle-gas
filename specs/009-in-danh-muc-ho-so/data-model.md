@@ -33,11 +33,11 @@ Một hồ sơ được đưa vào file khi **cả hai** đúng:
 | 3 | Tên hồ sơ | `Hồ Sơ['Tên hồ sơ']` | Nguyên trạng |
 | 4 | Ngày ban hành | `Hồ Sơ['Ngày ban hành']` | Format `yyyy-mm-dd HH:mm` (ghi dạng text) |
 | 5 | Ghi chú | `Hồ Sơ['Ghi chú']` | Nguyên trạng |
-| 6 | Danh mục | `Danh Mục['Tên danh mục']` của `Hồ Sơ['Danh mục']` | Tra tên từ ID (R2) |
+| 6 | Danh mục | Đường dẫn từ danh mục được chọn xuống danh mục của `Hồ Sơ['Danh mục']` | Lần ngược `Danh mục cha` tới danh mục được chọn, nối `' / '` |
 | 7 | Nơi lưu hồ sơ cứng | `Hồ Sơ['Nơi lưu hồ sơ cứng']` | Nguyên trạng |
 
 - Ô không có dữ liệu → để trống (FR-004).
-- Cột "Danh mục" ghi **tên danh mục của từng hồ sơ** (vì gộp đệ quy nhiều danh mục con).
+- Cột "Danh mục" ghi **đường dẫn danh mục** dạng `Cha / Con / Hiện tại`, lần ngược theo `Danh mục cha` nhưng **dừng ở danh mục được chọn** làm gốc (không lên trên nó). Vì gộp đệ quy nhiều danh mục con nên mỗi hồ sơ có đường dẫn riêng.
 
 ## Thực thể đầu ra (tạm thời)
 

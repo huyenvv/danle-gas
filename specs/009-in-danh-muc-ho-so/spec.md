@@ -78,7 +78,7 @@ Chức năng "In danh mục hồ sơ" chỉ hiển thị và cho phép thao tác
 - **FR-001a**: Việc chọn danh mục là **bắt buộc**. Không có tùy chọn "tất cả danh mục"; khi chưa chọn danh mục, hệ thống MUST không cho xuất (vô hiệu hành động và/hoặc báo lỗi rõ ràng).
 - **FR-002**: Chức năng MUST chỉ hiển thị và cho phép sử dụng với ba vai trò: **Văn thư**, **Quản trị viên (Admin)**, **Giám đốc**. Mọi vai trò khác MUST không nhìn thấy và MUST bị từ chối nếu cố gọi thao tác xuất.
 - **FR-003**: File Excel xuất ra MUST có đúng các cột sau theo đúng thứ tự: **STT, Số hồ sơ, Tên hồ sơ, Ngày ban hành, Ghi chú, Danh mục, Nơi lưu hồ sơ cứng**. Cột **Ngày ban hành** MUST hiển thị theo định dạng `yyyy-mm-dd HH:mm`.
-- **FR-004**: Các dòng MUST được sắp xếp theo **Số hồ sơ** tăng dần. Cột **STT** MUST do hệ thống tự đánh số tăng dần từ 1 theo thứ tự đã sắp; mọi cột còn lại MUST lấy giá trị trực tiếp từ dữ liệu hồ sơ đang lưu, không tự sinh hay biến đổi; ô không có dữ liệu thì để trống.
+- **FR-004**: Các dòng MUST được sắp xếp theo **Số hồ sơ** tăng dần. Cột **STT** MUST do hệ thống tự đánh số tăng dần từ 1 theo thứ tự đã sắp; các cột còn lại (trừ **Danh mục**) MUST lấy giá trị trực tiếp từ dữ liệu hồ sơ đang lưu, không tự sinh hay biến đổi; ô không có dữ liệu thì để trống. Cột **Danh mục** MUST là **đường dẫn** danh mục (`Cha / Con / …`) lần ngược theo `Danh mục cha` và **dừng ở danh mục được chọn** làm gốc.
 - **FR-005**: Hệ thống MUST đưa vào file mọi hồ sơ thuộc thư mục được chọn **và tất cả danh mục con** bên dưới nó (đệ quy).
 - **FR-006**: Hệ thống MUST xuất các hồ sơ ở **mọi trạng thái trừ "Nháp"**; hồ sơ có Tình trạng = "Nháp" KHÔNG được đưa vào file.
 - **FR-007**: File xuất ra MUST chứa một sheet tên **"Danh mục"** và MUST mở được bằng phần mềm bảng tính phổ thông, hiển thị đúng tiếng Việt có dấu.
@@ -106,6 +106,6 @@ Chức năng "In danh mục hồ sơ" chỉ hiển thị và cho phép thao tác
 - Xuất các hồ sơ ở **mọi trạng thái trừ "Nháp"**.
 - File đầu ra được người dùng **tải về** (download) từ ứng dụng; không tự lưu thêm bản sao vào Drive (có thể điều chỉnh sau nếu Văn thư muốn lưu vào thư mục lưu trữ).
 - Định dạng đầu ra là Excel (.xlsx) mở được bằng Microsoft Excel / Google Sheets, có một sheet tên "Danh mục".
-- Cột "Danh mục" trong file ghi tên danh mục của từng hồ sơ (vì có thể gộp nhiều danh mục con), giúp phân biệt hồ sơ thuộc danh mục con nào.
+- Cột "Danh mục" trong file ghi **đường dẫn** danh mục của từng hồ sơ (`Cha / Con`), lần ngược tới danh mục được chọn làm gốc (vì có thể gộp nhiều danh mục con), giúp phân biệt hồ sơ thuộc danh mục con nào.
 - Tên ba vai trò khớp với hệ thống hiện tại: **Văn thư**, **Quản trị viên (Admin)**, **Giám đốc**. "Ngoài ra không ai nữa" hiểu theo nghĩa hẹp: **không bao gồm** Phó GĐ, Trưởng phòng, Phó phòng/Người phụ trách, Nhân viên.
 - Dữ liệu mọi cột (trừ STT) đã tồn tại trong dữ liệu hồ sơ; tính năng chỉ chọn lọc và định dạng, không bổ sung trường dữ liệu mới.

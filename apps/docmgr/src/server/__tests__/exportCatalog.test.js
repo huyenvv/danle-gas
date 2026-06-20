@@ -67,6 +67,21 @@ describe('_buildCatalogRows — filter, recursion, sort, mapping', () => {
     expect(b[5]).toBe('Hợp đồng con')
   })
 
+  test('chọn danh mục gốc → đường dẫn đầy đủ nhiều cấp (Ông / Cha / Cháu)', () => {
+    pushCat(4, 'Hợp đồng cháu', 2) // cháu của 1, con của 2
+    pushDoc({ ID: 7, 'Tên hồ sơ': 'G', 'Danh mục': 4, 'Số hồ sơ': 'SH-50', 'Tình trạng': 'Hoàn thành' })
+    refresh()
+    const rows = _buildCatalogRows(1) // xuất từ danh mục gốc (ID 1)
+    const g = rows.find(r => r[2] === 'G')
+    expect(g[5]).toBe('Hợp đồng / Hợp đồng con / Hợp đồng cháu')
+  })
+
+  test('hồ sơ ngay tại danh mục được chọn → đường dẫn chỉ là tên danh mục đó', () => {
+    const rows = _buildCatalogRows(1)
+    const a = rows.find(r => r[2] === 'A') // doc ở chính danh mục 1
+    expect(a[5]).toBe('Hợp đồng')
+  })
+
   test('chỉ lấy đúng danh mục được chọn + con, không lấy danh mục khác', () => {
     const rows = _buildCatalogRows(3) // 'Báo cáo' — chỉ doc 4 (D), Hoàn thành
     expect(rows.map(r => r[2])).toEqual(['D'])
@@ -77,6 +92,27 @@ describe('_buildCatalogRows — filter, recursion, sort, mapping', () => {
     refresh()
     const rows = _buildCatalogRows(1)
     expect(rows[rows.length - 1][2]).toBe('E')
+  })
+})
+
+// ── _categoryPathMap: đường dẫn & chống lỗi dữ liệu cha-con ──────────────────
+describe('_categoryPathMap — robustness', () => {
+  test('cha tham chiếu danh mục không tồn tại → dừng an toàn, không treo', () => {
+    pushCat(1, 'Gốc', '')
+    pushCat(2, 'Con', 999) // cha 999 không có thật
+    refresh()
+    const m = _categoryPathMap('') // không giới hạn điểm dừng
+    expect(m['1']).toBe('Gốc')
+    expect(m['2']).toBe('Con') // chỉ chính nó, bỏ qua cha mồ côi
+  })
+
+  test('vòng lặp cha-con không gây treo, mỗi danh mục xuất hiện đúng 1 lần', () => {
+    pushCat(1, 'A', 2) // A ⟶ cha B
+    pushCat(2, 'B', 1) // B ⟶ cha A
+    refresh()
+    const m = _categoryPathMap('')
+    expect(m['1'].split(' / ')).toEqual(['B', 'A'])
+    expect(m['2'].split(' / ')).toEqual(['A', 'B'])
   })
 })
 
