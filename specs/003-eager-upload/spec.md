@@ -51,7 +51,9 @@ Khi user bấm Huỷ hoặc đóng modal, files đã upload phải được dọ
 
 1. **Given** form tạo mới đã upload 2 files (draft tồn tại), **When** user bấm Huỷ, **Then** api_cancelDraft xoá cả 2 files + row Nháp.
 2. **Given** form sửa hồ sơ đã upload 1 file mới, **When** user bấm Huỷ, **Then** api_deleteFiles xoá file mới, files cũ và row không đổi.
-3. **Given** user xoá 1 file đã upload xong (status=done) từ UI, **When** click nút close trên chip, **Then** file bị xoá khỏi Drive.
+3. **Given** user xoá 1 file đã upload xong (status=done) từ UI, **When** click nút close trên chip, **Then** hiện xác nhận; sau khi đồng ý, file được gỡ khỏi danh sách và **trash khỏi Drive khi lưu** (finalizeDraft `keepFileIds`), gỡ-file tính là thay đổi nên đóng X có hỏi lưu nháp.
+4. **Given** user đã gõ field (Tên/Danh mục) nhưng CHƯA upload tệp, **When** bấm X, **Then** hiện cảnh báo "Lưu thông tin vừa thay đổi…" → Có → `api_createDraft` lưu Nháp (FR-014).
+5. **Given** user CHỈ upload/xoá tệp, không sửa field nào, **When** bấm X, **Then** KHÔNG cảnh báo (tệp đã tự lưu) → đóng & surface draft.
 
 ---
 
@@ -95,11 +97,15 @@ Các nút Lưu/Trình duyệt/Phát hành bị disable khi còn file đang uploa
 - **FR-010**: Status 'Nháp' MUST NOT xuất hiện trong dropdown Tình trạng.
 - **FR-011**: Submit buttons MUST disabled khi còn file đang upload.
 - **FR-012**: `updateDocument` MUST nhận `eagerFileInfos` (7th param) — pre-uploaded files không cần base64.
-- **FR-013**: Khi tạo mới (hoặc sửa hồ sơ Nháp), để rời trạng thái Nháp (bấm Lưu tài liệu / Trình duyệt / Phát hành) MUST đủ cả ba: **Tên hồ sơ**, **Danh mục**, và **ít nhất một tệp đính kèm**. Thiếu bất kỳ điều kiện nào → các nút finalize MUST bị chặn (báo lỗi rõ ràng, không gọi API lưu); user **chỉ có thể lưu nháp**. Vì tệp đính kèm tạo row Nháp (FR-003), hồ sơ mới có tệp luôn hoàn tất qua `api_finalizeDraft`.
+- **FR-013**: Khi tạo mới (hoặc sửa hồ sơ Nháp), để rời trạng thái Nháp (bấm Lưu tài liệu / Trình duyệt / Phát hành) MUST đủ cả ba: **Tên hồ sơ**, **Danh mục**, và **ít nhất một tệp đính kèm**. Thiếu bất kỳ điều kiện nào → các nút finalize MUST bị chặn (báo lỗi rõ ràng, không gọi API lưu). Vì tệp đính kèm tạo row Nháp (FR-003), hồ sơ mới có tệp luôn hoàn tất qua `api_finalizeDraft`.
+- **FR-014**: Chế độ tạo mới / sửa Nháp MUST có nút **"Lưu nháp"** hiển thị rõ (đặt cạnh nút Hủy), lưu hồ sơ hiện tại ở trạng thái Nháp. Lưu nháp **KHÔNG bắt buộc tệp**: đã có draft (đã upload) → `api_finalizeDraft`; chưa có draft → `api_createDraft` tạo hàng Nháp từ form. Để tránh hàng rỗng, "Lưu nháp" MUST cần **ít nhất Tên hồ sơ hoặc Danh mục** (thiếu cả hai → nút tắt, tooltip giải thích). Nút **Hủy** = xoá nháp (FR-007); nút **X** hỏi lưu nháp khi **bất kỳ field nào thay đổi** (so với snapshot lúc mở modal — gồm Tên, Danh mục, ngày, Giá trị HĐ, Khẩn, Ghi chú, phụ trách, người phối hợp, người được xem…). **Thêm** file (upload) đã tự lưu nên KHÔNG tính (luồng chỉ-upload-tệp không cảnh báo); nhưng **gỡ file** (cả vừa upload lẫn sẵn có) đều xác nhận + hoãn trash + CÓ tính là thay đổi. Cảnh báo hoạt động cả khi **chưa có draft** (gõ field rồi tắt X → hỏi lưu → `api_createDraft`). Chỉ áp cho tạo mới / sửa nháp; non-draft edit (lưu qua "Cập nhật") thì X chỉ đóng.
+- **FR-015**: `createDraft(token, formData)` MUST tạo hàng status `Nháp` từ form (không tệp), yêu cầu ít nhất `Tên hồ sơ` hoặc `Danh mục`, gác quyền `_checkCreatePermission`. (Tách biệt với đường tạo-nháp-qua-upload ở FR-003 — yêu cầu finalize-phải-có-tệp tại FR-013 không đổi.)
+- **FR-016**: `finalizeDraft` MUST nhận `keepFileIds` (tham số 5): file của nháp KHÔNG nằm trong danh sách giữ MUST bị trash khỏi Drive (`_shouldTrashFile`, nháp → được trash) và cột `Tệp đính kèm`/`Tên file` cập nhật về phần giữ lại. Client (`handleSaveDraft` & nhánh draft của `handleSubmit`) truyền `existingFiles + eager done`. Không gửi → giữ nguyên (tương thích cũ). Sửa lỗi: gỡ file sẵn có của nháp rồi lưu mà file không bị xoá thật.
+- **FR-017**: Upload gặp `'Lỗi không xác định'` (response `google.script.run` bị mất dù server có thể đã upload xong) MUST **xác minh & phục hồi** thay vì báo lỗi: đọc lại nháp (`api_getDocuments`), tìm file theo tên trong nháp của mình (hoặc draft đang mở) — nếu thấy thì đánh dấu upload thành công (set `draftId`/`fileId`), KHÔNG upload lại (tránh trùng file trên Drive). 2 lần thử cách nhau ~1.5s; không thấy → mới báo lỗi. (Sửa: "Lỗi tải … Lỗi không xác định" trong khi file đã lên Drive.)
 
 ### Key Entities
 
-- **Hồ Sơ**: Thêm status "Nháp" vào data model. Row Nháp có fields tối thiểu: Người tạo, Danh mục, File ID, Tình trạng='Nháp'.
+- **Hồ Sơ**: Thêm status "Nháp" vào data model. Row Nháp tạo qua upload có: Người tạo, Danh mục, File ID, Tình trạng='Nháp'; tạo qua `createDraft` (FR-015) có thể **không có File ID** (chỉ Tên hồ sơ và/hoặc Danh mục).
 - **File Info**: `{ fileId, fileName, mimeType, size }` — format không đổi, chỉ thêm path mới (eager upload vs base64).
 
 ## Success Criteria

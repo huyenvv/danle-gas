@@ -82,9 +82,9 @@ apps/docmgr/src/server/__tests__/documents.test.js — tests for new functions
 
 ### Modal Close vs Cancel
 - **Nút X** (đóng modal):
-  - Không có draft hoặc không thay đổi → đóng ngay.
-  - Có thay đổi → confirm "Lưu thông tin vừa thay đổi vào hồ sơ nháp?" → Có: `finalizeDraft` với `Tình trạng: 'Nháp'`, toast-only (đóng modal ngay, không loading overlay) → Không: đóng không lưu.
-  - Detect thay đổi: so sánh form fields vs initial state, check `phuTrach`, check eager uploads done.
+  - Không có thay đổi field chưa lưu → đóng ngay (nếu đã có draft do upload thì surface ra danh sách).
+  - Có thay đổi field chưa lưu → confirm "Lưu thông tin vừa thay đổi vào hồ sơ nháp?" → Có: lưu Nháp (`finalizeDraft` nếu đã có draft, `createDraft` nếu chưa) → Không: đóng không lưu.
+  - Detect thay đổi (`_hasUnsavedFieldChanges`): so **MỌI field** trong `form` (+ `phuTrach`, `collaborators`, `viewers`) với **snapshot ban đầu** (chụp lúc mở modal — cùng định dạng nên không báo nhầm do biến đổi ngày). **Thêm** file (upload) auto-lưu vào nháp nên KHÔNG tính. **Gỡ** file — cả vừa upload (`removeEagerUpload`) lẫn sẵn có (`removeExistingFile`) — đều **xác nhận**, **hoãn trash** (để dành lúc lưu qua `keepFileIds`), và đánh dấu `fileRemovedRef` → CÓ tính là thay đổi. Khi eager-draft vừa tạo (create), **rebase** snapshot `Danh mục` + `Người được xem` → luồng chỉ-upload-tệp KHÔNG cảnh báo. Chỉ áp cho **tạo mới / sửa nháp** (`requireFullForFinalize`); non-draft edit lưu qua "Cập nhật" nên X chỉ đóng.
 - **Nút Huỷ**: confirm dialog liệt kê file sẽ bị xoá → `cancelDraft` xoá row + files → toast thành công.
 
 ### Upload Toast

@@ -73,7 +73,7 @@ describe('DocumentModal', () => {
       expect(gasCall).toHaveBeenCalledWith(
         'api_finalizeDraft', MOCK_TOKEN, 'd9',
         expect.objectContaining({ 'Tên hồ sơ': 'Test Hồ Sơ Mới' }),
-        null,
+        null, expect.any(Array),
       )
     })
     expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(finalized)
@@ -96,6 +96,61 @@ describe('DocumentModal', () => {
     // Không gọi bất kỳ API lưu nào, không onSaved, không mở dialog phát hành
     expect(gasCall.mock.calls.some(c => ['api_finalizeDraft', 'api_createDocument', 'api_updateDocument'].includes(c[0]))).toBe(false)
     expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
+  })
+
+  // Test 2h: nút "Lưu nháp" bị tắt khi form trống (chưa có Tên/Danh mục/tệp)
+  it('disables "Lưu nháp" when form is empty (no name/category/file)', () => {
+    renderModal({ session: MOCK_ADMIN_SESSION })
+    expect(screen.getByRole('button', { name: /lưu nháp/i })).toBeDisabled()
+  })
+
+  // Test 2h2: "Lưu nháp" KHÔNG cần tệp — đủ Tên (hoặc Danh mục) → gọi api_createDraft
+  it('"Lưu nháp" without a file calls api_createDraft when Tên/Danh mục present', async () => {
+    const draftSaved = { ID: 'nd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': 'Nháp dở' }
+    gasCall.mockResolvedValue({ data: draftSaved })
+    renderModal({ session: MOCK_ADMIN_SESSION })
+
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Nháp dở' } })
+    const btn = screen.getByRole('button', { name: /lưu nháp/i })
+    expect(btn).toBeEnabled()
+    fireEvent.click(btn)
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_createDraft', MOCK_TOKEN,
+        expect.objectContaining({ 'Tên hồ sơ': 'Nháp dở', 'Tình trạng': 'Nháp' }),
+      )
+    })
+    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(draftSaved)
+  })
+
+  // Test 2i: nút "Lưu nháp" lưu hồ sơ ở trạng thái Nháp sau khi đã đính kèm tệp
+  it('"Lưu nháp" saves the doc as Nháp after a file is attached', async () => {
+    const draftSaved = { ID: 'd9', 'Tình trạng': 'Nháp' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd9', fileInfo: { fileId: 'f9', fileName: 'doc.pdf' } })
+      if (fn === 'api_finalizeDraft') return Promise.resolve({ data: draftSaved })
+      return Promise.resolve({})
+    })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Nháp dở' } })
+    selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'doc.pdf', { type: 'application/pdf' })] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/)
+
+    fireEvent.click(screen.getByRole('button', { name: /lưu nháp/i }))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_finalizeDraft', MOCK_TOKEN, 'd9',
+        expect.objectContaining({ 'Tình trạng': 'Nháp' }),
+        null, expect.any(Array),
+      )
+    })
+    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(draftSaved)
   })
 
   // Test 2b: Upload failure (e.g. Drive not configured) surfaces server error as toast
@@ -138,6 +193,66 @@ describe('DocumentModal', () => {
     expect(gasCall).toHaveBeenCalledWith(
       'api_uploadFileEager', MOCK_TOKEN, expect.any(String), 'application/pdf', 'ok.pdf', '1', null,
     )
+  })
+
+  // Test 2c2: upload "Lỗi không xác định" (response mất) nhưng file ĐÃ vào nháp → phục hồi, không báo lỗi
+  it('recovers an eager upload when the response is lost but the file reached the draft', async () => {
+    const draftWithFile = {
+      ID: 'd7', 'Tình trạng': 'Nháp', 'Người tạo': 'admin', 'Ngày cập nhật': '2026-01-01',
+      'Tệp đính kèm': JSON.stringify([{ fileId: 'fr1', fileName: 'ok.pdf' }]),
+    }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.reject(new Error('Lỗi không xác định'))
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [draftWithFile] })
+      return Promise.resolve({})
+    })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'ok.pdf', { type: 'application/pdf' })] } })
+    })
+
+    // File hiện ra (phục hồi qua getDocuments) và KHÔNG có thông báo lỗi tải
+    expect(await screen.findByText('ok.pdf', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText(/Lỗi tải/)).not.toBeInTheDocument()
+  })
+
+  // Test 2c3: phục hồi qua draftId hiện có (sửa nháp / upload file thứ 2)
+  it('recovers a lost upload response via the current draft id (draft edit)', async () => {
+    const draftDoc = { ID: '5', 'Tình trạng': 'Nháp', 'Người tạo': 'admin', 'Danh mục': '1', 'Tên hồ sơ': 'D', 'Tệp đính kèm': '' }
+    const draftAfter = { ...draftDoc, 'Tệp đính kèm': JSON.stringify([{ fileId: 'fr2', fileName: 'new.pdf' }]) }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.reject(new Error('Lỗi không xác định'))
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [draftAfter] })
+      return Promise.resolve({})
+    })
+
+    const { container } = renderModal({ mode: 'edit', doc: draftDoc, session: MOCK_ADMIN_SESSION })
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'new.pdf', { type: 'application/pdf' })] } })
+    })
+
+    expect(await screen.findByText('new.pdf', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText(/Lỗi tải/)).not.toBeInTheDocument()
+  })
+
+  // Test 2c4: xác minh KHÔNG thấy file → vẫn báo lỗi (không che lỗi thật)
+  it('upload recovery: shows the error when the file is genuinely not found', async () => {
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.reject(new Error('Lỗi không xác định'))
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [] }) // không có nháp nào
+      return Promise.resolve({})
+    })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'ok.pdf', { type: 'application/pdf' })] } })
+    })
+
+    // Sau 2 lần thử (cách 1.5s) không thấy → báo lỗi thật
+    expect((await screen.findAllByText(/Lỗi tải/, {}, { timeout: 3000 })).length).toBeGreaterThan(0)
   })
 
   // Test 2d: Large file (>25MB) → chunked resumable upload, PUTs chunks directly to Drive,
@@ -470,9 +585,55 @@ describe('DocumentModal', () => {
         '5',
         expect.objectContaining({ 'Tình trạng': 'Chờ duyệt' }),
         'directors',
+        expect.any(Array),
       )
     })
     expect(gasCall).not.toHaveBeenCalledWith('api_updateDocument', expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything())
+  })
+
+  it('draft edit without an attachment blocks finalize (FR-013 áp cho cả sửa nháp)', async () => {
+    const vanThuSession = {
+      ...MOCK_ADMIN_SESSION, userId: 3, username: 'vanthu', role: 'Văn thư', canCreate: true, canPublish: true,
+    }
+    const draftNoFile = {
+      ...MOCK_DOCS[0], ID: '7', 'Tình trạng': 'Nháp', 'Người tạo': 'vanthu', 'Tên hồ sơ': 'Draft', 'Tệp đính kèm': '',
+    }
+    gasCall.mockResolvedValue({})
+    renderModal({ mode: 'edit', doc: draftNoFile, session: vanThuSession })
+
+    fireEvent.click(screen.getByRole('button', { name: /trình duyệt$/i }))
+
+    expect(await screen.findByText(/Cần đính kèm ít nhất một tệp/)).toBeInTheDocument()
+    expect(gasCall).not.toHaveBeenCalledWith('api_finalizeDraft', expect.anything(), expect.anything(), expect.anything(), expect.anything())
+  })
+
+  it('closing via X and confirming saves the draft as Nháp (api_finalizeDraft)', async () => {
+    const draftDoc = { ID: 'd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': '', 'Danh mục': '1', 'Tệp đính kèm': '' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' }, data: draftDoc })
+      if (fn === 'api_finalizeDraft') return Promise.resolve({ data: { ...draftDoc, 'Tên hồ sơ': 'X' } })
+      return Promise.resolve({})
+    })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'ok.pdf', { type: 'application/pdf' })] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/)
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'X' } })
+
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_finalizeDraft', MOCK_TOKEN, 'd1',
+        expect.objectContaining({ 'Tình trạng': 'Nháp' }),
+        null, expect.any(Array),
+      )
+    })
   })
 
   it('cancelling a draft calls onDeleted so the list updates immediately', async () => {
@@ -496,7 +657,7 @@ describe('DocumentModal', () => {
     expect(onDeleted).toHaveBeenCalledWith('5')
   })
 
-  it('closing via X and choosing "Huỷ" keeps the eager draft in the list (onSaved), without finalizeDraft', async () => {
+  it('closing via X after a file-only upload does NOT warn, surfaces the eager draft', async () => {
     const draftDoc = { ID: 'd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': '', 'Danh mục': '1', 'Tên file': 'ok.pdf' }
     gasCall.mockResolvedValue({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' }, data: draftDoc })
 
@@ -510,16 +671,150 @@ describe('DocumentModal', () => {
     await screen.findByText('ok.pdf', { exact: true }) // eager draft created on the server
     await screen.findByText(/Đã tạo hồ sơ nháp/)       // draftId + status 'done' settled
 
-    // Close via the X button → confirm appears → choose "Huỷ" (don't save changes)
+    // Chỉ upload tệp (đã tự lưu), không sửa field → X KHÔNG cảnh báo, đóng & surface draft
     fireEvent.click(screen.getByTestId('doc-modal-close'))
-    await screen.findByText(/Lưu thông tin vừa thay đổi/)
-    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' }))
-
-    // Draft is surfaced to the list (not orphaned), and its fields were NOT saved
     await waitFor(() => {
       expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(draftDoc)
     })
+    expect(screen.queryByText(/Lưu thông tin vừa thay đổi/)).not.toBeInTheDocument()
     expect(gasCall.mock.calls.some(c => c[0] === 'api_finalizeDraft')).toBe(false)
+  })
+
+  it('closing via X after typing fields (no file) warns and saves via api_createDraft', async () => {
+    const created = { ID: 'nd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': 'Dở dang' }
+    gasCall.mockResolvedValue({ data: created })
+
+    renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Dở dang' } })
+
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/) // có field chưa lưu → CÓ cảnh báo
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_createDraft', MOCK_TOKEN,
+        expect.objectContaining({ 'Tên hồ sơ': 'Dở dang', 'Tình trạng': 'Nháp' }),
+      )
+    })
+    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(created)
+  })
+
+  it('removing a just-uploaded file: confirm shown, then X warns and save excludes it', async () => {
+    const draftDoc = { ID: 'd1', 'Tình trạng': 'Nháp', 'Tên hồ sơ': '', 'Danh mục': '1', 'Tên file': 'ok.pdf' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd1', fileInfo: { fileId: 'f1', fileName: 'ok.pdf' }, data: draftDoc })
+      if (fn === 'api_finalizeDraft') return Promise.resolve({ data: draftDoc })
+      return Promise.resolve({ success: true })
+    })
+
+    const { container } = renderModal({ session: MOCK_ADMIN_SESSION })
+    selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'ok.pdf', { type: 'application/pdf' })] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/)
+
+    // Xoá tệp vừa upload → CÓ confirm "Xoá file..." → đồng ý
+    fireEvent.click(screen.getByTestId('eager-file-remove'))
+    await screen.findByText(/Xoá file/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+    await waitFor(() => { expect(screen.queryByTestId('eager-file-remove')).not.toBeInTheDocument() })
+
+    // Tắt X → CÓ cảnh báo lưu nháp → đồng ý → finalizeDraft với keepFileIds KHÔNG chứa file đã gỡ
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+    await waitFor(() => {
+      const call = gasCall.mock.calls.find(c => c[0] === 'api_finalizeDraft')
+      expect(call).toBeTruthy()
+      expect(call[5]).not.toContain('f1')
+    })
+  })
+
+  it('closing via X warns for ANY changed field (e.g. Khẩn, beyond the basic subset)', async () => {
+    renderModal({ session: MOCK_ADMIN_SESSION })
+    // Bật "Khẩn" — field KHÔNG nằm trong tập con cũ → vẫn phải bị phát hiện
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    expect(await screen.findByText(/Lưu thông tin vừa thay đổi/)).toBeInTheDocument()
+  })
+
+  it('non-draft edit: closing via X does NOT offer save-as-draft (just closes)', async () => {
+    renderModal({ mode: 'edit', doc: MOCK_DOCS[0], session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Đổi tên' } })
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await waitFor(() => { expect(DEFAULT_PROPS.onClose).toHaveBeenCalled() })
+    expect(screen.queryByText(/Lưu thông tin vừa thay đổi/)).not.toBeInTheDocument()
+  })
+
+  it('draft edit: X with NO change does not warn (snapshot tránh báo nhầm do biến đổi ngày)', async () => {
+    const vanThuSession = { ...MOCK_ADMIN_SESSION, userId: 3, username: 'vanthu', role: 'Văn thư', canCreate: true, canPublish: true }
+    const draftDoc = { ...MOCK_DOCS[0], ID: '5', 'Tình trạng': 'Nháp', 'Người tạo': 'vanthu', 'Ngày ban hành': new Date().toISOString(), 'Tệp đính kèm': 'f1' }
+    renderModal({ mode: 'edit', doc: draftDoc, session: vanThuSession })
+
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await waitFor(() => { expect(DEFAULT_PROPS.onSaved).toHaveBeenCalled() })
+    expect(screen.queryByText(/Lưu thông tin vừa thay đổi/)).not.toBeInTheDocument()
+    expect(gasCall.mock.calls.some(c => c[0] === 'api_finalizeDraft')).toBe(false)
+  })
+
+  it('draft edit: changing a field then X warns and saves via finalizeDraft (status Nháp)', async () => {
+    const vanThuSession = { ...MOCK_ADMIN_SESSION, userId: 3, username: 'vanthu', role: 'Văn thư', canCreate: true, canPublish: true }
+    const draftDoc = { ...MOCK_DOCS[0], ID: '5', 'Tình trạng': 'Nháp', 'Người tạo': 'vanthu', 'Tệp đính kèm': 'f1' }
+    gasCall.mockResolvedValue({ data: { ...draftDoc, 'Tên hồ sơ': 'Tên mới' } })
+    renderModal({ mode: 'edit', doc: draftDoc, session: vanThuSession })
+
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Tên mới' } })
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_finalizeDraft', MOCK_TOKEN, '5',
+        expect.objectContaining({ 'Tình trạng': 'Nháp', 'Tên hồ sơ': 'Tên mới' }),
+        null, expect.any(Array),
+      )
+    })
+  })
+
+  it('draft edit: removing an existing file makes X warn to save draft', async () => {
+    const vanThuSession = { ...MOCK_ADMIN_SESSION, userId: 3, username: 'vanthu', role: 'Văn thư', canCreate: true, canPublish: true }
+    const draftDoc = { ...MOCK_DOCS[0], ID: '5', 'Tình trạng': 'Nháp', 'Người tạo': 'vanthu', 'Tệp đính kèm': 'f1' }
+    gasCall.mockResolvedValue({ data: draftDoc })
+    renderModal({ mode: 'edit', doc: draftDoc, session: vanThuSession })
+
+    // Gỡ file sẵn có → confirm "Xoá file..." → đồng ý
+    fireEvent.click(screen.getByTestId('existing-file-remove'))
+    await screen.findByText(/Xoá file/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+    await waitFor(() => { expect(screen.queryByTestId('existing-file-remove')).not.toBeInTheDocument() }) // file đã gỡ
+
+    // Tắt X → CÓ hỏi lưu nháp (gỡ file là thay đổi chưa lưu)
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: /đồng ý|xác nhận|có/i }))
+
+    // finalizeDraft được gọi với keepFileIds KHÔNG chứa file đã gỡ → file bị xoá thật
+    await waitFor(() => {
+      const call = gasCall.mock.calls.find(c => c[0] === 'api_finalizeDraft')
+      expect(call).toBeTruthy()
+      expect(call[5]).not.toContain('f1')
+    })
+  })
+
+  it('closing via X and declining (Huỷ) does not save, just closes', async () => {
+    gasCall.mockResolvedValue({})
+    renderModal({ session: MOCK_ADMIN_SESSION })
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Dở dang' } })
+
+    fireEvent.click(screen.getByTestId('doc-modal-close'))
+    await screen.findByText(/Lưu thông tin vừa thay đổi/)
+    fireEvent.click(screen.getByRole('button', { name: 'Huỷ' })) // từ chối lưu
+
+    await waitFor(() => { expect(DEFAULT_PROPS.onClose).toHaveBeenCalled() })
+    expect(gasCall.mock.calls.some(c => ['api_createDraft', 'api_finalizeDraft'].includes(c[0]))).toBe(false)
   })
 
   it('NV with canCreate editing own draft sees create-mode buttons', () => {

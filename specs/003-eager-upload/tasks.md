@@ -49,6 +49,16 @@
 
 - [X] T028 [US4] Thêm `hasAttachment` + `requireFullForFinalize` + `MISSING_ATTACHMENT_MSG`; chặn finalize (Lưu tài liệu / Trình duyệt / Phát hành + nút submit mặc định) khi thiếu Tên hồ sơ / Danh mục / tệp đính kèm; cùng kiểm tra trong `handleSubmit` in `apps/docmgr/src/client/components/DocumentModal.jsx`
 - [X] T029 Cập nhật/bổ sung test: tạo mới có tệp → `api_finalizeDraft`; thiếu tệp → chặn, không gọi API in `apps/docmgr/src/client/__tests__/DocumentModal.test.jsx`
+- [X] T030 [US2] Sửa message chặn (bỏ hướng dẫn sai "bấm Hủy") + thêm nút "Lưu nháp" (tắt khi chưa có tệp), gom logic lưu nháp `handleSaveDraft` dùng chung với nút X (FR-014) in `apps/docmgr/src/client/components/DocumentModal.jsx`
+- [X] T031 Test nút "Lưu nháp": tắt khi chưa có tệp; lưu status Nháp sau khi đính kèm in `apps/docmgr/src/client/__tests__/DocumentModal.test.jsx`
+- [X] T032 [US2] Thêm `createDraft(token, formData)` (tạo hàng Nháp không tệp, cần Tên hoặc Danh mục) + `api_createDraft` in `apps/docmgr/src/server/documents.js`, `apps/docmgr/src/server/main.js`; nút "Lưu nháp" gọi `createDraft` khi chưa có draft, chỉ tắt khi trống cả Tên+Danh mục (FR-014/FR-015) in `apps/docmgr/src/client/components/DocumentModal.jsx`
+- [X] T033 Test `createDraft` (server) + "Lưu nháp" không tệp gọi `api_createDraft` (client) + mock dev `gasClient.js`
+- [X] T034 [US3] Sửa cảnh báo X-close: `_hasUnsavedFieldChanges` chỉ xét field nhập tay (bỏ đếm tệp đã upload), bỏ thoát-sớm `!draftId` để cảnh báo cả khi chưa có draft (gõ field → tắt X → lưu `createDraft`) in `apps/docmgr/src/client/components/DocumentModal.jsx` + test
+- [X] T035 [US3] Mở rộng phát hiện thay đổi sang **MỌI field**: so `form` (+ phụ trách/phối hợp/người xem) với snapshot ban đầu; rebase Danh mục+người-xem khi draft tạo qua upload; gate `requireFullForFinalize` (non-draft edit X chỉ đóng) in `apps/docmgr/src/client/components/DocumentModal.jsx` + test (Khẩn, non-draft edit)
+- [X] T036 [US3] Gỡ file SẴN CÓ (`removeExistingFile`, chưa persist) cũng tính là thay đổi: so `existingFiles` vs snapshot trong `_hasUnsavedFieldChanges` in `apps/docmgr/src/client/components/DocumentModal.jsx` + test (draft edit gỡ file → X hỏi lưu)
+- [X] T037 [US3] `finalizeDraft` nhận `keepFileIds`: trash file bị gỡ + cập nhật cột `Tệp đính kèm` (FR-016) in `apps/docmgr/src/server/documents.js`, `main.js`; client truyền keepFileIds ở `handleSaveDraft` + nhánh draft `handleSubmit` + mock `gasClient.js` + test (server keep/remove, client keepFileIds không chứa file đã gỡ)
+- [X] T038 [US3] Hợp nhất gỡ file: `removeEagerUpload` (file vừa upload) cũng **xác nhận** + **hoãn trash** (không xoá Drive ngay) + đánh dấu `fileRemovedRef` như `removeExistingFile` → đóng X có hỏi lưu nháp; lưu thì `finalizeDraft keepFileIds` trash thật in `apps/docmgr/src/client/components/DocumentModal.jsx` + test
+- [X] T039 [US1] Phục hồi upload khi response mất (`'Lỗi không xác định'`): `_verifyEagerUpload` đọc lại nháp tìm file theo tên, đánh dấu thành công thay vì báo lỗi (FR-017) in `apps/docmgr/src/client/components/DocumentModal.jsx` + test
 
 ---
 

@@ -147,6 +147,11 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form['Danh mục']])
 
+  // Snapshot field ban đầu để phát hiện MỌI thay đổi khi đóng X (so cùng định dạng).
+  const initialFormRef = useRef({ ...form })
+  const initialViewersRef = useRef([...viewers])
+  const _draftRebasedRef = useRef(false)
+
   // Dự án (Nơi nhận): multi-select. Stored in form as JSON array string; legacy single value parses too.
   const selectedDuAn = parseAssignees(form['Dự án (Phòng ban)'])
   const setDuAn = (next) => setField('Dự án (Phòng ban)', next.length ? JSON.stringify(next) : '')
@@ -156,9 +161,22 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const eagerIdCounter = useRef(0)
   const [draftId, setDraftId] = useState(isDraftEdit ? doc.ID : null)
   const [draftDoc, setDraftDoc] = useState(isDraftEdit ? doc : null)
+  useEffect(() => {
+    // Khi eager-draft vừa tạo (create): Danh mục (bắt buộc để upload) + Người được xem
+    // (tự đặt theo danh mục) coi như đã lưu vào draft → rebase baseline, tránh báo nhầm
+    // cho luồng chỉ-upload-tệp.
+    if (draftId && !isDraftEdit && !_draftRebasedRef.current) {
+      _draftRebasedRef.current = true
+      initialFormRef.current = { ...initialFormRef.current, 'Danh mục': form['Danh mục'] }
+      initialViewersRef.current = [...viewers]
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId])
   const [existingFiles, setExistingFiles] = useState(
     isEdit ? _parseFileInfosClient(doc['Tệp đính kèm']) : []
   )
+  // Gỡ file (sẵn có hoặc vừa upload) chỉ đổi state local, persist khi save → thay đổi chưa lưu.
+  const fileRemovedRef = useRef(false)
   const [isDragging, setIsDragging] = useState(false)
   const [showDrivePicker, setShowDrivePicker] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -187,6 +205,30 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
       } catch (_) {}
       return null
     }
+  }
+
+  // Upload "Lỗi không xác định" thường là response bị mất dù server ĐÃ upload xong +
+  // gắn file vào nháp. Xác minh bằng cách đọc lại nháp & tìm file theo tên (không
+  // upload lại để tránh trùng). Trả { draftId, fileId, data } nếu tìm thấy.
+  async function _verifyEagerUpload(entry, currentDraftId) {
+    // Sửa hồ sơ không-nháp: upload chỉ đẩy lên Drive, không tạo row → không xác minh được.
+    if (isEdit && !isDraftEdit && !currentDraftId) return null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1500))
+      try {
+        const docs = (await gasCall('api_getDocuments', token, {})).data || []
+        const candidates = currentDraftId
+          ? docs.filter(d => String(d.ID) === String(currentDraftId))
+          : docs
+              .filter(d => d['Tình trạng'] === 'Nháp' && d['Người tạo'] === session?.username)
+              .sort((a, b) => String(b['Ngày cập nhật'] || '').localeCompare(String(a['Ngày cập nhật'] || '')))
+        for (const d of candidates) {
+          const match = _parseFileInfosClient(d['Tệp đính kèm']).find(f => f.fileName === entry.fileName)
+          if (match) return { draftId: d['Tình trạng'] === 'Nháp' ? d.ID : null, fileId: match.fileId, data: d }
+        }
+      } catch (_) {}
+    }
+    return null
   }
 
   // Role-based UI
@@ -227,7 +269,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const hasAttachment = existingFiles.length > 0 ||
     eagerUploads.some(u => u.status === 'done' && u.fileId)
   const requireFullForFinalize = !isEdit || isDraftEdit
-  const MISSING_ATTACHMENT_MSG = 'Cần đính kèm ít nhất một tệp. Thiếu thông tin chỉ có thể lưu nháp (bấm Hủy để lưu nháp).'
+  const MISSING_ATTACHMENT_MSG = 'Cần đính kèm ít nhất một tệp để hoàn tất hồ sơ.'
 
   async function handleFileChange(e) {
     const newFiles = Array.from(e.target.files || e.dataTransfer?.files || [])
@@ -290,6 +332,19 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
           u.id === entry.id ? { ...u, status: 'done', fileId: result.fileInfo.fileId } : u
         ))
       } catch (err) {
+        // Response bị mất dù server có thể đã upload xong → xác minh & phục hồi.
+        if (err.message === 'Lỗi không xác định') {
+          const recovered = await _verifyEagerUpload(entry, currentDraftId)
+          if (recovered) {
+            if (recovered.draftId && !currentDraftId) { currentDraftId = recovered.draftId; setDraftId(recovered.draftId) }
+            if (recovered.data) setDraftDoc(recovered.data)
+            setEagerUploads(prev => prev.map(u =>
+              u.id === entry.id ? { ...u, status: 'done', fileId: recovered.fileId } : u
+            ))
+            showToast(`Đã tải "${entry.fileName}"`, 'success')
+            continue
+          }
+        }
         const msg = `Lỗi tải "${entry.fileName}": ${err.message}`
         showToast(msg, 'error')
         setError(msg)   // persist on the form — toast tự tắt quá nhanh
@@ -420,17 +475,18 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   async function removeEagerUpload(uploadId) {
     const upload = eagerUploads.find(u => u.id === uploadId)
     if (!upload) return
-    // Linked Drive files are only unlinked here — never trashed on Drive
-    if (upload.status === 'done' && upload.fileId && !upload.linked) {
-      try {
-        await gasCall('api_deleteFiles', token, [upload.fileId])
-      } catch (_) {}
+    // File đã upload xong (đang nằm trong nháp trên server): xác nhận + đánh dấu thay đổi.
+    // Trash Drive + cập nhật cột để dành lúc lưu (finalizeDraft keepFileIds), giống file sẵn có.
+    if (upload.status === 'done' && upload.fileId) {
+      if (!await confirm(`Xoá file "${upload.fileName || upload.fileId}" khỏi hồ sơ này?`)) return
+      fileRemovedRef.current = true
     }
     setEagerUploads(prev => prev.filter(u => u.id !== uploadId))
   }
 
   async function removeExistingFile(fileId, fileName) {
     if (!await confirm(`Xoá file "${fileName || fileId}" khỏi hồ sơ này?`)) return
+    fileRemovedRef.current = true
     setExistingFiles(prev => prev.filter(f => f.fileId !== fileId))
   }
 
@@ -478,49 +534,63 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     document.getElementById('_docModalForm')?.requestSubmit()
   }
 
-  function _hasFormChanges() {
-    // Check if any field was filled in beyond initial empty state
-    if (isDraftEdit) {
-      // Compare against doc values
-      const fields = ['Tên hồ sơ', 'Danh mục', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ghi chú', 'Nơi lưu hồ sơ cứng']
-      for (const f of fields) {
-        if (String(form[f] || '') !== String(doc[f] || '')) return true
-      }
-      if (phuTrach !== initialPhuTrach) return true
-      if (eagerUploads.some(u => u.status === 'done')) return true
-      return false
+  // Có thay đổi field CHƯA lưu không? So MỌI field (+ phụ trách/phối hợp/người xem)
+  // với snapshot ban đầu. Thao tác tệp (upload/xoá) đã tự lưu server nên KHÔNG tính.
+  // Chỉ áp cho tạo mới / sửa nháp (non-draft edit lưu qua "Cập nhật", không lưu nháp).
+  function _hasUnsavedFieldChanges() {
+    if (!requireFullForFinalize) return false
+    const init = initialFormRef.current
+    const keys = new Set([...Object.keys(init), ...Object.keys(form)])
+    for (const k of keys) {
+      if (String(form[k] == null ? '' : form[k]) !== String(init[k] == null ? '' : init[k])) return true
     }
-    // Create mode: any field filled or files uploaded
-    return !!(form['Tên hồ sơ'] || form['Số hồ sơ'] || form['Ghi chú'] || form['Dự án (Phòng ban)'] || form['Nhà cung cấp (Nơi ban hành)'] || phuTrach || eagerUploads.some(u => u.status === 'done'))
+    if (phuTrach !== initialPhuTrach) return true
+    if (JSON.stringify(collaborators) !== JSON.stringify(initialCollaborators)) return true
+    if (JSON.stringify(viewers) !== JSON.stringify(initialViewersRef.current)) return true
+    // Gỡ file (sẵn có hoặc vừa upload) — chưa persist tới khi lưu → là thay đổi
+    if (fileRemovedRef.current) return true
+    return false
+  }
+
+  // Lưu hồ sơ hiện tại ở trạng thái Nháp. Đã có draft (đã upload tệp) → finalizeDraft;
+  // chưa có draft → createDraft từ form (cần ít nhất Tên hồ sơ hoặc Danh mục).
+  async function handleSaveDraft() {
+    if (!draftId && !form['Tên hồ sơ'] && !form['Danh mục']) {
+      setError('Cần ít nhất Tên hồ sơ hoặc Danh mục để lưu nháp')
+      return
+    }
+    setUploading(true)
+    try {
+      const saveForm = {
+        ...form,
+        'Tình trạng': 'Nháp',
+        'Phụ trách': phuTrach || '',
+        'Người phối hợp': collaborators.length ? collaborators : [],
+        'Người được xem': viewers.length ? JSON.stringify(viewers) : '',
+      }
+      const keepFileIds = existingFiles.map(f => f.fileId).concat(
+        eagerUploads.filter(u => u.status === 'done' && u.fileId).map(u => u.fileId)
+      )
+      const result = draftId
+        ? await gasCall('api_finalizeDraft', token, draftId, saveForm, null, keepFileIds)
+        : await gasCall('api_createDraft', token, saveForm)
+      showToast('Đã lưu nháp', 'success')
+      onSaved(result.data)
+    } catch (err) {
+      setError('Lỗi lưu nháp: ' + err.message)
+    } finally {
+      setUploading(false)
+    }
   }
 
   async function handleCloseX() {
-    if (!draftId) { onClose(); return }
-
-    if (_hasFormChanges() && await confirm('Lưu thông tin vừa thay đổi vào hồ sơ nháp?')) {
-      setUploading(true)
-      try {
-        const saveForm = {
-          ...form,
-          'Tình trạng': 'Nháp',
-          'Phụ trách': phuTrach || '',
-          'Người phối hợp': collaborators.length ? collaborators : [],
-          'Người được xem': viewers.length ? JSON.stringify(viewers) : '',
-        }
-        const result = await gasCall('api_finalizeDraft', token, draftId, saveForm, null)
-        showToast('Đã lưu nháp', 'success')
-        onSaved(result.data)
-      } catch (err) {
-        showToast('Lỗi lưu nháp: ' + err.message, 'error')
-        onClose()
-      } finally {
-        setUploading(false)
-      }
+    if (_hasUnsavedFieldChanges() && await confirm('Lưu thông tin vừa thay đổi vào hồ sơ nháp?')) {
+      await handleSaveDraft()
       return
     }
 
-    // No changes, or chose "Huỷ": the eager-created draft already exists on the
-    // server — surface it in the list instead of leaving it orphaned.
+    // Không có field nào chưa lưu (hoặc chọn "Huỷ"): đóng. Nếu đã có draft do
+    // upload thì surface ra danh sách thay vì để mồ côi.
     if (draftDoc) onSaved(draftDoc)
     else onClose()
   }
@@ -598,7 +668,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         showToast(updated?.emailError ? 'Đã cập nhật hồ sơ (gửi email thất bại)' : 'Đã cập nhật hồ sơ', updated?.emailError ? 'warning' : 'success')
         onSaved(updated)
       } else if (draftId) {
-        const result = await gasCall('api_finalizeDraft', token, draftId, submitForm, notifyTarget)
+        const keepFileIds = existingFiles.map(f => f.fileId).concat(eagerFileInfos.map(f => f.fileId))
+        const result = await gasCall('api_finalizeDraft', token, draftId, submitForm, notifyTarget, keepFileIds)
         showToast(result?.emailError ? 'Đã thêm hồ sơ (gửi email thất bại)' : 'Đã thêm hồ sơ', result?.emailError ? 'warning' : 'success')
         onSaved(result.data)
       } else {
@@ -807,6 +878,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                         <span className="material-symbols-outlined" style={{ fontSize: 13 }}>attach_file</span>
                         <span className="max-w-[120px] truncate">{ef.fileName || ef.fileId}</span>
                         <button type="button" onClick={() => removeExistingFile(ef.fileId, ef.fileName)}
+                          data-testid="existing-file-remove"
                           className="ml-0.5 hover:text-error transition-colors">
                           <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
                         </button>
@@ -836,6 +908,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                         ) : null}
                         {u.status !== 'uploading' && (
                           <button type="button" onClick={() => removeEagerUpload(u.id)}
+                            data-testid="eager-file-remove"
                             className="ml-0.5 hover:text-error transition-colors">
                             <span className="material-symbols-outlined" style={{ fontSize: 13 }}>close</span>
                           </button>
@@ -1026,6 +1099,18 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
               className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium disabled:opacity-40 disabled:pointer-events-none">
               Hủy
             </button>
+            {requireFullForFinalize && (() => {
+              const canSaveDraft = !!draftId || !!form['Tên hồ sơ'] || !!form['Danh mục']
+              return (
+              <button type="button" onClick={handleSaveDraft}
+                disabled={uploading || hasUploading || !canSaveDraft}
+                title={!canSaveDraft ? 'Cần ít nhất Tên hồ sơ hoặc Danh mục để lưu nháp' : undefined}
+                className="flex items-center gap-2 px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium disabled:opacity-40 disabled:pointer-events-none">
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>save</span>
+                Lưu nháp
+              </button>
+              )
+            })()}
             {(!isEdit && (isAdminRole || isVanThu || isNvTpCreate)) || isVanThuOwnDoc || isDraftEdit || (isTuChoiKetQuaDoc && isPhuTrachOfDoc) ? (
               <>
                 {!isTuChoiDoc && !isTuChoiKetQuaDoc && (

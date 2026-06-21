@@ -680,6 +680,48 @@ describe('finalizeDraft', () => {
     const docs = getSheetData(SHEETS.HO_SO)
     expect(String(docs[0]['Danh mục'])).toBe('2')
   })
+
+  test('keepFileIds=[] gỡ hết file: cột Tệp đính kèm rỗng', () => {
+    finalizeDraft(directorToken, draftId, { 'Tên hồ sơ': 'X', 'Danh mục': 1 }, null, [])
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm']).toBeFalsy()
+  })
+
+  test('keepFileIds giữ file đang có: cột không đổi', () => {
+    invalidateSheetCache(SHEETS.HO_SO)
+    const fileId = JSON.parse(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm'])[0].fileId
+    finalizeDraft(directorToken, draftId, { 'Tên hồ sơ': 'X', 'Danh mục': 1 }, null, [fileId])
+    invalidateSheetCache(SHEETS.HO_SO)
+    const after = JSON.parse(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm'])
+    expect(after.map(f => f.fileId)).toEqual([fileId])
+  })
+
+  test('không gửi keepFileIds: file giữ nguyên (tương thích cũ)', () => {
+    finalizeDraft(directorToken, draftId, { 'Tên hồ sơ': 'X', 'Danh mục': 1 }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm']).toBeTruthy()
+  })
+})
+
+describe('createDraft', () => {
+  test('tạo hàng Nháp từ Tên hồ sơ (không tệp)', () => {
+    const result = createDraft(directorToken, { 'Tên hồ sơ': 'Nháp dở' })
+    expect(result.data['Tình trạng']).toBe('Nháp')
+    expect(result.data['Tên hồ sơ']).toBe('Nháp dở')
+    expect(result.data['Tệp đính kèm']).toBeFalsy()
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)).toHaveLength(1)
+  })
+
+  test('tạo hàng Nháp từ Danh mục (không Tên, không tệp)', () => {
+    const result = createDraft(directorToken, { 'Danh mục': 1 })
+    expect(result.data['Tình trạng']).toBe('Nháp')
+    expect(String(result.data['Danh mục'])).toBe('1')
+  })
+
+  test('ném lỗi khi thiếu cả Tên hồ sơ lẫn Danh mục', () => {
+    expect(() => createDraft(directorToken, { 'Ghi chú': 'x' })).toThrow('Tên hồ sơ hoặc Danh mục')
+  })
 })
 
 describe('cancelDraft', () => {

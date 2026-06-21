@@ -1084,7 +1084,7 @@ function finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, c
   return _attachFileToDraft(session, fileInfo, categoryId, draftId)
 }
 
-function finalizeDraft(token, draftId, formData, notifyTarget) {
+function finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) {
   var session = requireAuth(token)
 
   var docs = getSheetData(SHEETS.HO_SO)
@@ -1119,15 +1119,29 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
   // Always update Danh mục if provided
   if (formData['Danh mục']) updates['Danh mục'] = formData['Danh mục']
 
-  // Move files if category changed
+  // Xử lý gỡ file: nếu client gửi keepFileIds, trash file bị gỡ (nháp → được trash)
+  // và cập nhật cột Tệp đính kèm về phần giữ lại. Không gửi → giữ nguyên (tương thích cũ).
+  var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
+  var keptFiles = existingInfos
+  if (Array.isArray(keepFileIds)) {
+    existingInfos.forEach(function(ef) {
+      if (ef.fileId && keepFileIds.indexOf(ef.fileId) === -1 && _shouldTrashFile(ef, draft['Tình trạng'])) {
+        deleteFile(ef.fileId)
+      }
+    })
+    keptFiles = existingInfos.filter(function(ef) { return keepFileIds.indexOf(ef.fileId) !== -1 })
+    updates['Tệp đính kèm'] = keptFiles.length > 0 ? JSON.stringify(keptFiles) : ''
+    updates['Tên file'] = keptFiles.map(function(f) { return f.fileName }).join(', ')
+  }
+
+  // Move kept files if category changed
   var oldCatId = String(draft['Danh mục'] || '')
   var newCatId = String(updates['Danh mục'] || oldCatId)
   if (oldCatId !== newCatId && oldCatId !== '') {
-    var existingInfos = _parseFileInfos(draft['Tệp đính kèm'])
     var newCatPath = _resolveCategoryPath(newCatId)
-    Logger.log('[finalizeDraft] moving ' + existingInfos.length + ' files from cat ' + oldCatId + ' to ' + newCatId)
+    Logger.log('[finalizeDraft] moving ' + keptFiles.length + ' files from cat ' + oldCatId + ' to ' + newCatId)
     // Fail-loud: move lỗi → ném trước khi ghi row, không hoàn tất nháp "nửa vời".
-    existingInfos.forEach(function(f) {
+    keptFiles.forEach(function(f) {
       moveFile(f.fileId, newCatPath)
     })
   }
@@ -1161,6 +1175,39 @@ function finalizeDraft(token, draftId, formData, notifyTarget) {
   }
 
   return { data: updated, emailError: emailError }
+}
+
+// Tạo hàng Nháp từ form (không tệp) — cho phép "Lưu nháp" trước khi upload.
+// Cần ít nhất Tên hồ sơ hoặc Danh mục để tránh hàng rỗng vô nghĩa.
+function createDraft(token, formData) {
+  var session = requireAuth(token)
+  _checkCreatePermission(session)
+  if (!formData['Tên hồ sơ'] && !formData['Danh mục']) {
+    throw new Error('Cần ít nhất Tên hồ sơ hoặc Danh mục để lưu nháp')
+  }
+
+  var record = {
+    'Tên hồ sơ': formData['Tên hồ sơ'] || '',
+    'Danh mục': formData['Danh mục'] || '',
+    'Số hồ sơ': formData['Số hồ sơ'] || '',
+    'Dự án (Phòng ban)': String(formData['Dự án (Phòng ban)'] || '').trim(),
+    'Nhà cung cấp (Nơi ban hành)': String(formData['Nhà cung cấp (Nơi ban hành)'] || '').trim(),
+    'Ngày ban hành': formData['Ngày ban hành'] || '',
+    'Ngày kết thúc': formData['Ngày kết thúc'] || '',
+    'Giá trị HĐ': formData['Giá trị HĐ'] || 0,
+    'Tình trạng': 'Nháp',
+    'Ghi chú': formData['Ghi chú'] || '',
+    'Nơi lưu hồ sơ cứng': formData['Nơi lưu hồ sơ cứng'] || '',
+    'Phụ trách': formData['Phụ trách'] ? JSON.stringify([String(formData['Phụ trách'])]) : '',
+    'Người phối hợp': _buildAssignees(formData['Người phối hợp'], null),
+    'Khẩn': formData['Khẩn'] === true || formData['Khẩn'] === 'TRUE' ? 'TRUE' : '',
+    'Người tạo': session.username,
+    'Người cập nhật': session.username,
+    'Ngày cập nhật': new Date().toISOString(),
+  }
+  var added = addRow(SHEETS.HO_SO, record)
+  invalidateSheetCache(SHEETS.HO_SO)
+  return { data: added }
 }
 
 function cancelDraft(token, draftId) {

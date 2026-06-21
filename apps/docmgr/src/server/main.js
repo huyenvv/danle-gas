@@ -431,8 +431,12 @@ function api_linkDriveFiles(token, fileIds, categoryId, draftId, docId) {
   return _wrap(function() { return linkDriveFiles(token, fileIds, categoryId, draftId, docId) })
 }
 
-function api_finalizeDraft(token, draftId, formData, notifyTarget) {
-  return _wrap(function() { return finalizeDraft(token, draftId, formData, notifyTarget) })
+function api_finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) {
+  return _wrap(function() { return finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) })
+}
+
+function api_createDraft(token, formData) {
+  return _wrap(function() { return createDraft(token, formData) })
 }
 
 function api_cancelDraft(token, draftId) {

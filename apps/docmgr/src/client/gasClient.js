@@ -622,10 +622,26 @@ async function mockCall(fn, ...args) {
     case 'api_finalizeDraft': {
       const draftId = args[1]
       const formData = args[2] || {}
+      const keepFileIds = args[4]
       const idx = _mockData.docs.findIndex(d => String(d.ID) === String(draftId))
       if (idx === -1) throw new Error('Không tìm thấy hồ sơ nháp')
       Object.assign(_mockData.docs[idx], formData, { 'Tình trạng': formData['Tình trạng'] || 'Chờ duyệt', 'Ngày cập nhật': new Date().toISOString() })
+      if (Array.isArray(keepFileIds)) {
+        try {
+          const cur = _mockData.docs[idx]['Tệp đính kèm']
+          const arr = (typeof cur === 'string' && cur.charAt(0) === '[') ? JSON.parse(cur) : []
+          const kept = arr.filter(f => keepFileIds.includes(f.fileId))
+          _mockData.docs[idx]['Tệp đính kèm'] = kept.length ? JSON.stringify(kept) : ''
+        } catch (_) { /* ignore */ }
+      }
       return { data: { ..._mockData.docs[idx] } }
+    }
+    case 'api_createDraft': {
+      const formData = args[1] || {}
+      if (!formData['Tên hồ sơ'] && !formData['Danh mục']) throw new Error('Cần ít nhất Tên hồ sơ hoặc Danh mục để lưu nháp')
+      const newDoc = { ID: String(Date.now()), ...formData, 'Tình trạng': 'Nháp', 'Ngày cập nhật': new Date().toISOString() }
+      _mockData.docs.push(newDoc)
+      return { data: { ...newDoc } }
     }
     case 'api_cancelDraft': {
       const draftId = args[1]
