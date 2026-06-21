@@ -45,6 +45,11 @@
 - [X] T026 Run build: `npm run build:docmgr` — succeeds
 - [X] T027 Dev server smoke test: `npm run dev:docmgr` — verify eager upload flow in browser console
 
+## Phase 7: Follow-up — chặn finalize khi thiếu thông tin (FR-013)
+
+- [X] T028 [US4] Thêm `hasAttachment` + `requireFullForFinalize` + `MISSING_ATTACHMENT_MSG`; chặn finalize (Lưu tài liệu / Trình duyệt / Phát hành + nút submit mặc định) khi thiếu Tên hồ sơ / Danh mục / tệp đính kèm; cùng kiểm tra trong `handleSubmit` in `apps/docmgr/src/client/components/DocumentModal.jsx`
+- [X] T029 Cập nhật/bổ sung test: tạo mới có tệp → `api_finalizeDraft`; thiếu tệp → chặn, không gọi API in `apps/docmgr/src/client/__tests__/DocumentModal.test.jsx`
+
 ---
 
 ## Dependencies & Execution Order

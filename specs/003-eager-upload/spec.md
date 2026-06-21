@@ -67,6 +67,7 @@ Các nút Lưu/Trình duyệt/Phát hành bị disable khi còn file đang uploa
 
 1. **Given** form đang có file status='uploading', **When** user nhìn footer, **Then** tất cả submit buttons disabled.
 2. **Given** tất cả files đã done/error, **When** user nhìn footer, **Then** buttons enabled.
+3. **Given** form tạo mới đủ Tên hồ sơ + Danh mục nhưng CHƯA có tệp đính kèm, **When** user bấm Lưu tài liệu / Trình duyệt / Phát hành, **Then** hiện lỗi "Cần đính kèm ít nhất một tệp…" và KHÔNG gọi API lưu (chỉ được lưu nháp) (FR-013).
 
 ---
 
@@ -94,6 +95,7 @@ Các nút Lưu/Trình duyệt/Phát hành bị disable khi còn file đang uploa
 - **FR-010**: Status 'Nháp' MUST NOT xuất hiện trong dropdown Tình trạng.
 - **FR-011**: Submit buttons MUST disabled khi còn file đang upload.
 - **FR-012**: `updateDocument` MUST nhận `eagerFileInfos` (7th param) — pre-uploaded files không cần base64.
+- **FR-013**: Khi tạo mới (hoặc sửa hồ sơ Nháp), để rời trạng thái Nháp (bấm Lưu tài liệu / Trình duyệt / Phát hành) MUST đủ cả ba: **Tên hồ sơ**, **Danh mục**, và **ít nhất một tệp đính kèm**. Thiếu bất kỳ điều kiện nào → các nút finalize MUST bị chặn (báo lỗi rõ ràng, không gọi API lưu); user **chỉ có thể lưu nháp**. Vì tệp đính kèm tạo row Nháp (FR-003), hồ sơ mới có tệp luôn hoàn tất qua `api_finalizeDraft`.
 
 ### Key Entities
 

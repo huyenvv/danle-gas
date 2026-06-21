@@ -93,6 +93,7 @@ apps/docmgr/src/server/__tests__/documents.test.js — tests for new functions
 
 ### finalizeDraft Validation
 - `Tên hồ sơ` chỉ bắt buộc khi finalize (status ≠ Nháp). Lưu nháp cho phép tên trống → hiện "(Chưa có tên)" trong danh sách.
+- Để finalize (Lưu tài liệu / Trình duyệt / Phát hành) MUST đủ cả: `Tên hồ sơ` + `Danh mục` + ≥1 tệp đính kèm (FR-013). Gác ở client: mỗi nút finalize kiểm tra `requireFullForFinalize && !hasAttachment` (cùng `handleSubmit` làm lưới an toàn cho submit bằng Enter) — thiếu thì báo lỗi, không gọi API; user chỉ lưu nháp. `hasAttachment` = có file cũ (`existingFiles`) hoặc eager-upload `status==='done'`.
 
 ### finalizeDraft Category Move
 - So sánh `oldCatId` vs `newCatId` bằng String, set `updates['Danh mục']` trước khi check.
