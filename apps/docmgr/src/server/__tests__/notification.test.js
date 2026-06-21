@@ -309,6 +309,71 @@ describe('Transition notifications (acceptance gate)', () => {
   })
 })
 
+describe('Phối hợp email notification (nhận việc — feature 010)', () => {
+  function setupPhoiHop() {
+    setupSSOParent({ extraUsers: [
+      [3, 'phutrach', 'pt@test.com', 'PT', 'Active', '', ''],
+      [4, 'phoihopA', 'a@test.com', 'PH A', 'Active', '', ''],
+      [5, 'phoihopB', 'b@test.com', 'PH B', 'Active', '', ''],
+    ] })
+    seedUser(3, 'phutrach', 'pt@test.com', 'Nhân viên')
+    seedUser(4, 'phoihopA', 'a@test.com', 'Nhân viên')
+    seedUser(5, 'phoihopB', 'b@test.com', 'Nhân viên')
+    return createSession(3, 'phutrach', 'pt@test.com', 'Nhân viên')
+  }
+  // Tạo hồ sơ ở Chờ xử lý qua đúng luồng: VT tạo → GĐ giao việc (PT=3, PH=[phoihopA])
+  function seedDocChoXuLy() {
+    createDocument(vanthuToken, { 'Tên hồ sơ': 'HĐ Phối hợp', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 3, 'Người phối hợp': ['phoihopA'], 'Nội dung': 'GĐ giao' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    GmailApp._sent = []
+  }
+
+  test('người phối hợp mới nhận email phoiHop (TO), người cũ không nhận lại', () => {
+    const ptToken = setupPhoiHop()
+    seedDocChoXuLy()
+
+    const r = transitionDocument(ptToken, 1, 'nhanViec', { 'Người phối hợp': ['phoihopA', 'phoihopB'], 'Nội dung': 'PT giao phối hợp' })
+
+    expect(r.data['Tình trạng']).toBe('Đang xử lý')
+    expect(r.data['Nội dung phối hợp']).toBe('PT giao phối hợp')
+    expect(r.data['Nội dung giao việc']).toBe('GĐ giao')   // không bị đè
+    expect(GmailApp._sent).toHaveLength(1)
+    expect(GmailApp._sent[0].to).toBe('b@test.com')         // PH mới là người nhận chính (TO)
+    expect(GmailApp._sent[0].subject).toContain('[Phối hợp]')
+    expect(GmailApp._sent[0].body).toContain('PT giao phối hợp')
+    // {tênNgườiGửi} = người thực hiện nhận việc = người Phụ trách (chủ trì), không phải GĐ
+    expect(GmailApp._sent[0].body).toContain('phutrach')
+    var daDoc = getSheetData(SHEETS.DA_DOC)
+    expect(daDoc.some(r2 => String(r2['UserID']) === '5' && String(r2['DocID']) === '1')).toBe(true)
+  })
+
+  test('không bổ sung người phối hợp → không gửi email phối hợp', () => {
+    const ptToken = setupPhoiHop()
+    seedDocChoXuLy()
+
+    const r = transitionDocument(ptToken, 1, 'nhanViec', { 'Người phối hợp': ['phoihopA'] })
+
+    expect(r.data['Tình trạng']).toBe('Đang xử lý')
+    expect(GmailApp._sent).toHaveLength(0)
+  })
+
+  test('gửi email lỗi → nhận việc vẫn thành công, emailError trả về', () => {
+    const ptToken = setupPhoiHop()
+    seedDocChoXuLy()
+    const orig = GmailApp.sendEmail.bind(GmailApp)
+    GmailApp.sendEmail = () => { throw new Error('Quota exceeded') }
+
+    const r = transitionDocument(ptToken, 1, 'nhanViec', { 'Người phối hợp': ['phoihopA', 'phoihopB'], 'Nội dung': 'PT giao phối hợp' })
+
+    GmailApp.sendEmail = orig
+    expect(r.data['Tình trạng']).toBe('Đang xử lý')
+    expect(r.emailError).toContain('Quota exceeded')
+    expect(r.data['Người phối hợp']).toBe(JSON.stringify(['phoihopA', 'phoihopB']))
+  })
+})
+
 describe('transitionDocument succeeds when email throws', () => {
   function breakEmail() {
     const orig = GmailApp.sendEmail.bind(GmailApp)

@@ -182,6 +182,7 @@ describe('transitionDocument', () => {
     const result = transitionDocument(directorToken, 1, 'giaoViec', {
       'Phụ trách': 'staff1',
       'Người phối hợp': ['staff2'],
+      'Nội dung': 'Phối hợp xử lý',
     })
 
     expect(result.data['Tình trạng']).toBe('Chờ xử lý')
@@ -228,6 +229,80 @@ describe('transitionDocument', () => {
 
     expect(result.data['Tình trạng']).toBe('Chờ xác nhận HT')
     expect(result.data['Nội dung giao việc']).toBe('Giữ nguyên nội dung này')
+  })
+})
+
+describe('transitionDocument — giao việc/phối hợp (feature 010)', () => {
+  function seedStaff() {
+    seedUser(3, 'staff1', 's1@test.com', 'Nhân viên')
+    return createSession(3, 'staff1', 's1@test.com', 'Nhân viên')
+  }
+  function seedDocChoDuyet(name) {
+    createDocument(directorToken, { 'Tên hồ sơ': name, 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+  }
+
+  // US2 / D1 — bắt buộc nội dung giao việc khi có người phối hợp
+  test('giaoViec có người phối hợp nhưng nội dung trống → chặn', () => {
+    seedDocChoDuyet('D1a')
+    expect(() => transitionDocument(directorToken, 1, 'giaoViec', {
+      'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'],
+    })).toThrow('nội dung giao việc')
+  })
+
+  test('giaoViec có người phối hợp + nội dung → OK', () => {
+    seedDocChoDuyet('D1b')
+    const r = transitionDocument(directorToken, 1, 'giaoViec', {
+      'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'], 'Nội dung': 'Làm gấp',
+    })
+    expect(r.data['Nội dung giao việc']).toBe('Làm gấp')
+  })
+
+  test('giaoViec không người phối hợp + nội dung trống → OK', () => {
+    seedDocChoDuyet('D1c')
+    const r = transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1' })
+    expect(r.data['Tình trạng']).toBe('Chờ xử lý')
+  })
+
+  // US1 / D2 — người chủ trì chỉ được thêm, không xoá người phối hợp đã có
+  test('nhanViec: người chủ trì không thể bỏ người phối hợp do GĐ thêm', () => {
+    const staffToken = seedStaff()
+    seedDocChoDuyet('D2a')
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'], 'Nội dung': 'GĐ giao' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => transitionDocument(staffToken, 1, 'nhanViec', { 'Người phối hợp': [] }))
+      .toThrow('Không thể xoá người phối hợp đã có')
+  })
+
+  test('admin nhanViec được bỏ người phối hợp (bypass ràng buộc)', () => {
+    seedUser(9, 'qtv', 'q@test.com', 'Quản trị viên')
+    const adminToken = createSession(9, 'qtv', 'q@test.com', 'Quản trị viên')
+    seedDocChoDuyet('D2b')
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'], 'Nội dung': 'GĐ giao' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const r = transitionDocument(adminToken, 1, 'nhanViec', { 'Người phối hợp': [] })
+    expect(r.data['Tình trạng']).toBe('Đang xử lý')
+  })
+
+  // US3 / D3b — bổ sung người phối hợp cần nội dung; lưu cột riêng
+  test('nhanViec: bổ sung người phối hợp nhưng nội dung trống → chặn', () => {
+    const staffToken = seedStaff()
+    seedDocChoDuyet('D3a')
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'], 'Nội dung': 'GĐ giao' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => transitionDocument(staffToken, 1, 'nhanViec', { 'Người phối hợp': ['staff2', 'staff3'] }))
+      .toThrow('nội dung gửi tới người phối hợp')
+  })
+
+  test('nhanViec: bổ sung + nội dung → lưu Nội dung phối hợp, không đụng Nội dung giao việc', () => {
+    const staffToken = seedStaff()
+    seedDocChoDuyet('D3b')
+    transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1', 'Người phối hợp': ['staff2'], 'Nội dung': 'GĐ giao' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    const r = transitionDocument(staffToken, 1, 'nhanViec', { 'Người phối hợp': ['staff2', 'staff3'], 'Nội dung': 'PT giao phối hợp' })
+    expect(r.data['Tình trạng']).toBe('Đang xử lý')
+    expect(r.data['Nội dung phối hợp']).toBe('PT giao phối hợp')
+    expect(r.data['Nội dung giao việc']).toBe('GĐ giao')
   })
 })
 

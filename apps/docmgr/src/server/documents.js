@@ -44,6 +44,10 @@ var _DEFAULT_MAIL_TEMPLATES = {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
   },
+  phoiHop: {
+    subject: '{hoảTốc}[Phối hợp] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\nBạn được {tênNgườiGửi} giao phối hợp xử lý công việc hồ sơ "{tênHồSơ}".\n\nNội dung: {nộiDungPhoiHop}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và phối hợp tại đây:\n{linkHệThống}'
+  },
   phatHanh: {
     subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi: {tênNgườiNhận}\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}" {linkTàiLiệu}\n\nVui lòng đăng nhập hệ thống để xem và phê duyệt tại đây:\n{linkHệThống}'
@@ -225,6 +229,7 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       '{ghiChú}': (typeof doc === 'object') ? (doc['Ghi chú'] || '') : '',
       '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : '',
       '{nộiDungGiaoViec}': (typeof doc === 'object') ? (doc['Nội dung giao việc'] || '') : '',
+      '{nộiDungPhoiHop}': (typeof doc === 'object') ? (doc['Nội dung phối hợp'] || '') : '',
       '{hoảTốc}': (typeof doc === 'object' && (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true)) ? '[HOẢ TỐC] ' : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
@@ -1268,15 +1273,32 @@ function transitionDocument(token, id, action, data, updateData) {
     data = data || {}
     if (!data['Phụ trách']) throw new Error('Phải chọn người phụ trách')
     updates['Phụ trách'] = JSON.stringify([String(data['Phụ trách'])])
+    var _gvPH = (data['Người phối hợp'] !== undefined) ? _buildAssignees(data['Người phối hợp'], null) : (doc['Người phối hợp'] || '')
+    var _gvNoiDung = (data['Nội dung'] || '').trim()
+    // Có ≥1 người phối hợp thì nội dung giao việc bắt buộc (chặn ở server)
+    if (_parseAssignees(_gvPH).length >= 1 && !_gvNoiDung) throw new Error('Phải nhập nội dung giao việc khi có người phối hợp')
     if (data['Người phối hợp'] !== undefined) {
       updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
     }
-    updates['Nội dung giao việc'] = data['Nội dung'] || ''
+    updates['Nội dung giao việc'] = _gvNoiDung
   }
 
-  // Phụ trách can add collaborators when nhanViec
+  // Phụ trách (người chủ trì) nhận việc: CHỈ được thêm người phối hợp, không xoá người đã có
   if (action === 'nhanViec' && data && data['Người phối hợp'] !== undefined) {
-    updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
+    var _nvNewStr = _buildAssignees(data['Người phối hợp'], null)
+    var _nvOld = _parseAssignees(doc['Người phối hợp'])
+    var _nvNew = _parseAssignees(_nvNewStr)
+    if (!isAdmin) {
+      for (var _nvI = 0; _nvI < _nvOld.length; _nvI++) {
+        if (_nvNew.indexOf(_nvOld[_nvI]) === -1) throw new Error('Không thể xoá người phối hợp đã có')
+      }
+    }
+    var _nvAdded = _nvNew.filter(function(u) { return _nvOld.indexOf(u) === -1 })
+    var _nvNoiDung = (data['Nội dung'] || '').trim()
+    // Có bổ sung người phối hợp mới thì nội dung gửi họ bắt buộc
+    if (_nvAdded.length >= 1 && !_nvNoiDung) throw new Error('Phải nhập nội dung gửi tới người phối hợp')
+    updates['Người phối hợp'] = _nvNewStr
+    if (_nvAdded.length >= 1) updates['Nội dung phối hợp'] = _nvNoiDung
   }
 
   // tuChoi / tuChoiKetQua / ycPhatHanh: require reason
@@ -1353,12 +1375,19 @@ function transitionDocument(token, id, action, data, updateData) {
       } catch(e) { Logger.log('transitionDocument trinhDuyetLai email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'nhanViec' && updates['Người phối hợp']) {
-    // nhanViec: chỉ đánh dấu unread cho người phối hợp mới, không gửi email
+    // nhanViec: đánh dấu unread + gửi email template phối hợp cho người phối hợp MỚI (họ là người nhận chính)
     var oldPhoiHop = _parseAssignees(doc['Người phối hợp'])
     var newPhoiHop = _parseAssignees(updates['Người phối hợp'])
-    var addedUsers = newPhoiHop.filter(function(u) { return oldPhoiHop.indexOf(u) === -1 })
+    var _nvExSelf = function(u) { return String(u) !== String(session.userId) && u !== session.username }
+    var addedUsers = newPhoiHop.filter(function(u) { return oldPhoiHop.indexOf(u) === -1 }).filter(_nvExSelf)
     if (addedUsers.length > 0) {
       _markUnreadForUsers(addedUsers, id)
+      try {
+        for (var _nvK = 0; _nvK < addedUsers.length; _nvK++) {
+          var _nvRcpt = _getRecipientsByUsernames([addedUsers[_nvK]])
+          _sendNotificationEmails(_nvRcpt, updated, 'phoiHop', session)
+        }
+      } catch(e) { Logger.log('transitionDocument nhanViec phoiHop email error: ' + e.message); emailError = e.message }
     }
   }
 

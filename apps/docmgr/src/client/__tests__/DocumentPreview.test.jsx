@@ -338,8 +338,8 @@ describe('<DocumentPreview />', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /giao việc/i })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: /giao việc/i }))
 
-    // The new optional content field is present
-    const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (tùy chọn)')
+    // The content field is present
+    const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)')
     fireEvent.change(noiDung, { target: { value: 'Ưu tiên xử lý trong tuần' } })
 
     // Pick a Phụ trách (single-select picker shows the '-- Chọn --' placeholder when empty)

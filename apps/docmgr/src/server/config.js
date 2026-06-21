@@ -22,8 +22,8 @@ var _initDone = false
 function ensureInitialized() {
   if (_initDone) return
   var props = PropertiesService.getScriptProperties()
-  if (props.getProperty('SCHEMA_V') === '11') {
-    // File đã ở schema 11 (revise-1) → vẫn cần backfill snapshot 1 lần (FR-013, idempotent qua cờ riêng).
+  if (props.getProperty('SCHEMA_V') === '12') {
+    // File đã ở schema 12 → vẫn cần backfill snapshot 1 lần (FR-013, idempotent qua cờ riêng).
     try { _backfillDocViewers() } catch (e) { Logger.log('backfillDocViewers on init error: ' + e.message) }
     _initDone = true; return
   }
@@ -33,7 +33,7 @@ function ensureInitialized() {
   invalidateSheetCache(SHEETS.HO_SO)
   // Lưu version NGAY sau bước nhẹ, TRƯỚC việc nặng — nếu set sau rebuildFileIndex mà
   // request hết giờ thì cờ không kịp lưu → mỗi lần doGet lại chạy lại → timeout vĩnh viễn.
-  props.setProperty('SCHEMA_V', '11')
+  props.setProperty('SCHEMA_V', '12')
   // Backfill _FileIndex chỉ cần cho file CHƯA từng khởi tạo. File đã có schema cũ thì
   // index đã dựng từ trước → KHÔNG chạy lại (rebuild quét toàn bộ hồ sơ, rất nặng).
   if (!prevSchema) {
@@ -51,7 +51,7 @@ function _ensureAllTabsExist(ss) {
     { name: SHEETS.NHOM,          headers: ['ID', 'Tên nhóm', 'Mô tả', 'Thành viên'] },
     { name: SHEETS.DU_AN,         headers: ['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ', 'Điện thoại'] },
     { name: SHEETS.NHA_CUNG_CAP,  headers: ['ID', 'Tên NCC viết tắt', 'Tên NCC đầy đủ', 'Địa chỉ', 'Điện thoại'] },
-    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc', 'Tệp đính kèm', 'Tên file', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ', 'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn', 'Nội dung giao việc', 'Người được xem'] },
+    { name: SHEETS.HO_SO,         headers: ['ID', 'Tên hồ sơ', 'Danh mục', 'Ngày ban hành', 'Ngày kết thúc', 'Tệp đính kèm', 'Tên file', 'Số hồ sơ', 'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Giá trị HĐ', 'Tình trạng', 'Phụ trách', 'Người phối hợp', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Ngày cập nhật', 'Người tạo', 'Người cập nhật', 'Lịch sử phát hành', 'Lý do từ chối', 'Khẩn', 'Nội dung giao việc', 'Nội dung phối hợp', 'Người được xem'] },
     { name: SHEETS.NHAT_KY,       headers: ['ID', 'Thời gian', 'Người dùng', 'Email', 'Hành động', 'Loại', 'Đối tượng', 'Chi tiết'] },
     { name: SHEETS.DA_DOC,        headers: ['ID', 'UserID', 'DocID', 'Thời gian'] },
     { name: SHEETS.COMMENTS,      headers: ['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian'] },

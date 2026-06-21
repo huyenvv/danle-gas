@@ -235,8 +235,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   function openGiaoViec(mode) {
     if (mode === 'nhanViec') {
-      // Phụ trách nhận việc: chọn phối hợp rồi chuyển trạng thái
-      setGiaoViecForm({ phoiHop: parsePhuTrach(doc['Người phối hợp']), mode: 'nhanViec' })
+      // Phụ trách nhận việc: chỉ được THÊM người phối hợp (không bỏ người do GĐ thêm)
+      const existing = parsePhuTrach(doc['Người phối hợp'])
+      setGiaoViecForm({ phoiHop: existing, phoiHopLocked: existing, noiDung: '', mode: 'nhanViec' })
     } else {
       // Giám đốc/Admin giao việc
       setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), noiDung: '', mode: 'giaoViec' })
@@ -245,13 +246,22 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   async function submitGiaoViec() {
     if (giaoViecForm.mode === 'nhanViec') {
-      // Nhận việc + cập nhật phối hợp
+      // Nhận việc + bổ sung phối hợp; nếu có người mới thì nội dung bắt buộc
+      const locked = giaoViecForm.phoiHopLocked || []
+      const added = (giaoViecForm.phoiHop || []).filter(u => !locked.includes(u))
+      if (added.length >= 1 && !(giaoViecForm.noiDung || '').trim()) {
+        showToast('Phải nhập nội dung gửi tới người phối hợp', 'error'); return
+      }
       await handleTransition('nhanViec', {
         'Người phối hợp': giaoViecForm.phoiHop,
+        'Nội dung': (giaoViecForm.noiDung || '').trim(),
       })
       return
     }
     if (!giaoViecForm.phuTrach) { showToast('Phải chọn người phụ trách', 'error'); return }
+    if ((giaoViecForm.phoiHop || []).length >= 1 && !(giaoViecForm.noiDung || '').trim()) {
+      showToast('Phải nhập nội dung giao việc khi có người phối hợp', 'error'); return
+    }
     await handleTransition('giaoViec', {
       'Phụ trách': giaoViecForm.phuTrach,
       'Người phối hợp': giaoViecForm.phoiHop,
@@ -498,6 +508,10 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
               {giaoViecForm && (() => {
                 const isNhanViec = giaoViecForm.mode === 'nhanViec'
                 const accent = isNhanViec ? 'blue-600' : 'primary'
+                const lockedPH = giaoViecForm.phoiHopLocked || []
+                const hasAddedPH = (giaoViecForm.phoiHop || []).some(u => !lockedPH.includes(u))
+                // Hiện ô nhập nội dung: luôn ở giao việc; ở nhận việc chỉ khi có bổ sung người phối hợp mới
+                const showNoiDung = !isNhanViec || hasAddedPH
                 return (
                 <div className={`${isNhanViec ? 'bg-blue-50 border-blue-200' : 'bg-primary/5 border-primary/20'} border rounded-2xl p-4 space-y-3 mt-2`}>
                   <p className={`text-xs font-semibold ${isNhanViec ? 'text-blue-600' : 'text-primary'} uppercase tracking-wide`}>
@@ -522,20 +536,28 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       phongBan={lookups.phongBan || []}
                       assignments={lookups.assignments || []}
                       value={giaoViecForm.phoiHop}
-                      onChange={v => setGiaoViecForm(f => ({ ...f, phoiHop: v }))}
+                      onChange={v => setGiaoViecForm(f => {
+                        // Nhận việc: không cho bỏ người phối hợp đã có (luôn giữ phoiHopLocked)
+                        const next = (f.mode === 'nhanViec' && f.phoiHopLocked)
+                          ? Array.from(new Set([...f.phoiHopLocked, ...v]))
+                          : v
+                        return { ...f, phoiHop: next }
+                      })}
                       placeholder="+ Thêm..."
                       exclude={giaoViecForm.phuTrach ? [giaoViecForm.phuTrach] : []}
                       excludeGroups={isNhanViec ? ['Ban Giám Đốc', 'Văn thư & Quản trị'] : undefined}
                       multiple
                     />
                   </div>
-                  {!isNhanViec && (
+                  {showNoiDung && (
                   <div>
-                    <label className="text-xs text-on-surface-variant mb-1 block">Nội dung giao việc</label>
+                    <label className="text-xs text-on-surface-variant mb-1 block">
+                      {isNhanViec ? 'Nội dung gửi người phối hợp *' : 'Nội dung giao việc'}
+                    </label>
                     <textarea
                       value={giaoViecForm.noiDung || ''}
                       onChange={e => setGiaoViecForm(f => ({ ...f, noiDung: e.target.value }))}
-                      placeholder="Nhập nội dung giao việc… (tùy chọn)"
+                      placeholder={isNhanViec ? 'Nhập nội dung gửi tới người phối hợp công việc…' : 'Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)'}
                       rows={3}
                       className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-primary/20 focus:border-primary/40 focus:outline-none resize-none"
                     />
@@ -601,6 +623,19 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div>
                     <p className="text-xs font-semibold text-primary mb-1">Nội dung giao việc</p>
                     <p className="text-sm text-on-surface whitespace-pre-wrap">{doc['Nội dung giao việc']}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Nội dung phối hợp banner — do người chủ trì nhập lúc nhận việc, tách riêng */}
+            {doc['Nội dung phối hợp'] && (
+              <div className="mx-4 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                <div className="flex items-start gap-2">
+                  <Icon name="groups" size={16} className="text-blue-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600 mb-1">Nội dung phối hợp</p>
+                    <p className="text-sm text-on-surface whitespace-pre-wrap">{doc['Nội dung phối hợp']}</p>
                   </div>
                 </div>
               </div>

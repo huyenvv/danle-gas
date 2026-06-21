@@ -38,6 +38,17 @@ test('Email tab lists the new sender/recipient role & department variables', () 
   expect(screen.getByText(/\{phòngBanNgườiNhận\}/)).toBeInTheDocument()
 })
 
+test('Email tab có tab "Phối hợp" và biến {nộiDungPhoiHop} (feature 010)', () => {
+  renderWithProviders(
+    <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />
+  )
+  fireEvent.click(screen.getByText('Email thông báo'))
+  // Tab cấu hình email "Phối hợp" xuất hiện (FR-017)
+  expect(screen.getByRole('button', { name: /Phối hợp/ })).toBeInTheDocument()
+  // Biến mới có trong danh sách biến khả dụng
+  expect(screen.getByText(/\{nộiDungPhoiHop\}/)).toBeInTheDocument()
+})
+
 test('save button calls api_setConfig with updated company name', async () => {
   renderWithProviders(
     <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />

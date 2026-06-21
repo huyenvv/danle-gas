@@ -15,6 +15,10 @@ const DEFAULT_TEMPLATES = {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
     body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
   },
+  phoiHop: {
+    subject: '{hoảTốc}[Phối hợp] {tênHồSơ}',
+    body: 'Xin chào {tênNgườiNhận},\n\nBạn được {tênNgườiGửi} giao phối hợp xử lý công việc hồ sơ "{tênHồSơ}".\n\nNội dung: {nộiDungPhoiHop}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và phối hợp tại đây:\n{linkHệThống}',
+  },
   phatHanh: {
     subject: '{hoảTốc}[SBM – Phát hành] {tênHồSơ}',
     body: 'Kính gửi {tênNgườiNhận},\n\n{tênNgườiGửi} đã phát hành văn bản "{tênHồSơ}". {linkTàiLiệu}\n\n{ghiChú}\n\nVui lòng đăng nhập hệ thống để xem tại đây:\n{linkHệThống}',
@@ -46,6 +50,7 @@ const TEMPLATE_VARS = [
   { key: '{ghiChú}', desc: 'Ghi chú của hồ sơ' },
   { key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' },
   { key: '{nộiDungGiaoViec}', desc: 'Nội dung giao việc (chỉ dùng trong email Giao việc)' },
+  { key: '{nộiDungPhoiHop}', desc: 'Nội dung phối hợp (chỉ dùng trong email Phối hợp)' },
   { key: '{hoảTốc}', desc: 'Tiền tố [HOẢ TỐC] nếu hồ sơ đánh dấu Khẩn' },
 ]
 
@@ -290,7 +295,8 @@ export default function SettingsPage({ token, onCompanyNameChange, initialConfig
 
 const MAIL_TABS = [
   { key: 'trinhDuyet', label: 'Trình duyệt', icon: 'send', desc: 'Gửi cho Giám đốc khi có hồ sơ cần duyệt' },
-  { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách và Phối hợp khi được giao việc' },
+  { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách (TO) và Phối hợp (CC) khi Giám đốc giao việc' },
+  { key: 'phoiHop', label: 'Phối hợp', icon: 'groups', desc: 'Gửi cho người phối hợp MỚI (người nhận chính) khi Phụ trách bổ sung lúc nhận việc' },
   { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
   { key: 'tuChoi', label: 'Từ chối', icon: 'cancel', desc: 'Gửi cho Văn thư khi Giám đốc từ chối hồ sơ (kèm lý do)' },
   { key: 'tuChoiKetQua', label: 'Từ chối kết quả', icon: 'unpublished', desc: 'Gửi cho Phụ trách khi Giám đốc từ chối kết quả xử lý (kèm lý do)' },

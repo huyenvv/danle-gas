@@ -121,5 +121,5 @@ npm run build:license      # .js → .gs conversion
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/008-document-permissions/plan.md`
+at `specs/010-giao-viec-phoi-hop/plan.md`
 <!-- SPECKIT END -->
