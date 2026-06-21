@@ -221,6 +221,14 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
 
   const hasUploading = eagerUploads.some(u => u.status === 'uploading')
 
+  // Tạo mới / sửa nháp: phải đủ Tên hồ sơ + Danh mục + ít nhất 1 tệp đính kèm
+  // mới được rời trạng thái Nháp (Lưu tài liệu / Trình duyệt / Phát hành).
+  // Thiếu thông tin → chỉ được lưu nháp.
+  const hasAttachment = existingFiles.length > 0 ||
+    eagerUploads.some(u => u.status === 'done' && u.fileId)
+  const requireFullForFinalize = !isEdit || isDraftEdit
+  const MISSING_ATTACHMENT_MSG = 'Cần đính kèm ít nhất một tệp. Thiếu thông tin chỉ có thể lưu nháp (bấm Hủy để lưu nháp).'
+
   async function handleFileChange(e) {
     const newFiles = Array.from(e.target.files || e.dataTransfer?.files || [])
     if (e.target?.value) e.target.value = ''
@@ -557,6 +565,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     e.preventDefault()
     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
+    if (requireFullForFinalize && !hasAttachment) { setError(MISSING_ATTACHMENT_MSG); return }
     if (dupWarning) { setError('Vui lòng sửa số hồ sơ trùng'); return }
     setError('')
     setUploading(true)
@@ -1022,6 +1031,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 {!isTuChoiDoc && !isTuChoiKetQuaDoc && (
                 <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
+                    if (requireFullForFinalize && !hasAttachment) { setError(MISSING_ATTACHMENT_MSG); return }
                     if (!await confirm('Có chắc chỉ lưu trữ, không gửi thông báo tới Giám đốc?')) return
                     statusOverrideRef.current = 'Hoàn thành'; notifyTargetRef.current = 'none'; flushSync(() => {}); document.getElementById('_docModalForm')?.requestSubmit()
                   }}
@@ -1035,6 +1045,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                   onClick={() => {
                     if (!form['Tên hồ sơ']) { setError('Tên hồ sơ là bắt buộc'); return }
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
+                    if (requireFullForFinalize && !hasAttachment) { setError(MISSING_ATTACHMENT_MSG); return }
                     setShowPublishDialog(true)
                   }}
                   className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-full text-sm font-medium hover:bg-amber-700 disabled:opacity-60 transition-colors shadow-md3-2">
@@ -1045,6 +1056,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 {(isAdminRole || isVanThu) && !isTuChoiDoc && !isTuChoiKetQuaDoc && (
                 <button type="button" disabled={uploading || hasUploading}
                   onClick={async () => {
+                    if (requireFullForFinalize && !hasAttachment) { setError(MISSING_ATTACHMENT_MSG); return }
                     if (!await confirm('Có chắc gửi Trình duyệt tới Giám đốc?')) return
                     notifyTargetRef.current = 'directors'; document.getElementById('_docModalForm')?.requestSubmit()
                   }}

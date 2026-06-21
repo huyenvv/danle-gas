@@ -48,35 +48,54 @@ describe('DocumentModal', () => {
     expect(gasCall).not.toHaveBeenCalled()
   })
 
-  // Test 2: Create — fill Tên hồ sơ + Danh mục → submit → api_createDocument called, onSaved called
-  it('calls api_createDocument and onSaved when form is valid', async () => {
-    const mockDoc = { ID: '99', 'Tên hồ sơ': 'Test Hồ Sơ Mới' }
-    gasCall.mockResolvedValue(mockDoc)
-
-    renderModal()
-
-    // Fill Tên hồ sơ
-    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), {
-      target: { value: 'Test Hồ Sơ Mới' },
+  // Test 2: Create — Tên hồ sơ + Danh mục + tệp đính kèm → lưu → api_finalizeDraft (file ⇒ luôn qua draft)
+  it('uploading a file then saving calls api_finalizeDraft and onSaved', async () => {
+    const finalized = { ID: 'd9', 'Tên hồ sơ': 'Test Hồ Sơ Mới' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd9', fileInfo: { fileId: 'f9', fileName: 'doc.pdf' } })
+      if (fn === 'api_finalizeDraft') return Promise.resolve({ data: finalized })
+      return Promise.resolve({})
     })
 
-    // Select Danh mục (required field)
+    const { container } = renderModal()
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Test Hồ Sơ Mới' } })
     selectDanhMuc('1')
 
-    const submitBtn = screen.getByRole('button', { name: /lưu tài liệu/i })
-    fireEvent.click(submitBtn)
+    const file = new File(['x'], 'doc.pdf', { type: 'application/pdf' })
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [file] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/) // upload settled, draft + done state committed
+
+    fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
 
     await waitFor(() => {
       expect(gasCall).toHaveBeenCalledWith(
-        'api_createDocument',
-        MOCK_TOKEN,
+        'api_finalizeDraft', MOCK_TOKEN, 'd9',
         expect.objectContaining({ 'Tên hồ sơ': 'Test Hồ Sơ Mới' }),
-        expect.any(Array),  // fileInfos
-        null,               // notifyTarget (ref starts as null)
+        null,
       )
     })
+    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(finalized)
+  })
 
-    expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(mockDoc)
+  // Test 2g: Thiếu tệp đính kèm → KHÔNG cho Lưu / Trình duyệt / Phát hành (chỉ lưu nháp)
+  it('blocks Lưu/Trình duyệt/Phát hành when no attachment — only draft allowed', async () => {
+    gasCall.mockResolvedValue({})
+    renderModal({ session: MOCK_ADMIN_SESSION }) // admin thấy cả 3 nút
+
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Hồ sơ chưa có file' } })
+    selectDanhMuc('1')
+
+    fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
+    expect(await screen.findByText(/Cần đính kèm ít nhất một tệp/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /phát hành/i }))
+    fireEvent.click(screen.getByRole('button', { name: /trình duyệt$/i }))
+
+    // Không gọi bất kỳ API lưu nào, không onSaved, không mở dialog phát hành
+    expect(gasCall.mock.calls.some(c => ['api_finalizeDraft', 'api_createDocument', 'api_updateDocument'].includes(c[0]))).toBe(false)
+    expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
   })
 
   // Test 2b: Upload failure (e.g. Drive not configured) surfaces server error as toast
@@ -422,6 +441,7 @@ describe('DocumentModal', () => {
       'Tình trạng': 'Nháp',
       'Người tạo': 'vanthu',
       'Tên hồ sơ': 'Draft Doc',
+      'Tệp đính kèm': 'f1', // draft đã có tệp → đủ điều kiện finalize
     }
     const finalizedDoc = { ...draftDoc, 'Tình trạng': 'Chờ duyệt' }
     gasCall.mockResolvedValue({ data: finalizedDoc })
@@ -524,14 +544,19 @@ describe('DocumentModal', () => {
 
   // Test: handleSubmit create mode — shows warning on GAS transport error (can't verify without doc ID)
   it('shows warning on "Lỗi không xác định" in handleSubmit create mode', async () => {
-    gasCall.mockRejectedValue(new Error('Lỗi không xác định'))
-
-    renderModal()
-
-    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), {
-      target: { value: 'Test Doc' },
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd9', fileInfo: { fileId: 'f9', fileName: 'doc.pdf' } })
+      if (fn === 'api_finalizeDraft') return Promise.reject(new Error('Lỗi không xác định'))
+      return Promise.resolve({})
     })
+
+    const { container } = renderModal()
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Test Doc' } })
     selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'doc.pdf', { type: 'application/pdf' })] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/)
 
     fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
 
@@ -539,8 +564,7 @@ describe('DocumentModal', () => {
       expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(null)
     })
     expect(screen.queryByText('Lỗi không xác định')).not.toBeInTheDocument()
-    const toast = screen.getByRole('alert')
-    expect(toast).toHaveTextContent('Đã lưu hồ sơ — đang cập nhật')
+    expect(await screen.findByText('Đã lưu hồ sơ — đang cập nhật')).toBeInTheDocument()
   })
 
   // Test: handleSubmit edit mode — verifies doc and shows success on GAS transport error
@@ -654,14 +678,19 @@ describe('DocumentModal', () => {
 
   // Test: handleSubmit still shows real errors
   it('shows real API error in handleSubmit', async () => {
-    gasCall.mockRejectedValue(new Error('Bạn không có quyền'))
-
-    renderModal()
-
-    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), {
-      target: { value: 'Test Doc' },
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_uploadFileEager') return Promise.resolve({ draftId: 'd9', fileInfo: { fileId: 'f9', fileName: 'doc.pdf' } })
+      if (fn === 'api_finalizeDraft') return Promise.reject(new Error('Bạn không có quyền'))
+      return Promise.resolve({})
     })
+
+    const { container } = renderModal()
+    fireEvent.change(screen.getByPlaceholderText('Nhập tên hồ sơ...'), { target: { value: 'Test Doc' } })
     selectDanhMuc('1')
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[type="file"]'), { target: { files: [new File(['x'], 'doc.pdf', { type: 'application/pdf' })] } })
+    })
+    await screen.findByText(/Đã tạo hồ sơ nháp/)
 
     fireEvent.click(screen.getByRole('button', { name: /lưu tài liệu/i }))
 
