@@ -133,10 +133,11 @@ function _getAppLink() {
 }
 
 function _buildFileLinks(doc) {
-  if (!doc || !doc['Tệp đính kèm']) return ''
-  var files = []
-  try { files = JSON.parse(doc['Tệp đính kèm']) } catch(e) { return '' }
-  if (!Array.isArray(files) || files.length === 0) return ''
+  if (!doc) return ''
+  // Dùng _parseFileInfos để hỗ trợ cả JSON array LẪN định dạng cũ (fileId chuỗi đơn),
+  // khớp với cách client (parseFileInfos) hiển thị — tránh export rỗng cho hồ sơ cũ.
+  var files = _parseFileInfos(doc['Tệp đính kèm'])
+  if (!files.length) return ''
   return files.map(function(f) {
     return 'https://drive.google.com/file/d/' + f.fileId + '/view'
   }).join('\n')

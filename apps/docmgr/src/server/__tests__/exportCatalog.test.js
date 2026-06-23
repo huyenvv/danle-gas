@@ -44,10 +44,39 @@ describe('_buildCatalogRows — filter, recursion, sort, mapping', () => {
     expect(rows.map(r => r[0])).toEqual([1, 2, 3])
   })
 
-  test('ánh xạ đúng 7 cột: tên danh mục theo ID, ngày giữ nguyên chuỗi', () => {
+  test('ánh xạ đúng 8 cột: tên danh mục theo ID, ngày định dạng dd/mm/yyyy (bỏ giờ)', () => {
     const rows = _buildCatalogRows(1)
     const a = rows.find(r => r[2] === 'A')
-    expect(a).toEqual([2, 'SH-02', 'A', '2026-01-02 09:00', 'g1', 'Hợp đồng', 'Kệ 1'])
+    expect(a).toEqual([2, 'SH-02', 'A', '02/01/2026', 'g1', 'Hợp đồng', 'Kệ 1', ''])
+  })
+
+  test('cột Link google drive: nhiều file → URL văn bản mỗi link 1 dòng (\\n); không file → rỗng', () => {
+    pushDoc({ ID: 8, 'Tên hồ sơ': 'L', 'Danh mục': 1, 'Số hồ sơ': 'SH-10', 'Tình trạng': 'Hoàn thành',
+      'Tệp đính kèm': JSON.stringify([{ fileId: 'aaa' }, { fileId: 'bbb' }]) })
+    refresh()
+    const rows = _buildCatalogRows(1)
+    const l = rows.find(r => r[2] === 'L')
+    expect(l[7]).toBe('https://drive.google.com/file/d/aaa/view\nhttps://drive.google.com/file/d/bbb/view')
+    const a = rows.find(r => r[2] === 'A')
+    expect(a[7]).toBe('')
+  })
+
+  test('cột Link google drive: 1 file → công thức HYPERLINK bấm được', () => {
+    pushDoc({ ID: 11, 'Tên hồ sơ': 'One', 'Danh mục': 1, 'Số hồ sơ': 'SH-12', 'Tình trạng': 'Hoàn thành',
+      'Tệp đính kèm': JSON.stringify([{ fileId: 'xyz' }]) })
+    refresh()
+    const rows = _buildCatalogRows(1)
+    const r = rows.find(x => x[2] === 'One')
+    expect(r[7]).toBe('=HYPERLINK("https://drive.google.com/file/d/xyz/view","https://drive.google.com/file/d/xyz/view")')
+  })
+
+  test('cột Link google drive: định dạng cũ (fileId chuỗi đơn) → HYPERLINK 1 file', () => {
+    pushDoc({ ID: 10, 'Tên hồ sơ': 'Legacy', 'Danh mục': 1, 'Số hồ sơ': 'SH-11', 'Tình trạng': 'Hoàn thành',
+      'Tệp đính kèm': 'plainFileId123' })
+    refresh()
+    const rows = _buildCatalogRows(1)
+    const r = rows.find(x => x[2] === 'Legacy')
+    expect(r[7]).toBe('=HYPERLINK("https://drive.google.com/file/d/plainFileId123/view","https://drive.google.com/file/d/plainFileId123/view")')
   })
 
   test('cột Danh mục là đường dẫn từ danh mục được chọn xuống (Cha / Con)', () => {

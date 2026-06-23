@@ -120,6 +120,7 @@ global.SpreadsheetApp = {
             for (let i = 0; i < numRows; i++) out.push((s._rows[row - 1 + i] || []).slice(0, numCols))
             return out
           },
+          setWrap() { return this },
         }
       },
     }

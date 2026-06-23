@@ -1,10 +1,10 @@
 // ===== Xuất mục lục hồ sơ ra Excel (.xlsx) =====
 // Chỉ-đọc: lấy hồ sơ (loại bỏ Nháp) theo danh mục (gồm danh mục con, đệ quy),
-// sắp theo Số hồ sơ tăng dần, sinh 1 file .xlsx có sheet "Danh mục" với 7 cột
+// sắp theo Số hồ sơ tăng dần, sinh 1 file .xlsx có sheet "Danh mục" với 8 cột
 // (STT do hệ thống tự đánh số). Quyền được gác ở main.js (api_exportCatalog
 // → _requireAdminOrVanThu). Mọi cột ngoài STT lấy nguyên từ dữ liệu hồ sơ.
 
-var EXPORT_CATALOG_HEADERS = ['STT', 'Số hồ sơ', 'Tên hồ sơ', 'Ngày ban hành', 'Ghi chú', 'Danh mục', 'Nơi lưu hồ sơ cứng']
+var EXPORT_CATALOG_HEADERS = ['STT', 'Số hồ sơ', 'Tên hồ sơ', 'Ngày ban hành', 'Ghi chú', 'Danh mục', 'Nơi lưu hồ sơ cứng', 'Link google drive']
 
 // Tập ID danh mục cần xuất = danh mục được chọn ∪ mọi hậu duệ (đệ quy theo 'Danh mục cha').
 function _categoryDescendantSet(selectedId) {
@@ -61,15 +61,6 @@ function _categoryPathMap(stopAtId) {
   return map
 }
 
-// Định dạng Ngày ban hành → 'yyyy-MM-dd HH:mm'. Chấp nhận Date hoặc chuỗi.
-function _formatExportDate(value) {
-  if (!value) return ''
-  if (Object.prototype.toString.call(value) === '[object Date]') {
-    return Utilities.formatDate(value, Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm')
-  }
-  return String(value)
-}
-
 // So sánh Số hồ sơ tăng dần; rỗng xuống cuối; ổn định theo thứ tự ban đầu.
 function _compareSoHoSo(a, b) {
   var sa = String(a.soHoSo == null ? '' : a.soHoSo).trim()
@@ -81,6 +72,21 @@ function _compareSoHoSo(a, b) {
   if (la < lb) return -1
   if (la > lb) return 1
   return a.idx - b.idx
+}
+
+// Ô "Link google drive" cho Excel:
+//  - 0 file  → rỗng
+//  - 1 file  → công thức HYPERLINK (bấm được trong Excel)
+//  - ≥2 file → các URL văn bản, mỗi link 1 dòng (Excel chỉ cho 1 hyperlink/ô)
+// Dùng _parseFileInfos để hỗ trợ cả JSON array lẫn fileId chuỗi cũ.
+function _exportFileLinkCell(doc) {
+  var infos = _parseFileInfos(doc && doc['Tệp đính kèm'])
+  if (!infos.length) return ''
+  var urls = infos.map(function(f) {
+    return 'https://drive.google.com/file/d/' + f.fileId + '/view'
+  })
+  if (urls.length === 1) return '=HYPERLINK("' + urls[0] + '","' + urls[0] + '")'
+  return urls.join('\n')
 }
 
 // Lọc + sắp + map → mảng dòng dữ liệu (KHÔNG gồm header), mỗi dòng đã có STT.
@@ -106,10 +112,11 @@ function _buildCatalogRows(categoryId) {
       j + 1,
       doc['Số hồ sơ'] || '',
       doc['Tên hồ sơ'] || '',
-      _formatExportDate(doc['Ngày ban hành']),
+      _formatDateDMY(doc['Ngày ban hành']),
       doc['Ghi chú'] || '',
       catPaths[String(doc['Danh mục'] || '')] || '',
       doc['Nơi lưu hồ sơ cứng'] || '',
+      _exportFileLinkCell(doc),
     ])
   }
   return rows
@@ -143,6 +150,13 @@ function exportCatalog(token, categoryId) {
     sheet.setName('Danh mục')
     var all = [EXPORT_CATALOG_HEADERS].concat(rows)
     sheet.getRange(1, 1, all.length, EXPORT_CATALOG_HEADERS.length).setValues(all)
+
+    // Độ rộng cột (px) theo thứ tự header: STT, Số hồ sơ, Tên hồ sơ, Ngày ban hành,
+    // Ghi chú, Danh mục, Nơi lưu hồ sơ cứng, Link google drive.
+    var widths = [45, 110, 320, 120, 200, 280, 150, 320]
+    for (var c = 0; c < widths.length; c++) sheet.setColumnWidth(c + 1, widths[c])
+    // Cột Link google drive: bật xuống dòng để hồ sơ nhiều link hiển thị mỗi link 1 dòng.
+    sheet.getRange(1, EXPORT_CATALOG_HEADERS.length, all.length, 1).setWrap(true)
     SpreadsheetApp.flush()
 
     var url = 'https://docs.google.com/spreadsheets/d/' + tempId + '/export?format=xlsx'
