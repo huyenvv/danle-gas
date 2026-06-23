@@ -12,8 +12,10 @@ import { viMatch } from '../../utils/viSearch.js'
 //  - rootOption: label for the value='' entry (e.g. "— Không có (gốc) —"); omitted = no root row
 //  - excludeIds: Set of IDs to hide (self + descendants when editing a category)
 //  - defaultCollapsed: if true, start with every parent collapsed (only roots shown)
+//  - maxDepth: if set, only render this many levels (e.g. 2 = roots + their direct children);
+//              deeper categories are hidden from the picker (selection still includes them server-side)
 //  - testId: base test id; trigger = testId, options = `${testId}-opt-<id>`
-export default function CategoryPickerDropdown({ categories, value, onChange, placeholder = '-- Chọn --', rootOption, excludeIds, defaultCollapsed = false, testId }) {
+export default function CategoryPickerDropdown({ categories, value, onChange, placeholder = '-- Chọn --', rootOption, excludeIds, defaultCollapsed = false, maxDepth = null, testId }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set()) // ids whose children are hidden; empty = all expanded
@@ -90,7 +92,8 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
     return kids.flatMap(c => {
       const id = String(c.ID)
       if (visibleIds && !visibleIds.has(id)) return []
-      const childCount = (childrenOf[id] || []).filter(x => !exclude.has(String(x.ID))).length
+      const canDescend = maxDepth == null || depth + 1 < maxDepth // hide levels beyond maxDepth
+      const childCount = canDescend ? (childrenOf[id] || []).filter(x => !exclude.has(String(x.ID))).length : 0
       const hasChildren = childCount > 0
       const isOpen = visibleIds ? true : !collapsed.has(id) // search force-expands
       const isSelected = String(value) === id
@@ -111,7 +114,7 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
           {hasChildren && <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 rounded-full shrink-0">{childCount}</span>}
           {isSelected && <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>check</span>}
         </button>,
-        ...(isOpen ? renderNodes(id, depth + 1) : [])
+        ...(isOpen && canDescend ? renderNodes(id, depth + 1) : [])
       ]
     })
   }

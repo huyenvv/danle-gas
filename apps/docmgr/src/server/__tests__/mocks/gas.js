@@ -107,6 +107,7 @@ global.SpreadsheetApp = {
       _rows: [],
       getName() { return this._name },
       setName(n) { this._name = n; return this },
+      setColumnWidth() { return this },
       getRange(row, col, numRows, numCols) {
         const s = this
         return {
@@ -136,7 +137,22 @@ global.CacheService = (() => {
   const cache = {
     _reset()  { _store = {} },
     get(k)    { return _store[k] !== undefined ? _store[k] : null },
-    put(k, v) { _store[k] = v },
+    put(k, v) {
+      // Mirror GAS CacheService hard limit: max 100KB per value
+      if (typeof v === 'string' && v.length > 100 * 1024) {
+        throw new Error('Argument too large: value')
+      }
+      _store[k] = v
+    },
+    putAll(values) {
+      Object.keys(values).forEach(k => {
+        const v = values[k]
+        if (typeof v === 'string' && v.length > 100 * 1024) {
+          throw new Error('Argument too large: value')
+        }
+        _store[k] = v
+      })
+    },
     remove(k) { delete _store[k] },
     getAll(keys) {
       const out = {}

@@ -141,30 +141,30 @@ describe('Documents page — MainApp', () => {
     expect(await screen.findByText('Hồ sơ')).toBeInTheDocument()
   })
 
-  test('typing keyword + Enter calls api_getDocuments with keyword', async () => {
-    // Set up per-fn responses so UserManager's api_getUsers returns an array
+  test('typing keyword filters the current page client-side (no server keyword call) [US4/T022]', async () => {
     gasCall.mockImplementation((fn) => {
-      if (fn === 'api_getDocuments') return Promise.resolve({ data: [] })
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [], page: 1, hasNext: false })
       if (fn === 'api_getDocumentStats') return Promise.resolve({})
       if (fn === 'api_getUsers') return Promise.resolve([])
       return Promise.resolve({})
     })
     renderMainApp()
 
-    // Wait for initial render via __INITIAL_DATA__
+    // Wait for initial render via __INITIAL_DATA__ (both docs visible)
     expect(await screen.findByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
+    expect(screen.getByText('Công văn số 01/2024')).toBeInTheDocument()
 
-    const searchInput = screen.getByPlaceholderText(/tìm kiếm hồ sơ/i)
-    fireEvent.change(searchInput, { target: { value: 'Hợp đồng' } })
-    fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' })
+    const searchInput = screen.getByPlaceholderText(/trong trang này/i)
+    fireEvent.change(searchInput, { target: { value: 'Công văn' } })
 
+    // Client-side narrowing within the current page
     await waitFor(() => {
-      expect(gasCall).toHaveBeenCalledWith(
-        'api_getDocuments',
-        MOCK_TOKEN,
-        { keyword: 'Hợp đồng' }
-      )
+      expect(screen.queryByText('Hợp đồng mua sắm CNTT')).not.toBeInTheDocument()
+      expect(screen.getByText('Công văn số 01/2024')).toBeInTheDocument()
     })
+
+    // No server round-trip carrying a keyword filter
+    expect(gasCall).not.toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, expect.objectContaining({ keyword: expect.anything() }))
   })
 
   test('VT creator sees edit in context menu for Từ chối doc', async () => {
@@ -211,6 +211,113 @@ describe('Documents page — MainApp', () => {
 
     // No menu button — no actions available for non-creator VT on rejected doc without files
     expect(screen.queryByText('more_vert')).not.toBeInTheDocument()
+  })
+})
+
+// ── Feature 011: flat list, pagination & online category filter ──────────────
+
+describe('Flat list, pagination & category filter (011)', () => {
+  function makeDocs(n) {
+    return Array.from({ length: n }, (_, i) => ({
+      ...MOCK_DOCS[0], ID: String(1000 + i), 'Tên hồ sơ': 'Doc ' + i, 'Tình trạng': 'Đang xử lý',
+    }))
+  }
+
+  test('flat list: no category-group rows and no per-folder "Xem thêm" [US1/T004]', async () => {
+    renderMainApp()
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+    // Both docs render flat; legacy grouping artifacts are gone
+    expect(screen.getByText('Công văn số 01/2024')).toBeInTheDocument()
+    expect(screen.queryByText(/Xem thêm/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Chưa phân danh mục/)).not.toBeInTheDocument()
+  })
+
+  test('empty state shows "Không có hồ sơ nào" [US1/T004/FR-015]', async () => {
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA, docs: [], stats: { total: 0, byStatus: {}, totalValue: 0 },
+    }))
+    renderMainApp()
+    expect(await screen.findByText('Không có hồ sơ nào')).toBeInTheDocument()
+  })
+
+  test('pagination: Trước disabled on page 1; Sau loads page 2 via api_getDocuments [US2/T011]', async () => {
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA, docs: makeDocs(100), stats: { total: 100, byStatus: {}, totalValue: 0 },
+    }))
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: makeDocs(20), page: 2, hasNext: false })
+      if (fn === 'api_getDocumentStats') return Promise.resolve({})
+      if (fn === 'api_getUsers') return Promise.resolve([])
+      return Promise.resolve({})
+    })
+    renderMainApp()
+    await screen.findByText('Doc 0')
+
+    expect(screen.getByText('Trang 1')).toBeInTheDocument()
+    expect(screen.getByText('‹ Trước').closest('button')).toBeDisabled()
+    const next = screen.getByText('Sau ›').closest('button')
+    expect(next).not.toBeDisabled() // 100 docs → heuristic hasNext
+
+    fireEvent.click(next)
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, { page: 2 })
+      expect(screen.getByText('Trang 2')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Sau ›').closest('button')).toBeDisabled() // hasNext=false on last page
+  })
+
+  test('selecting a category calls server with danhMucId and resets to page 1; clearing drops it [US3/T018]', async () => {
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [MOCK_DOCS[1]], page: 1, hasNext: false })
+      if (fn === 'api_getDocumentStats') return Promise.resolve({})
+      if (fn === 'api_getUsers') return Promise.resolve([])
+      return Promise.resolve({})
+    })
+    renderMainApp()
+    await screen.findByText('Hợp đồng mua sắm CNTT')
+
+    // Open the collapse picker, pick category "Công văn" (ID 2)
+    fireEvent.click(screen.getByTestId('doc-category-filter'))
+    fireEvent.click(screen.getByTestId('doc-category-filter-opt-2'))
+
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, { page: 1, danhMucId: '2' })
+    })
+
+    // Clear back to "Tất cả danh mục" → server called without danhMucId
+    fireEvent.click(screen.getByTestId('doc-category-filter'))
+    fireEvent.click(screen.getByTestId('doc-category-filter-opt-root'))
+    await waitFor(() => {
+      expect(gasCall).toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, { page: 1 })
+    })
+  })
+
+  test('"Công việc của tôi" shows only incomplete docs related to me, any role [US4/T030/FR-016]', async () => {
+    // me = viewer1 (userId 2). Button is hidden for admin, so use a staff session.
+    const docs = [
+      { ...MOCK_DOCS[0], ID: '101', 'Tên hồ sơ': 'Việc tạo bởi tôi',   'Tình trạng': 'Đang xử lý', 'Người tạo': 'viewer1', 'Phụ trách': '', 'Người phối hợp': '' },
+      { ...MOCK_DOCS[0], ID: '102', 'Tên hồ sơ': 'Việc tôi phụ trách', 'Tình trạng': 'Chờ xử lý',  'Người tạo': 'admin',   'Phụ trách': JSON.stringify(['2']), 'Người phối hợp': '' },
+      { ...MOCK_DOCS[0], ID: '103', 'Tên hồ sơ': 'Việc tôi phối hợp',  'Tình trạng': 'Đang xử lý', 'Người tạo': 'admin',   'Phụ trách': '', 'Người phối hợp': JSON.stringify(['2']) },
+      { ...MOCK_DOCS[0], ID: '104', 'Tên hồ sơ': 'Việc người khác',    'Tình trạng': 'Đang xử lý', 'Người tạo': 'admin',   'Phụ trách': JSON.stringify(['999']), 'Người phối hợp': '' },
+      { ...MOCK_DOCS[0], ID: '105', 'Tên hồ sơ': 'Việc đã xong của tôi','Tình trạng': 'Hoàn thành', 'Người tạo': 'viewer1', 'Phụ trách': JSON.stringify(['2']), 'Người phối hợp': '' },
+    ]
+    window.__INITIAL_DATA__ = JSON.parse(JSON.stringify({
+      ...MOCK_INITIAL_DATA, docs, stats: { total: docs.length, byStatus: {}, totalValue: 0 },
+    }))
+    useAuth.mockReturnValue({ session: MOCK_VIEWER_SESSION, loading: false, logout: jest.fn() })
+    renderMainApp()
+    await screen.findByText('Việc tạo bởi tôi')
+
+    fireEvent.click(screen.getByText('Công việc của tôi').closest('button'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Việc tạo bởi tôi')).toBeInTheDocument()
+      expect(screen.getByText('Việc tôi phụ trách')).toBeInTheDocument()
+      expect(screen.getByText('Việc tôi phối hợp')).toBeInTheDocument()
+      expect(screen.queryByText('Việc người khác')).not.toBeInTheDocument()      // không liên quan
+      expect(screen.queryByText('Việc đã xong của tôi')).not.toBeInTheDocument()  // đã hoàn thành
+    })
   })
 })
 

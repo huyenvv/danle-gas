@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import gasCall from '../gasClient.js'
@@ -26,8 +26,10 @@ import TopHeader from './layout/TopHeader.jsx'
 import { getDeadlineStatus } from '../utils/deadlineStatus.js'
 import Icon from './common/Icon.jsx'
 import PublishHistory from './documents/PublishHistory.jsx'
+import CategoryPickerDropdown from './common/CategoryPickerDropdown.jsx'
+import { viMatch } from '../utils/viSearch.js'
 
-const ROOT_FOLDER_BATCH_SIZE = 10
+const PAGE_SIZE = 100
 
 function parseAssignees(value) {
   if (!value) return []
@@ -60,18 +62,18 @@ export default function MainApp() {
   // Filters
   const [filters, setFilters]         = useState({})
   const [searchInput, setSearchInput] = useState('')   // controlled input value
-  const [searchKeyword, setSearchKeyword] = useState('') // committed server keyword
-  const searchKeywordRef = useRef('')
+  const [searchKeyword, setSearchKeyword] = useState('') // client-side filter over current page
 
   // Modals
   const [docModal, setDocModal]       = useState(null)   // null | { mode: 'create'|'edit', doc? }
   const [previewDoc, setPreviewDoc]   = useState(null)
 
-  // Per-root load-more state
-  const [rootDisplayCounts, setRootDisplayCounts] = useState({})
-
-  // Collapsed category groups
-  const [collapsed, setCollapsed]     = useState({})
+  // Server-side pagination (flat list, 100/page) + online category filter
+  const [docPage, setDocPage]   = useState(1)
+  const [hasNext, setHasNext]   = useState(false)
+  const [serverCatId, setServerCatId] = useState('')   // '' = tất cả
+  const pageRef        = useRef(1)
+  const serverCatIdRef = useRef('')
 
   // Unread tracking (DA_DOC stores unread records)
   const [unreadDocIds, setUnreadDocIds] = useState(new Set())
@@ -92,17 +94,23 @@ export default function MainApp() {
 
   const failCountRef = useRef(0)
 
-  const loadDocs = useCallback(async ({ silent = false, keyword = '' } = {}) => {
+  const loadDocs = useCallback(async ({ silent = false, page: pg, danhMucId } = {}) => {
+    const targetPage = pg || pageRef.current || 1
+    const cat = danhMucId !== undefined ? danhMucId : serverCatIdRef.current
     if (!silent) { setLoading(true); setError('') }
     try {
-      const filters = keyword ? { keyword } : {}
+      const filters = { page: targetPage }
+      if (cat) filters.danhMucId = cat
       const [docsRes, statsRes] = await Promise.all([
         gasCall('api_getDocuments', localStorage.getItem('docmgr_access_token'), filters),
         gasCall('api_getDocumentStats', localStorage.getItem('docmgr_access_token')),
       ])
       const nextDocs = (docsRes && docsRes.data) ? docsRes.data : []
       setAllDocs(nextDocs)
-      if (!keyword) dataCache.set('docs', nextDocs) // only cache unfiltered results
+      setHasNext(!!(docsRes && docsRes.hasNext))
+      setDocPage(targetPage); pageRef.current = targetPage
+      // Only cache page-1 unfiltered results (matches what background polling fetches)
+      if (targetPage === 1 && !cat) dataCache.set('docs', nextDocs)
       setStats(statsRes || {})
       failCountRef.current = 0
     } catch (err) {
@@ -117,6 +125,15 @@ export default function MainApp() {
       if (!silent) setLoading(false)
     }
   }, [session])
+
+  // Pagination + online category filter handlers
+  const goPrevPage = useCallback(() => { if (pageRef.current > 1) loadDocs({ page: pageRef.current - 1 }) }, [loadDocs])
+  const goNextPage = useCallback(() => { loadDocs({ page: pageRef.current + 1 }) }, [loadDocs])
+  const selectServerCategory = useCallback((id) => {
+    setServerCatId(id); serverCatIdRef.current = id
+    pageRef.current = 1
+    loadDocs({ page: 1, danhMucId: id })
+  }, [loadDocs])
 
   const upsertDocInCache = useCallback((nextDoc) => {
     if (!nextDoc) return
@@ -148,6 +165,7 @@ export default function MainApp() {
       if (injected.lookups) { setLookups(injected.lookups); dataCache.set('lookups', injected.lookups) }
       const nextDocs = injected.docs || []
       setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
+      setHasNext(nextDocs.length >= PAGE_SIZE)
       if (injected.stats) setStats(injected.stats)
       if (injected.unreadIds) setUnreadDocIds(new Set(injected.unreadIds.map(String)))
       if (injected.companyName) setCompanyName(injected.companyName)
@@ -160,6 +178,7 @@ export default function MainApp() {
         if (r.lookups) { setLookups(r.lookups); dataCache.set('lookups', r.lookups) }
         const nextDocs = r.docs || []
         setAllDocs(nextDocs); dataCache.set('docs', nextDocs)
+        setHasNext(nextDocs.length >= PAGE_SIZE)
         if (r.stats) setStats(r.stats)
         if (r.unreadIds) setUnreadDocIds(new Set(r.unreadIds.map(String)))
         if (r.companyName) setCompanyName(r.companyName)
@@ -179,8 +198,16 @@ export default function MainApp() {
 
     // Subscribe to polling updates
     const unsubDocs = dataCache.subscribe('docs', data => {
-      // Don't overwrite server-search results with polling data
-      if (data && !searchKeywordRef.current) setAllDocs(data)
+      // Polling fetches page-1 unfiltered docs. Apply directly only when the user is
+      // viewing page 1 with no category filter; otherwise silently reload the exact
+      // current page/filter so pagination isn't clobbered.
+      if (!data) return
+      if (pageRef.current === 1 && !serverCatIdRef.current) {
+        setAllDocs(data)
+        setHasNext(data.length >= PAGE_SIZE)
+      } else {
+        loadDocs({ silent: true })
+      }
     })
     const unsubLookups = dataCache.subscribe('lookups', data => {
       if (data) setLookups(data)
@@ -218,9 +245,21 @@ export default function MainApp() {
   }
 
   const docs = useMemo(() => {
+    // allDocs = trang hiện tại (server đã lọc danh mục + sắp ưu tiên). Giữ nguyên thứ tự.
+    // Các bộ lọc dưới đây áp CLIENT, chỉ trong phạm vi trang đang xem.
     let result = [...allDocs]
-    // Search is server-side (triggered on Enter) — no client-side text filter here
-    if (filters.danhMucId) result = result.filter(d => String(d['Danh mục']) === String(filters.danhMucId))
+    if (searchKeyword) {
+      const kw = searchKeyword.trim()
+      result = result.filter(d =>
+        viMatch(d['Tên hồ sơ'], kw) ||
+        viMatch(d['Số hồ sơ'], kw) ||
+        viMatch(d['Dự án (Phòng ban)'], kw) ||
+        viMatch(d['Nhà cung cấp (Nơi ban hành)'], kw) ||
+        viMatch(d['Ghi chú'], kw) ||
+        viMatch(d['Phụ trách'], kw) ||
+        viMatch(d['Tên file'], kw)
+      )
+    }
     if (filters.tinhTrang) result = result.filter(d => d['Tình trạng'] === filters.tinhTrang)
     if (filters.duAn) result = result.filter(d => parseAssignees(d['Dự án (Phòng ban)']).includes(String(filters.duAn)))
     if (filters.nhaCungCap) result = result.filter(d => d['Nhà cung cấp (Nơi ban hành)'] === filters.nhaCungCap)
@@ -239,24 +278,20 @@ export default function MainApp() {
       })
     }
     if (filters.myWork) {
+      // Đồng nhất mọi vai trò: chưa hoàn thành VÀ liên quan người đăng nhập
+      // (Người tạo / Phụ trách / Người phối hợp).
       const me = session.username
       const meId = String(session.userId)
-      const role = session.role
-      if (role === 'Giám đốc') {
-        result = result.filter(d => d['Tình trạng'] === 'Chờ duyệt')
-      } else if (role === 'Văn thư') {
-        result = result.filter(d => d['Người tạo'] === me)
-      } else {
-        // Nhân viên / Trưởng phòng: Phụ trách hoặc Phối hợp
-        result = result.filter(d => {
-          const pt = parseAssignees(d['Phụ trách'])
-          const ph = parseAssignees(d['Người phối hợp'])
-          return pt.includes(meId) || pt.includes(me) || ph.includes(meId) || ph.includes(me)
-        })
-      }
+      result = result.filter(d => {
+        if (d['Tình trạng'] === 'Hoàn thành') return false
+        if (d['Người tạo'] === me) return true
+        const pt = parseAssignees(d['Phụ trách'])
+        const ph = parseAssignees(d['Người phối hợp'])
+        return pt.includes(meId) || pt.includes(me) || ph.includes(meId) || ph.includes(me)
+      })
     }
     return result
-  }, [allDocs, filters, unreadDocIds])
+  }, [allDocs, filters, unreadDocIds, searchKeyword])
 
   // Bell count = unread docs (DA_DOC has record = unread)
   const unreadCount = useMemo(
@@ -343,21 +378,15 @@ export default function MainApp() {
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>search</span>
                   <input
                     className={`bg-surface-container-low border-none rounded-xl pl-9 pr-8 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/20 ${searchKeyword ? 'ring-2 ring-primary/30' : ''}`}
-                    placeholder="Tìm kiếm hồ sơ… (Enter)"
+                    placeholder="Tìm trong trang này…"
+                    title="Tìm kiếm/lọc chỉ áp dụng trên các hồ sơ của trang đang xem"
                     value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        const kw = searchInput.trim()
-                        setSearchKeyword(kw); searchKeywordRef.current = kw
-                        loadDocs({ keyword: kw })
-                      }
-                    }}
+                    onChange={e => { setSearchInput(e.target.value); setSearchKeyword(e.target.value) }}
                   />
                   {searchKeyword && (
                     <button
                       type="button"
-                      onClick={() => { setSearchInput(''); setSearchKeyword(''); searchKeywordRef.current = ''; loadDocs() }}
+                      onClick={() => { setSearchInput(''); setSearchKeyword('') }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
@@ -365,11 +394,17 @@ export default function MainApp() {
                   )}
                 </div>
 
-                {/* hidden — kept for bell-click programmatic filter */}
-                <select className="hidden" value={filters.danhMucId || ''} onChange={e => handleFilterChange('danhMucId', e.target.value)}>
-                  <option value="">Tất cả danh mục</option>
-                  {lookups.danhMuc.map(c => <option key={c.ID} value={c.ID}>{c['Tên danh mục']}</option>)}
-                </select>
+                {/* Online category filter — collapse picker, server-side, includes descendants */}
+                <div className="min-w-[12rem]">
+                  <CategoryPickerDropdown
+                    categories={lookups.danhMuc}
+                    value={serverCatId}
+                    onChange={selectServerCategory}
+                    rootOption="Tất cả danh mục"
+                    maxDepth={2}
+                    testId="doc-category-filter"
+                  />
+                </div>
 
                 {session.role !== 'admin' && session.role !== 'Quản trị viên' && (
                 <button
@@ -378,7 +413,7 @@ export default function MainApp() {
                       setFilters({ myWork: false })
                     } else {
                       setFilters({ myWork: true })
-                      if (searchKeyword) { setSearchInput(''); setSearchKeyword(''); searchKeywordRef.current = ''; loadDocs() }
+                      if (searchKeyword) { setSearchInput(''); setSearchKeyword('') }
                     }
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
@@ -502,19 +537,15 @@ export default function MainApp() {
                 canDelete={isSuperAdmin}
                 usersMap={usersMap}
                 users={lookups.users}
-                collapsed={collapsed}
-                danhMuc={lookups.danhMuc}
                 unreadDocIds={unreadDocIds}
                 selectedIds={selectedIds}
-                rootDisplayCounts={rootDisplayCounts}
+                page={docPage}
+                hasNext={hasNext}
+                onPrevPage={goPrevPage}
+                onNextPage={goNextPage}
                 role={session.role}
                 username={session.username}
                 userId={session.userId}
-                onToggleCat={catId => setCollapsed(c => ({ ...c, [catId]: !c[catId] }))}
-                onLoadMoreRoot={rootKey => setRootDisplayCounts(prev => ({
-                  ...prev,
-                  [rootKey]: (prev[rootKey] || ROOT_FOLDER_BATCH_SIZE) + ROOT_FOLDER_BATCH_SIZE,
-                }))}
                 onToggleSelect={id => setSelectedIds(prev => {
                   const next = new Set(prev)
                   if (next.has(String(id))) next.delete(String(id)); else next.add(String(id))
@@ -658,70 +689,10 @@ export default function MainApp() {
   )
 }
 
-// ── Grouped document table (by category tree) with per-root load more ──────
-function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, collapsed, danhMuc, unreadDocIds, selectedIds, rootDisplayCounts, role, username, userId, onToggleCat, onLoadMoreRoot, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
-  // Build docs-by-category map for ALL filtered docs (filters stay offline)
-  const docsMap = {}
-  docs.forEach(doc => {
-    const key = String(doc['Danh mục'] || '')
-    if (!docsMap[key]) docsMap[key] = []
-    docsMap[key].push(doc)
-  })
-
-  // Root categories (no parent)
-  const roots = (danhMuc || []).filter(c => !c['Danh mục cha'])
-
-  // Count across ALL docs so category headers are always visible (even if their docs are on other pages)
-  function subtreeDocCount(catId) {
-    const direct = (docsMap[String(catId)] || []).length
-    const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
-    return direct + children.reduce((s, c) => s + subtreeDocCount(c.ID), 0)
-  }
-
-  function gatherSubtreeDocs(catId) {
-    const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
-    var result = []
-    children.forEach(child => {
-      result = result.concat(gatherSubtreeDocs(child.ID))
-    })
-    return result.concat(docsMap[String(catId)] || [])
-  }
-
-  // Uncategorized docs (category ID not in danhMuc)
-  const validIds = new Set((danhMuc || []).map(c => String(c.ID)))
-  const uncategorized = docs.filter(d => !validIds.has(String(d['Danh mục'] || '')))
-  const uncategorizedTotal = docs.filter(d => !validIds.has(String(d['Danh mục'] || ''))).length
-
-  const rootVisibleIdsMap = {}
-  const rootVisibleIndexMap = {}
-  roots.forEach(root => {
-    const rootKey = String(root.ID)
-    const limit = rootDisplayCounts[rootKey] || ROOT_FOLDER_BATCH_SIZE
-    const visibleDocs = gatherSubtreeDocs(root.ID).slice(0, limit)
-    rootVisibleIdsMap[rootKey] = new Set(visibleDocs.map(doc => String(doc.ID)))
-    rootVisibleIndexMap[rootKey] = visibleDocs.reduce((acc, doc, index) => {
-      acc[String(doc.ID)] = index + 1
-      return acc
-    }, {})
-  })
-  const uncategorizedLimit = rootDisplayCounts['__uncat__'] || ROOT_FOLDER_BATCH_SIZE
-  const uncategorizedVisible = uncategorized.slice(0, uncategorizedLimit)
-  const uncategorizedIndexMap = uncategorizedVisible.reduce((acc, doc, index) => {
-    acc[String(doc.ID)] = index + 1
-    return acc
-  }, {})
-  const visibleDocIds = roots.flatMap(root => Array.from(rootVisibleIdsMap[String(root.ID)] || []))
-    .concat(uncategorizedVisible.map(doc => String(doc.ID)))
-  const visibleDocIdSet = new Set(visibleDocIds)
-
-  function visibleSubtreeDocCount(catId, rootId) {
-    const rootVisibleIds = rootVisibleIdsMap[String(rootId)] || new Set()
-    const direct = (docsMap[String(catId)] || []).filter(doc => rootVisibleIds.has(String(doc.ID))).length
-    const children = (danhMuc || []).filter(c => String(c['Danh mục cha']) === String(catId))
-    return direct + children.reduce((s, c) => s + visibleSubtreeDocCount(c.ID, rootId), 0)
-  }
-
+// ── Flat document table with server-side pagination (Trước/Sau) ──────────────
+function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, unreadDocIds, selectedIds, page, hasNext, onPrevPage, onNextPage, role, username, userId, onToggleSelect, onToggleAll, onPreview, onEdit, onDelete }) {
   const COL = 12
+  const visibleDocIds = docs.map(doc => String(doc.ID))
 
   return (
     <div className="bg-white rounded-2xl shadow-card overflow-hidden">
@@ -759,117 +730,29 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, col
             {!loading && docs.length === 0 && (
               <tr><td colSpan={COL} className="px-4 py-10 text-center text-on-surface-variant">Không có hồ sơ nào</td></tr>
             )}
-            {!loading && roots.map(cat => {
-              const rootKey = String(cat.ID)
-              const total = subtreeDocCount(cat.ID)
-              const visibleCount = visibleSubtreeDocCount(cat.ID, cat.ID)
-              return (
-                <Fragment key={cat.ID}>
-                  <CatGroup cat={cat} depth={0} rootId={cat.ID}
-                    danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} unreadDocIds={unreadDocIds}
-                    visibleDocIds={rootVisibleIdsMap[rootKey] || new Set()}
-                    indexMap={rootVisibleIndexMap[rootKey] || {}}
-                    selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
-                    isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-                    role={role} username={username} userId={userId} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
-                  />
-                  {visibleCount < total && (
-                    <tr>
-                      <td colSpan={COL} className="px-4 py-3 text-center bg-surface-container-lowest">
-                        <button
-                          type="button"
-                          onClick={() => onLoadMoreRoot(rootKey)}
-                          className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors"
-                        >
-                          Xem thêm ({Math.min(ROOT_FOLDER_BATCH_SIZE, total - visibleCount)} / {total - visibleCount})
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-            {!loading && uncategorizedTotal > 0 && (
-              <Fragment key="__uncat__">
-                <tr className="bg-surface-container/50 cursor-pointer hover:bg-surface-container transition-colors"
-                    onClick={() => onToggleCat('__uncat__')}>
-                  <td colSpan={COL} className="px-4 py-2 font-semibold text-on-surface-variant text-xs">
-                    <span className="mr-2">{collapsed['__uncat__'] ? '▶' : '▼'}</span>
-                    (Chưa phân danh mục) <span className="font-normal ml-1">({uncategorizedTotal} hồ sơ)</span>
-                  </td>
-                </tr>
-                {!collapsed['__uncat__'] && uncategorizedVisible.map(doc => (
-                  <DocRow key={doc.ID} doc={doc} depth={0} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
-                    rowIndex={uncategorizedIndexMap[String(doc.ID)]}
-                    onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} username={username} userId={userId} />
-                ))}
-                {!collapsed['__uncat__'] && uncategorizedVisible.length < uncategorizedTotal && (
-                  <tr>
-                    <td colSpan={COL} className="px-4 py-3 text-center bg-surface-container-lowest">
-                      <button
-                        type="button"
-                        onClick={() => onLoadMoreRoot('__uncat__')}
-                        className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors"
-                      >
-                        Xem thêm ({Math.min(ROOT_FOLDER_BATCH_SIZE, uncategorizedTotal - uncategorizedVisible.length)} / {uncategorizedTotal - uncategorizedVisible.length})
-                      </button>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            )}
+            {!loading && docs.map((doc, index) => (
+              <DocRow key={doc.ID} doc={doc} depth={0} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
+                rowIndex={(page - 1) * PAGE_SIZE + index + 1}
+                onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} username={username} userId={userId} />
+            ))}
           </tbody>
         </table>
       </div>
-      {docs.length > 0 && (
-        <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between text-sm bg-surface-container-lowest">
-          <span className="text-on-surface-variant">
-            Hiển thị {visibleDocIdSet.size} / {docs.length} hồ sơ
-          </span>
-          <span className="text-on-surface-variant text-xs">Mỗi thư mục gốc hiển thị {ROOT_FOLDER_BATCH_SIZE} hồ sơ mỗi lần tải thêm</span>
+      <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between text-sm bg-surface-container-lowest">
+        <span className="text-on-surface-variant text-xs">Tìm kiếm/lọc nhanh chỉ áp dụng trong trang này</span>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onPrevPage} disabled={page <= 1}
+            className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            ‹ Trước
+          </button>
+          <span className="text-on-surface-variant">Trang {page}</span>
+          <button type="button" onClick={onNextPage} disabled={!hasNext}
+            className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Sau ›
+          </button>
         </div>
-      )}
+      </div>
     </div>
-  )
-}
-
-function CatGroup({ cat, depth, rootId, danhMuc, docsMap, collapsed, unreadDocIds, selectedIds, visibleDocIds, indexMap, onToggleCat, onToggleSelect, isAdmin, canDelete, usersMap, users, onPreview, onEdit, onDelete, role, username, userId, subtreeDocCount, visibleSubtreeDocCount }) {
-  const total = subtreeDocCount(cat.ID)
-  const visibleTotal = visibleSubtreeDocCount(cat.ID, rootId)
-  if (depth > 0 && visibleTotal === 0) return null
-  if (total === 0) return null
-  const isCollapsed = collapsed[cat.ID]
-  const children = danhMuc.filter(c => String(c['Danh mục cha']) === String(cat.ID))
-  const directDocs = (docsMap[String(cat.ID)] || []).filter(doc => visibleDocIds.has(String(doc.ID)))
-  const indent = depth * 16
-
-  return (
-    <Fragment>
-      <tr className="bg-primary/5 cursor-pointer hover:bg-primary/10 transition-colors"
-          onClick={() => onToggleCat(cat.ID)}>
-        <td className="px-3 py-2 w-16" onClick={e => e.stopPropagation()}></td>
-        <td colSpan={9} className="px-4 py-2 font-semibold text-primary text-xs" style={{ paddingLeft: indent + 16 }}>
-          <span className="mr-2">{isCollapsed ? '▶' : '▼'}</span>
-          {cat['Tên danh mục']} <span className="font-normal text-primary/70 ml-1">({total} hồ sơ)</span>
-        </td>
-        <td colSpan={2}></td>
-      </tr>
-      {!isCollapsed && children.map(child => (
-        <CatGroup key={child.ID} cat={child} depth={depth + 1} rootId={rootId}
-          danhMuc={danhMuc} docsMap={docsMap} collapsed={collapsed} unreadDocIds={unreadDocIds}
-          visibleDocIds={visibleDocIds}
-          indexMap={indexMap}
-          selectedIds={selectedIds} onToggleCat={onToggleCat} onToggleSelect={onToggleSelect}
-          isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete}
-          role={role} username={username} userId={userId} subtreeDocCount={subtreeDocCount} visibleSubtreeDocCount={visibleSubtreeDocCount}
-        />
-      ))}
-      {!isCollapsed && directDocs.map(doc => (
-        <DocRow key={doc.ID} doc={doc} depth={depth + 1} unreadDocIds={unreadDocIds} selectedIds={selectedIds}
-          rowIndex={indexMap[String(doc.ID)]}
-          onToggleSelect={onToggleSelect} isAdmin={isAdmin} canDelete={canDelete} usersMap={usersMap} users={users} onPreview={onPreview} onEdit={onEdit} onDelete={onDelete} role={role} username={username} userId={userId} />
-        ))}
-    </Fragment>
   )
 }
 

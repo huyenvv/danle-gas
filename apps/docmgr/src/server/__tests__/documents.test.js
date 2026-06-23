@@ -1,5 +1,5 @@
 require('./setup.js')
-const { resetAll, setupRoleSheets, setupDocSheets, CAT_HEADERS, seedUser, createSession } = require('./helpers')
+const { resetAll, setupRoleSheets, setupDocSheets, CAT_HEADERS, DOC_HEADERS, seedUser, createSession } = require('./helpers')
 
 let directorToken
 
@@ -149,6 +149,130 @@ describe('getDocuments', () => {
 
     const result = getDocuments(managerToken, {})
     expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['For Manager'])
+  })
+})
+
+// ── Feature 011: danh sách phẳng — phân trang + sort ưu tiên + lọc danh mục đệ quy ──
+describe('getDocuments — flat list, pagination & priority sort (011)', () => {
+  // Seed a doc straight into the HO_SO sheet from a field map (T002 fixture helper).
+  let _nextDocId
+  function seedDoc(fields) {
+    const row = DOC_HEADERS.map(h => (fields[h] !== undefined ? fields[h] : ''))
+    row[DOC_HEADERS.indexOf('ID')] = _nextDocId++
+    SpreadsheetApp._sheets[SHEETS.HO_SO]._rows.push(row)
+  }
+  function seedCategory(id, name, parentId) {
+    const row = CAT_HEADERS.map(() => '')
+    row[CAT_HEADERS.indexOf('ID')] = id
+    row[CAT_HEADERS.indexOf('Tên danh mục')] = name
+    row[CAT_HEADERS.indexOf('Danh mục cha')] = parentId == null ? '' : parentId
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows.push(row)
+  }
+
+  beforeEach(() => { _nextDocId = 1000 })
+
+  test('priority order: rank 0 (chưa HT) → 1 (HT+PT) → 2 (HT+phát hành) → 3 (HT thường); in-group by Ngày cập nhật desc', () => {
+    // Seed one of each rank; within rank 0 seed two to check date desc.
+    seedDoc({ 'Tên hồ sơ': 'done-plain',   'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Ngày cập nhật': '2026-01-01' })
+    seedDoc({ 'Tên hồ sơ': 'done-publish', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Lịch sử phát hành': JSON.stringify([{ lan: 1 }]), 'Ngày cập nhật': '2026-01-01' })
+    seedDoc({ 'Tên hồ sơ': 'done-pt',      'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Phụ trách': JSON.stringify(['1']), 'Ngày cập nhật': '2026-01-01' })
+    seedDoc({ 'Tên hồ sơ': 'todo-old',     'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-02-01' })
+    seedDoc({ 'Tên hồ sơ': 'todo-new',     'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-03-01' })
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const names = getDocuments(directorToken, {}).data.map(d => d['Tên hồ sơ'])
+    expect(names).toEqual(['todo-new', 'todo-old', 'done-pt', 'done-publish', 'done-plain'])
+  })
+
+  test('doc Hoàn thành có cả phụ trách + phát hành → rank 1 (không tính trùng)', () => {
+    seedDoc({ 'Tên hồ sơ': 'both',    'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Phụ trách': JSON.stringify(['1']), 'Lịch sử phát hành': JSON.stringify([{ lan: 1 }]), 'Ngày cập nhật': '2026-01-01' })
+    seedDoc({ 'Tên hồ sơ': 'publish', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Lịch sử phát hành': JSON.stringify([{ lan: 1 }]), 'Ngày cập nhật': '2026-01-02' })
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const names = getDocuments(directorToken, {}).data.map(d => d['Tên hồ sơ'])
+    expect(names).toEqual(['both', 'publish']) // rank 1 before rank 2
+  })
+
+  test('pagination: page 1 ≤100 + hasNext; pages do not overlap; last page hasNext=false', () => {
+    for (let i = 0; i < 150; i++) {
+      seedDoc({ 'Tên hồ sơ': 'D' + i, 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-01-01' })
+    }
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const p1 = getDocuments(directorToken, { page: 1 })
+    const p2 = getDocuments(directorToken, { page: 2 })
+    expect(p1.page).toBe(1)
+    expect(p1.data).toHaveLength(100)
+    expect(p1.hasNext).toBe(true)
+    expect(p2.data).toHaveLength(50)
+    expect(p2.hasNext).toBe(false)
+    const ids1 = new Set(p1.data.map(d => String(d.ID)))
+    const overlap = p2.data.filter(d => ids1.has(String(d.ID)))
+    expect(overlap).toHaveLength(0)
+  })
+
+  test('default (no page) → page 1; page beyond total → empty + hasNext=false', () => {
+    seedDoc({ 'Tên hồ sơ': 'one', 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-01-01' })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getDocuments(directorToken, {}).page).toBe(1)
+    const far = getDocuments(directorToken, { page: 5 })
+    expect(far.data).toHaveLength(0)
+    expect(far.hasNext).toBe(false)
+  })
+
+  test('danhMucId filters recursively across descendant categories (3+ levels)', () => {
+    seedCategory(10, 'con', 1)
+    seedCategory(100, 'cháu', 10)
+    seedCategory(1000, 'chắt', 100)
+    invalidateSheetCache(SHEETS.DANH_MUC)
+    seedDoc({ 'Tên hồ sơ': 'in-1',    'Danh mục': 1,    'Tình trạng': 'Đang xử lý' })
+    seedDoc({ 'Tên hồ sơ': 'in-10',   'Danh mục': 10,   'Tình trạng': 'Đang xử lý' })
+    seedDoc({ 'Tên hồ sơ': 'in-100',  'Danh mục': 100,  'Tình trạng': 'Đang xử lý' })
+    seedDoc({ 'Tên hồ sơ': 'in-1000', 'Danh mục': 1000, 'Tình trạng': 'Đang xử lý' })
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const all = getDocuments(directorToken, { danhMucId: 1 }).data.map(d => d['Tên hồ sơ']).sort()
+    expect(all).toEqual(['in-1', 'in-10', 'in-100', 'in-1000'])
+    const sub = getDocuments(directorToken, { danhMucId: 100 }).data.map(d => d['Tên hồ sơ']).sort()
+    expect(sub).toEqual(['in-100', 'in-1000'])
+  })
+
+  test('large sheet (>100KB cache value) does not crash getDocuments [regression: "Đối số quá lớn: value"]', () => {
+    const big = 'x'.repeat(1200) // 200 × 1200 chars ≈ 240KB JSON → exceeds CacheService 100KB
+    for (let i = 0; i < 200; i++) {
+      seedDoc({ 'Tên hồ sơ': 'Big ' + i, 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ghi chú': big })
+    }
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(() => getDocuments(directorToken, { page: 1 })).not.toThrow()
+    const res = getDocuments(directorToken, { page: 1 })
+    expect(res.data).toHaveLength(100)
+    expect(res.hasNext).toBe(true)
+    // Cache must round-trip the oversized sheet (chunked), not silently drop it
+    expect(getSheetData(SHEETS.HO_SO)).toHaveLength(200)
+  })
+
+  test('cachePut/cacheGet round-trips values exceeding the 100KB limit (chunked)', () => {
+    const big = []
+    for (let i = 0; i < 6000; i++) big.push({ id: i, note: 'Tiếng Việt có dấu, nội dung dài' })
+    cachePut('test_big_chunked', big) // ~270KB → must chunk
+    const got = cacheGet('test_big_chunked')
+    expect(Array.isArray(got)).toBe(true)
+    expect(got).toHaveLength(6000)
+    expect(got[5999].id).toBe(5999)
+  })
+
+  test('permission applied BEFORE pagination: non-exempt user only sees allowed docs (FR-013/CT-6)', () => {
+    seedUser(2, 'staff', 'staff@test.com', 'Nhân viên')
+    const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
+    seedDoc({ 'Tên hồ sơ': 'allowed', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['2']), 'Ngày cập nhật': '2026-01-01' })
+    for (let i = 0; i < 120; i++) {
+      seedDoc({ 'Tên hồ sơ': 'blocked' + i, 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['999']), 'Ngày cập nhật': '2026-01-01' })
+    }
+    invalidateSheetCache(SHEETS.HO_SO)
+
+    const res = getDocuments(staffToken, { page: 1 })
+    expect(res.data.map(d => d['Tên hồ sơ'])).toEqual(['allowed'])
+    expect(res.hasNext).toBe(false)
   })
 })
 

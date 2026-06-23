@@ -357,6 +357,35 @@ function _parseFileInfos(fileIdCol) {
   return []
 }
 
+// Số hồ sơ mỗi trang cho danh sách phẳng (phân trang server-side).
+var DOC_PAGE_SIZE = 100
+
+// Hạng ưu tiên hiển thị (nhỏ = ưu tiên cao):
+//  0 = Chưa hoàn thành; 1 = Hoàn thành + có người phụ trách;
+//  2 = Hoàn thành + có phát hành; 3 = Hoàn thành bình thường.
+function _docPriorityRank(doc) {
+  if (doc['Tình trạng'] !== 'Hoàn thành') return 0
+  if (_parseAssignees(doc['Phụ trách']).length > 0) return 1
+  var hasPublish = false
+  if (doc['Lịch sử phát hành']) {
+    try {
+      var h = JSON.parse(doc['Lịch sử phát hành'])
+      hasPublish = (Object.prototype.toString.call(h) === '[object Array]') && h.length > 0
+    } catch (e) { hasPublish = false }
+  }
+  return hasPublish ? 2 : 3
+}
+
+// So sánh theo hạng ưu tiên tăng dần, rồi Ngày cập nhật giảm dần
+// (thiếu ngày = thời điểm 0 → xuống cuối nhóm).
+function _compareByPriority(a, b) {
+  var ra = _docPriorityRank(a), rb = _docPriorityRank(b)
+  if (ra !== rb) return ra - rb
+  var ta = a['Ngày cập nhật'] ? new Date(a['Ngày cập nhật']).getTime() : 0
+  var tb = b['Ngày cập nhật'] ? new Date(b['Ngày cập nhật']).getTime() : 0
+  return tb - ta
+}
+
 function getDocuments(token, filters) {
   var session = requireAuth(token)
   filters = filters || {}
@@ -400,9 +429,10 @@ function getDocuments(token, filters) {
     docs = docs.filter(function(d) { return d['Tình trạng'] === filters.tinhTrang })
   }
 
-  // Category filter
+  // Category filter — include selected category AND all recursive descendants
   if (filters.danhMucId) {
-    docs = docs.filter(function(d) { return String(d['Danh mục']) === String(filters.danhMucId) })
+    var _catSet = _categoryDescendantSet(filters.danhMucId)
+    docs = docs.filter(function(d) { return _catSet[String(d['Danh mục'] || '')] })
   }
 
   // Project filter (multi-value: match if the doc contains the selected project)
@@ -444,14 +474,16 @@ function getDocuments(token, filters) {
     })
   }
 
-  // Sort newest first
-  docs.sort(function(a, b) {
-    var ta = a['Ngày cập nhật'] ? new Date(a['Ngày cập nhật']).getTime() : 0
-    var tb = b['Ngày cập nhật'] ? new Date(b['Ngày cập nhật']).getTime() : 0
-    return tb - ta
-  })
+  // Sort by display priority groups, then newest first within each group
+  docs.sort(_compareByPriority)
 
-  return { data: docs }
+  // Pagination — fixed page size, 1-based page number
+  var page = Math.max(1, parseInt(filters.page, 10) || 1)
+  var start = (page - 1) * DOC_PAGE_SIZE
+  var pageDocs = docs.slice(start, start + DOC_PAGE_SIZE)
+  var hasNext = docs.length > page * DOC_PAGE_SIZE
+
+  return { data: pageDocs, page: page, hasNext: hasNext }
 }
 
 function createDocument(token, data, fileInfos, notifyTarget) {
