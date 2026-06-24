@@ -110,18 +110,18 @@ describe('getDocuments', () => {
   })
 
   test('returns all docs for director', () => {
-    const result = getDocuments(directorToken, {})
+    const result = _getDocumentsInRam(directorToken, {})
     expect(result.data).toHaveLength(2)
   })
 
   test('filters by trangThai', () => {
-    const result = getDocuments(directorToken, { tinhTrang: 'Hoàn thành' })
+    const result = _getDocumentsInRam(directorToken, { tinhTrang: 'Hoàn thành' })
     expect(result.data).toHaveLength(1)
     expect(result.data[0]['Tên hồ sơ']).toBe('Doc B')
   })
 
   test('filters by keyword', () => {
-    const result = getDocuments(directorToken, { keyword: 'doc a' })
+    const result = _getDocumentsInRam(directorToken, { keyword: 'doc a' })
     expect(result.data).toHaveLength(1)
   })
 
@@ -135,7 +135,7 @@ describe('getDocuments', () => {
 
     // Snapshot model: chỉ "Người được xem" quyết định. Doc A/Doc B (rỗng, do director tạo) → staff
     // không thấy; chỉ thấy 'For Staff'. KHÔNG còn kế thừa danh mục.
-    const result = getDocuments(staffToken, {})
+    const result = _getDocumentsInRam(staffToken, {})
     expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['For Staff'])
   })
 
@@ -147,7 +147,7 @@ describe('getDocuments', () => {
     createDocument(directorToken, { 'Tên hồ sơ': 'Blocked Manager Doc', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người được xem': JSON.stringify(['999']) }, null)
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const result = getDocuments(managerToken, {})
+    const result = _getDocumentsInRam(managerToken, {})
     expect(result.data.map(d => d['Tên hồ sơ']).sort()).toEqual(['For Manager'])
   })
 })
@@ -180,7 +180,7 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
     seedDoc({ 'Tên hồ sơ': 'todo-new',     'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-03-01' })
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const names = getDocuments(directorToken, {}).data.map(d => d['Tên hồ sơ'])
+    const names = _getDocumentsInRam(directorToken, {}).data.map(d => d['Tên hồ sơ'])
     expect(names).toEqual(['todo-new', 'todo-old', 'done-pt', 'done-publish', 'done-plain'])
   })
 
@@ -189,22 +189,23 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
     seedDoc({ 'Tên hồ sơ': 'publish', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Lịch sử phát hành': JSON.stringify([{ lan: 1 }]), 'Ngày cập nhật': '2026-01-02' })
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const names = getDocuments(directorToken, {}).data.map(d => d['Tên hồ sơ'])
+    const names = _getDocumentsInRam(directorToken, {}).data.map(d => d['Tên hồ sơ'])
     expect(names).toEqual(['both', 'publish']) // rank 1 before rank 2
   })
 
-  test('pagination: page 1 ≤100 + hasNext; pages do not overlap; last page hasNext=false', () => {
-    for (let i = 0; i < 150; i++) {
+  test('pagination: page 1 đầy + hasNext; pages do not overlap; last page hasNext=false', () => {
+    const N = DOC_PAGE_SIZE + 5 // 1 trang đầy + 5 ở trang 2
+    for (let i = 0; i < N; i++) {
       seedDoc({ 'Tên hồ sơ': 'D' + i, 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-01-01' })
     }
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const p1 = getDocuments(directorToken, { page: 1 })
-    const p2 = getDocuments(directorToken, { page: 2 })
+    const p1 = _getDocumentsInRam(directorToken, { page: 1 })
+    const p2 = _getDocumentsInRam(directorToken, { page: 2 })
     expect(p1.page).toBe(1)
-    expect(p1.data).toHaveLength(100)
+    expect(p1.data).toHaveLength(DOC_PAGE_SIZE)
     expect(p1.hasNext).toBe(true)
-    expect(p2.data).toHaveLength(50)
+    expect(p2.data).toHaveLength(5)
     expect(p2.hasNext).toBe(false)
     const ids1 = new Set(p1.data.map(d => String(d.ID)))
     const overlap = p2.data.filter(d => ids1.has(String(d.ID)))
@@ -214,8 +215,8 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
   test('default (no page) → page 1; page beyond total → empty + hasNext=false', () => {
     seedDoc({ 'Tên hồ sơ': 'one', 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ngày cập nhật': '2026-01-01' })
     invalidateSheetCache(SHEETS.HO_SO)
-    expect(getDocuments(directorToken, {}).page).toBe(1)
-    const far = getDocuments(directorToken, { page: 5 })
+    expect(_getDocumentsInRam(directorToken, {}).page).toBe(1)
+    const far = _getDocumentsInRam(directorToken, { page: 5 })
     expect(far.data).toHaveLength(0)
     expect(far.hasNext).toBe(false)
   })
@@ -231,9 +232,9 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
     seedDoc({ 'Tên hồ sơ': 'in-1000', 'Danh mục': 1000, 'Tình trạng': 'Đang xử lý' })
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const all = getDocuments(directorToken, { danhMucId: 1 }).data.map(d => d['Tên hồ sơ']).sort()
+    const all = _getDocumentsInRam(directorToken, { danhMucId: 1 }).data.map(d => d['Tên hồ sơ']).sort()
     expect(all).toEqual(['in-1', 'in-10', 'in-100', 'in-1000'])
-    const sub = getDocuments(directorToken, { danhMucId: 100 }).data.map(d => d['Tên hồ sơ']).sort()
+    const sub = _getDocumentsInRam(directorToken, { danhMucId: 100 }).data.map(d => d['Tên hồ sơ']).sort()
     expect(sub).toEqual(['in-100', 'in-1000'])
   })
 
@@ -243,9 +244,9 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
       seedDoc({ 'Tên hồ sơ': 'Big ' + i, 'Danh mục': 1, 'Tình trạng': 'Đang xử lý', 'Ghi chú': big })
     }
     invalidateSheetCache(SHEETS.HO_SO)
-    expect(() => getDocuments(directorToken, { page: 1 })).not.toThrow()
-    const res = getDocuments(directorToken, { page: 1 })
-    expect(res.data).toHaveLength(100)
+    expect(() => _getDocumentsInRam(directorToken, { page: 1 })).not.toThrow()
+    const res = _getDocumentsInRam(directorToken, { page: 1 })
+    expect(res.data).toHaveLength(DOC_PAGE_SIZE)
     expect(res.hasNext).toBe(true)
     // Cache must round-trip the oversized sheet (chunked), not silently drop it
     expect(getSheetData(SHEETS.HO_SO)).toHaveLength(200)
@@ -270,7 +271,7 @@ describe('getDocuments — flat list, pagination & priority sort (011)', () => {
     }
     invalidateSheetCache(SHEETS.HO_SO)
 
-    const res = getDocuments(staffToken, { page: 1 })
+    const res = _getDocumentsInRam(staffToken, { page: 1 })
     expect(res.data.map(d => d['Tên hồ sơ'])).toEqual(['allowed'])
     expect(res.hasNext).toBe(false)
   })
@@ -929,7 +930,7 @@ describe('getDocuments — Nháp visibility', () => {
   test('creator sees own Nháp doc', () => {
     uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
     invalidateSheetCache(SHEETS.HO_SO)
-    const result = getDocuments(directorToken, {})
+    const result = _getDocumentsInRam(directorToken, {})
     expect(result.data.some(d => d['Tình trạng'] === 'Nháp')).toBe(true)
   })
 
@@ -938,14 +939,14 @@ describe('getDocuments — Nháp visibility', () => {
     invalidateSheetCache(SHEETS.HO_SO)
     seedUser(2, 'staff', 'staff@test.com', 'Nhân viên')
     const staffToken = createSession(2, 'staff', 'staff@test.com', 'Nhân viên')
-    const result = getDocuments(staffToken, {})
+    const result = _getDocumentsInRam(staffToken, {})
     expect(result.data.some(d => d['Tình trạng'] === 'Nháp')).toBe(false)
   })
 
   test('filter by tinhTrang=Nháp returns only own drafts', () => {
     uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
     invalidateSheetCache(SHEETS.HO_SO)
-    const result = getDocuments(directorToken, { tinhTrang: 'Nháp' })
+    const result = _getDocumentsInRam(directorToken, { tinhTrang: 'Nháp' })
     expect(result.data).toHaveLength(1)
     expect(result.data[0]['Tình trạng']).toBe('Nháp')
   })
@@ -981,7 +982,7 @@ describe('_normalizeStatus — Nháp preserved', () => {
     setConfig('ROOT_FOLDER_ID', 'root123')
     uploadFileEager(directorToken, 'AQID', 'application/pdf', 'draft.pdf', 1, null)
     invalidateSheetCache(SHEETS.HO_SO)
-    const result = getDocuments(directorToken, {})
+    const result = _getDocumentsInRam(directorToken, {})
     const draft = result.data.find(d => d['Tình trạng'] === 'Nháp')
     expect(draft).toBeTruthy()
     expect(draft['Tình trạng']).toBe('Nháp')
@@ -1115,17 +1116,17 @@ describe('getDocuments — Dự án multi-value filter', () => {
   })
 
   test('matches a doc that contains the selected project (JSON array)', () => {
-    const r = getDocuments(directorToken, { duAn: 'DA-02' })
+    const r = _getDocumentsInRam(directorToken, { duAn: 'DA-02' })
     expect(r.data.map(d => d['Tên hồ sơ'])).toEqual(['Multi Doc'])
   })
 
   test('still matches a legacy single-value doc', () => {
-    const r = getDocuments(directorToken, { duAn: 'DA-03' })
+    const r = _getDocumentsInRam(directorToken, { duAn: 'DA-03' })
     expect(r.data.map(d => d['Tên hồ sơ'])).toEqual(['Legacy Doc'])
   })
 
   test('no match when the project is absent', () => {
-    expect(getDocuments(directorToken, { duAn: 'DA-99' }).data).toHaveLength(0)
+    expect(_getDocumentsInRam(directorToken, { duAn: 'DA-99' }).data).toHaveLength(0)
   })
 })
 
@@ -1148,5 +1149,55 @@ describe('checkReferences — Dự án used inside a multi-value doc', () => {
     createDocument(directorToken, { 'Tên hồ sơ': 'Uses other', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-09']) }, null)
     invalidateSheetCache(SHEETS.HO_SO)
     expect(checkReferences(SHEETS.DU_AN, 1).inUse).toBe(false)
+  })
+})
+
+// ── 012: getDocuments qua gviz (integration, mock UrlFetchApp) ────────────────
+describe('getDocuments (gviz path)', () => {
+  beforeEach(() => {
+    // HO_SO cần 3 cột tính sẵn để _sheetCols tính đúng chữ cái (gviz đã mock nên không cần data)
+    SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS.concat(['Hạng ưu tiên', 'Token xem', 'Blob tìm kiếm'])])
+  })
+  function gvizBody(docs, status) {
+    const cols = DOC_QUERY_HEADERS.map(label => ({ label }))
+    const rows = docs.map(d => ({ c: DOC_QUERY_HEADERS.map(h => ({ v: d[h] != null ? d[h] : null })) }))
+    const obj = status === 'error'
+      ? { status: 'error', errors: [{ detailed_message: 'bad' }] }
+      : { status: 'ok', table: { cols, rows } }
+    return "/*O_o*/\ngoogle.visualization.Query.setResponse(" + JSON.stringify(obj) + ');'
+  }
+  function makeDocs(n) {
+    const out = []
+    for (let i = 1; i <= n; i++) out.push({ ID: i, 'Tên hồ sơ': 'Doc ' + i })
+    return out
+  }
+
+  test('trả {data,page,hasNext}; dư 1 dòng → hasNext true & đúng page size', () => {
+    UrlFetchApp._nextResponse = { code: 200, body: gvizBody(makeDocs(DOC_PAGE_SIZE + 1)) }
+    const r = getDocuments(directorToken, { page: 1 })
+    expect(r.data.length).toBe(DOC_PAGE_SIZE)
+    expect(r.hasNext).toBe(true)
+    expect(r.page).toBe(1)
+    expect(r.data[0]['Tên hồ sơ']).toBe('Doc 1')
+  })
+
+  test('ít hơn page size → hasNext false', () => {
+    UrlFetchApp._nextResponse = { code: 200, body: gvizBody(makeDocs(DOC_PAGE_SIZE - 1)) }
+    const r = getDocuments(directorToken, { page: 1 })
+    expect(r.data.length).toBe(DOC_PAGE_SIZE - 1)
+    expect(r.hasNext).toBe(false)
+  })
+
+  test('lỗi truy vấn nguồn → ném Error (FR-018)', () => {
+    UrlFetchApp._nextResponse = { code: 200, body: gvizBody([], 'error') }
+    expect(() => getDocuments(directorToken, { page: 1 })).toThrow('Lỗi truy vấn nguồn')
+  })
+
+  test('full quyền (Giám đốc): tq KHÔNG có mệnh đề token', () => {
+    UrlFetchApp._nextResponse = { code: 200, body: gvizBody(makeDocs(1)) }
+    getDocuments(directorToken, { page: 1 })
+    const tq = decodeURIComponent(UrlFetchApp._lastRequest.url.split('tq=')[1])
+    expect(tq).not.toContain('AA contains')
+    expect(tq).toContain("order by Z asc, Q desc, A desc")
   })
 })

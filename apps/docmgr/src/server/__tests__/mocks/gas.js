@@ -13,6 +13,7 @@ global.SpreadsheetApp = {
       _name: name,
       _rows: rows ? rows.map(r => [...r]) : [[]],
       getName()   { return this._name },
+      getSheetId() { return 0 },
       getLastRow() { return this._rows.length },
       getLastColumn()  { return this._rows[0] ? this._rows[0].length : 0 },
       getMaxColumns()  { return this._rows[0] ? this._rows[0].length : 0 },
@@ -77,6 +78,7 @@ global.SpreadsheetApp = {
       _name: sheetName,
       _rows: rows ? rows.map(r => [...r]) : [[]],
       getName()   { return this._name },
+      getSheetId() { return 0 },
       getLastRow() { return this._rows.length },
       getDataRange() {
         const data = this._rows

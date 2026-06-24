@@ -121,5 +121,5 @@ npm run build:license      # .js → .gs conversion
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/011-flat-doc-list-pagination/plan.md`
+at `specs/012-server-side-doc-query/plan.md`
 <!-- SPECKIT END -->

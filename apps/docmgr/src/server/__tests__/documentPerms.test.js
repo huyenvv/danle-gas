@@ -38,7 +38,7 @@ function setupSsoUsers(users) {
   ssoStoreParentSheetId(SSO_PARENT_ID)
 }
 function visibleIds(token, filters) {
-  return getDocuments(token, filters || {}).data.map(d => String(d['ID']))
+  return _getDocumentsInRam(token, filters || {}).data.map(d => String(d['ID']))
 }
 function readDocViewers(id) {
   const d = getSheetData(SHEETS.HO_SO).find(r => String(r['ID']) === String(id))

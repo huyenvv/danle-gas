@@ -359,7 +359,7 @@ function _parseFileInfos(fileIdCol) {
 }
 
 // Số hồ sơ mỗi trang cho danh sách phẳng (phân trang server-side).
-var DOC_PAGE_SIZE = 100
+var DOC_PAGE_SIZE = 20
 
 // Hạng ưu tiên hiển thị (nhỏ = ưu tiên cao):
 //  0 = Chưa hoàn thành; 1 = Hoàn thành + có người phụ trách;
@@ -387,7 +387,120 @@ function _compareByPriority(a, b) {
   return tb - ta
 }
 
+// ── 012: 3 cột tính sẵn (đẩy lọc/sắp/tìm xuống nguồn) ────────────────────────
+// Map định danh (username/email HOẶC userId) → userId. Nguồn: _Phân Quyền (docmgr) +
+// _Người Dùng (SSO cha, đầy đủ). Memo TRONG-MỘT-EXECUTION (biến module) — GAS mỗi request
+// là scope mới nên tự reset giữa request → không staleness; trong 1 request/backfill chỉ đọc 1 lần.
+// Chỉ dùng khi GHI (sinh token); đường query KHÔNG cần (đã có session.userId).
+var _docUserIdMemo = null
+function _resetDocUserIdMemo() { _docUserIdMemo = null }
+function _getDocUserIdMap() {
+  if (_docUserIdMemo) return _docUserIdMemo
+  var map = {}
+  getSheetData(SHEETS.APP_ROLES).forEach(function (r) {
+    if (r['AppID'] !== APP_ID) return
+    var uid = String(r['UserID'])
+    map[uid] = uid
+    if (r['Tên đăng nhập']) map[String(r['Tên đăng nhập'])] = uid
+  })
+  try {
+    var parentId = ssoGetParentSheetId()
+    if (parentId) {
+      var sheet = SpreadsheetApp.openById(parentId).getSheetByName('_Người Dùng')
+      if (sheet) {
+        rowsToObjects(sheet.getDataRange().getValues()).forEach(function (u) {
+          var id = String(u['ID'])
+          if (!id) return
+          map[id] = id
+          if (u['Tên đăng nhập']) map[String(u['Tên đăng nhập'])] = id
+          if (u['Email']) map[String(u['Email'])] = id
+        })
+      }
+    }
+  } catch (e) { Logger.log('_getDocUserIdMap parent error: ' + e.message) }
+  _docUserIdMemo = map
+  return map
+}
+
+// "Token ai được xem" — tập userId được xem, NỘI DUNG phụ thuộc Tình trạng (FR-014a).
+// Map mọi định danh (email/username/id) → userId qua _getDocUserIdMap; định danh không
+// resolve được giữ THÔ (không mất quyền). Ngăn cách '|' (email chứa '_' nên không dùng '_').
+// Truy vấn lọc bằng `contains '|<session.userId>|'` (session đã có userId).
+function _docViewToken(doc, userMap) {
+  var map = userMap || _getDocUserIdMap()
+  var status = _normalizeStatus(doc['Tình trạng'])
+  var vals = []
+  if (doc['Người tạo']) vals.push(doc['Người tạo'])
+  if (status !== 'Nháp') {                                       // Nháp → chỉ người tạo
+    vals = vals.concat(_parseAssignees(doc['Phụ trách']))
+    vals = vals.concat(_parseAssignees(doc['Người phối hợp']))
+  }
+  if (status === 'Hoàn thành') {                                 // Người được xem chỉ khi Hoàn thành
+    vals = vals.concat(_parseAssignees(doc['Người được xem']))
+  }
+  var seen = {}, uniq = []
+  vals.forEach(function (v) {
+    var raw = String(v == null ? '' : v)
+    var id = String(map[raw] != null ? map[raw] : raw).replace(/\|/g, '')
+    if (id && !seen[id]) { seen[id] = true; uniq.push(id) }
+  })
+  return '|' + uniq.join('|') + '|'
+}
+
+// "Blob tìm kiếm" — gộp 7 trường đã bỏ dấu (giống viMatch của client/getDocuments) (FR-016b).
+function _docSearchBlob(doc) {
+  return _viNormalize([
+    doc['Tên hồ sơ'], doc['Số hồ sơ'], doc['Dự án (Phòng ban)'],
+    doc['Nhà cung cấp (Nơi ban hành)'], doc['Ghi chú'], doc['Phụ trách'], doc['Tên file']
+  ].join(' '))
+}
+
+// Trả 3 cột tính sẵn từ object hồ sơ ĐẦY ĐỦ (đã chuẩn hóa Tình trạng để khớp getDocuments).
+function _docDerivedColumns(doc) {
+  var ns = _normalizeStatus(doc['Tình trạng'])
+  var nd = ns !== doc['Tình trạng'] ? Object.assign({}, doc, { 'Tình trạng': ns }) : doc
+  return {
+    'Hạng ưu tiên': _docPriorityRank(nd),
+    'Token xem': _docViewToken(nd),
+    'Blob tìm kiếm': _docSearchBlob(nd),
+  }
+}
+
+// Wrapper ghi: luôn gán 3 cột tính sẵn để mọi điểm ghi đồng bộ (FR-005/006/014b).
+function _addDocRow(record) {
+  return addRow(SHEETS.HO_SO, Object.assign({}, record, _docDerivedColumns(record)))
+}
+function _updateDocRow(id, updates, existingDoc) {
+  var doc = existingDoc
+  if (!doc) doc = getSheetData(SHEETS.HO_SO).find(function(d) { return String(d['ID']) === String(id) })
+  var merged = Object.assign({}, doc || {}, updates)
+  var withDerived = Object.assign({}, updates, _docDerivedColumns(merged))
+  return updateRow(SHEETS.HO_SO, id, withDerived)
+}
+
+// Backfill (FR-007): nạp 3 cột cho hồ sơ cũ. Idempotent qua cờ ScriptProperties.
+function backfillDocDerived() {
+  var props = PropertiesService.getScriptProperties()
+  // V3: token map về userId (delimiter '|') → chạy lại 1 lần.
+  if (props.getProperty('BACKFILL_DOCDERIVED_V3') === '1') return
+  getSheetData(SHEETS.HO_SO).forEach(function(d) { _updateDocRow(d['ID'], {}, d) })
+  invalidateSheetCache(SHEETS.HO_SO)
+  props.setProperty('BACKFILL_DOCDERIVED_V3', '1')
+}
+
+// 012: doc list lấy qua truy vấn nguồn (gviz) — chỉ kéo 100 dòng/trang (FR-001/002).
+// Server-side: phân trang + danh mục (đệ quy) + tìm kiếm toàn tập + lọc quyền (token).
+// Các lọc phụ (tình trạng/dự án/NCC/năm) + "Công việc của tôi" vẫn áp client per-page (FR-015/016a).
 function getDocuments(token, filters) {
+  var session = requireAuth(token)
+  filters = filters || {}
+  var ctx = { role: session.role, userId: session.userId, username: session.username }
+  return _queryDocPage(ctx, { page: filters.page, danhMucId: filters.danhMucId, keyword: filters.keyword })
+}
+
+// Bản đọc-toàn-bộ + lọc/sắp/cắt trong RAM (hành vi 011) — giữ làm THAM CHIẾU NGỮ NGHĨA
+// và đường lùi; KHÔNG còn là đường phục vụ chính. Test ngữ nghĩa trỏ vào hàm này.
+function _getDocumentsInRam(token, filters) {
   var session = requireAuth(token)
   filters = filters || {}
 
@@ -543,7 +656,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     'Khẩn': data['Khẩn'] === true || data['Khẩn'] === 'TRUE' ? 'TRUE' : '',
   }
 
-  var added = addRow(SHEETS.HO_SO, record)
+  var added = _addDocRow(record)
   logAudit(session, 'Tạo', 'Hồ sơ', record['Tên hồ sơ'], JSON.stringify({ soHoSo: record['Số hồ sơ'], danhMuc: record['Danh mục'] }))
 
   // Send email notification if Trình duyệt (notify directors)
@@ -687,7 +800,7 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   updates['Ngày cập nhật'] = new Date().toISOString()
 
   var updated = Object.assign({}, doc, updates)
-  updateRow(SHEETS.HO_SO, id, updates)
+  _updateDocRow(id, updates, doc)
 
   // Notification based on notifyTarget:
   //   'none'      — Văn thư "Lưu tài liệu" → no notification
@@ -892,7 +1005,7 @@ function _backfillDocViewers() {
   getSheetData(SHEETS.HO_SO).forEach(function(d) {
     if (_parseAssignees(d['Người được xem']).length === 0) {
       var ids = _categoryViewerIds(d['Danh mục'])
-      if (ids.length) updateRow(SHEETS.HO_SO, d['ID'], { 'Người được xem': JSON.stringify(ids) })
+      if (ids.length) _updateDocRow(d['ID'], { 'Người được xem': JSON.stringify(ids) }, d)
     }
   })
   props.setProperty('BACKFILL_DOCVIEWERS_DONE', '1')
@@ -1059,7 +1172,7 @@ function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
       'Tên file': existingInfos.map(function(f) { return f.fileName }).join(', '),
       'Ngày cập nhật': new Date().toISOString(),
     }
-    updateRow(SHEETS.HO_SO, draftId, changes)
+    _updateDocRow(draftId, changes, draft)
     invalidateSheetCache(SHEETS.HO_SO)
     return { fileInfo: fileInfo, data: Object.assign({}, draft, changes) }
   }
@@ -1074,7 +1187,7 @@ function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
   }
-  var added = addRow(SHEETS.HO_SO, record)
+  var added = _addDocRow(record)
   invalidateSheetCache(SHEETS.HO_SO)
   return { draftId: added['ID'], fileInfo: fileInfo, data: added }
 }
@@ -1179,7 +1292,7 @@ function finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) {
     })
   }
 
-  updateRow(SHEETS.HO_SO, draftId, updates)
+  _updateDocRow(draftId, updates, draft)
   invalidateSheetCache(SHEETS.HO_SO)
 
   var updated = Object.assign({}, draft, updates)
@@ -1238,7 +1351,7 @@ function createDraft(token, formData) {
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
   }
-  var added = addRow(SHEETS.HO_SO, record)
+  var added = _addDocRow(record)
   invalidateSheetCache(SHEETS.HO_SO)
   return { data: added }
 }
@@ -1393,7 +1506,7 @@ function transitionDocument(token, id, action, data, updateData) {
     updates['Lý do từ chối'] = ''
   }
 
-  updateRow(SHEETS.HO_SO, id, updates)
+  _updateDocRow(id, updates, doc)
   var updated = Object.assign({}, doc, updates)
 
   // giaoViec: TO = Phụ trách, CC = Người phối hợp
@@ -1542,7 +1655,7 @@ function publishDocument(token, docId, toUserIds, ccUserIds) {
     })
     if (addedViewer) publishUpdates['Người được xem'] = JSON.stringify(newViewers)
   }
-  updateRow(SHEETS.HO_SO, docId, publishUpdates)
+  _updateDocRow(docId, publishUpdates)
   var updated = Object.assign({}, doc, publishUpdates)
 
   return { success: true, lan: history.length, data: updated }
@@ -1566,7 +1679,7 @@ function setDocumentViewers(token, docId, nguoiDuocXem) {
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
   }
-  updateRow(SHEETS.HO_SO, docId, updates)
+  _updateDocRow(docId, updates)
   // Báo (unread) cho những người MỚI được thêm vào danh sách xem — không re-báo người đã có.
   var addedViewers = newViewers.filter(function(v) { return oldViewers.indexOf(v) === -1 })
   if (addedViewers.length) _markUnreadForUsers(addedViewers, docId)

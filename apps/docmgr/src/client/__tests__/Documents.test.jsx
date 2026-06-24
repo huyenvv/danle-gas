@@ -1,6 +1,7 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import MainApp from '../components/MainApp.jsx'
 import gasCall from '../gasClient.js'
+import { dataCache } from '../utils/dataCache.js'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
   MOCK_TOKEN,
@@ -141,7 +142,7 @@ describe('Documents page — MainApp', () => {
     expect(await screen.findByText('Hồ sơ')).toBeInTheDocument()
   })
 
-  test('typing keyword filters the current page client-side (no server keyword call) [US4/T022]', async () => {
+  test('search runs server-side full-text only on Enter [012/T028]', async () => {
     gasCall.mockImplementation((fn) => {
       if (fn === 'api_getDocuments') return Promise.resolve({ data: [], page: 1, hasNext: false })
       if (fn === 'api_getDocumentStats') return Promise.resolve({})
@@ -150,21 +151,57 @@ describe('Documents page — MainApp', () => {
     })
     renderMainApp()
 
-    // Wait for initial render via __INITIAL_DATA__ (both docs visible)
+    // Wait for initial render via __INITIAL_DATA__
     expect(await screen.findByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
-    expect(screen.getByText('Công văn số 01/2024')).toBeInTheDocument()
 
-    const searchInput = screen.getByPlaceholderText(/trong trang này/i)
+    const searchInput = screen.getByPlaceholderText(/toàn bộ hồ sơ/i)
+
+    // Gõ KHÔNG kích hoạt server search
     fireEvent.change(searchInput, { target: { value: 'Công văn' } })
+    expect(gasCall).not.toHaveBeenCalledWith(
+      'api_getDocuments', MOCK_TOKEN, expect.objectContaining({ keyword: expect.anything() })
+    )
 
-    // Client-side narrowing within the current page
+    // Nhấn Enter → server tìm toàn tập, tải lại từ trang 1 kèm keyword
+    fireEvent.keyDown(searchInput, { key: 'Enter' })
     await waitFor(() => {
-      expect(screen.queryByText('Hợp đồng mua sắm CNTT')).not.toBeInTheDocument()
-      expect(screen.getByText('Công văn số 01/2024')).toBeInTheDocument()
+      expect(gasCall).toHaveBeenCalledWith(
+        'api_getDocuments', MOCK_TOKEN,
+        expect.objectContaining({ keyword: 'Công văn', page: 1 })
+      )
+    })
+  })
+
+  test('load ngầm (poll) đang search → reload đúng query, KHÔNG đè bằng dữ liệu không-lọc [012/đợt3]', async () => {
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getDocuments') return Promise.resolve({ data: [], page: 1, hasNext: false })
+      if (fn === 'api_getDocumentStats') return Promise.resolve({})
+      if (fn === 'api_getUsers') return Promise.resolve([])
+      return Promise.resolve({})
+    })
+    renderMainApp()
+    expect(await screen.findByText('Hợp đồng mua sắm CNTT')).toBeInTheDocument()
+
+    // Bật search
+    const searchInput = screen.getByPlaceholderText(/toàn bộ hồ sơ/i)
+    fireEvent.change(searchInput, { target: { value: 'Công văn' } })
+    fireEvent.keyDown(searchInput, { key: 'Enter' })
+    await waitFor(() => expect(gasCall).toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, expect.objectContaining({ keyword: 'Công văn' })))
+
+    gasCall.mockClear()
+
+    // Mô phỏng poll nền phát trang-1 KHÔNG lọc — lấy subscriber 'docs' MỚI NHẤT
+    // (mock.calls tích luỹ qua các test → phải lấy của render hiện tại)
+    const docsCalls = dataCache.subscribe.mock.calls.filter(c => c[0] === 'docs')
+    const docsSub = docsCalls[docsCalls.length - 1]
+    expect(docsSub).toBeTruthy()
+    await act(async () => {
+      docsSub[1]([{ ID: 999, 'Tên hồ sơ': 'Hồ sơ không-lọc từ poll', 'Tình trạng': 'Đang xử lý' }])
     })
 
-    // No server round-trip carrying a keyword filter
-    expect(gasCall).not.toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, expect.objectContaining({ keyword: expect.anything() }))
+    // Vì đang search → silent reload đúng query (kèm keyword), KHÔNG áp trực tiếp dữ liệu poll
+    await waitFor(() => expect(gasCall).toHaveBeenCalledWith('api_getDocuments', MOCK_TOKEN, expect.objectContaining({ keyword: 'Công văn' })))
+    expect(screen.queryByText('Hồ sơ không-lọc từ poll')).not.toBeInTheDocument()
   })
 
   test('VT creator sees edit in context menu for Từ chối doc', async () => {

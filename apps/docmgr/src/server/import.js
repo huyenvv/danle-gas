@@ -253,7 +253,7 @@ function bulkImportDocuments(token, payload) {
         'Khẩn': '',
       }
 
-      addRow(SHEETS.HO_SO, record)
+      _addDocRow(record)
       created++
       totalFiles += validFiles.length
 

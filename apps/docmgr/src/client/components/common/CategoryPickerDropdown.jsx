@@ -21,18 +21,22 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
   const [collapsed, setCollapsed] = useState(() => new Set()) // ids whose children are hidden; empty = all expanded
   const ref = useRef(null)
   const searchRef = useRef(null)
+  const initCollapseRef = useRef(false)   // chỉ co gọn mặc định 1 LẦN; sau đó giữ expand người dùng
 
-  // defaultCollapsed: mỗi lần mở dropdown, thu gọn mọi danh mục cha (chỉ hiện gốc).
-  // Tính tại thời điểm mở để dùng categories đã tải xong (lookups async).
+  // defaultCollapsed: co gọn mọi danh mục cha (chỉ hiện gốc) — chạy 1 lần khi mở lần đầu
+  // (đợi categories tải xong). Các lần mở sau GIỮ NGUYÊN trạng thái expand (cache trong phiên).
+  // collapsed là state trong-component → tự reset khi F5 / đổi trang (remount).
   useEffect(() => {
-    if (!open || !defaultCollapsed) return
+    if (!open || !defaultCollapsed || initCollapseRef.current) return
+    if (!(categories || []).length) return // chờ lookups async
     const parents = new Set()
     ;(categories || []).forEach(c => {
       const p = String(c['Danh mục cha'] || '')
       if (p) parents.add(p)
     })
     setCollapsed(parents)
-  }, [open])
+    initCollapseRef.current = true
+  }, [open, categories])
 
   useEffect(() => {
     if (!open) return
@@ -55,6 +59,13 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
     return m
   }, [cats])
 
+  // Tra cứu danh mục theo ID — O(1), tránh cats.find() lặp trong vòng (đỡ đơ khi nhiều danh mục).
+  const byId = useMemo(() => {
+    const m = {}
+    cats.forEach(c => { m[String(c.ID)] = c })
+    return m
+  }, [cats])
+
   // When searching, show matched nodes + their ancestor chain (for context).
   const q = search.trim()
   const visibleIds = useMemo(() => {
@@ -63,14 +74,16 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
     cats.forEach(c => {
       if (!viMatch(c['Tên danh mục'], q)) return
       let cur = c
-      while (cur) {
+      const seen = new Set()            // chặn vòng lặp cha-con (dữ liệu lỗi → đơ)
+      while (cur && !seen.has(String(cur.ID))) {
+        seen.add(String(cur.ID))
         show.add(String(cur.ID))
         const pid = String(cur['Danh mục cha'] || '')
-        cur = pid ? cats.find(x => String(x.ID) === pid) : null
+        cur = pid ? byId[pid] : null
       }
     })
     return show
-  }, [q, cats])
+  }, [q, cats, byId])
 
   function toggleCollapse(id) {
     setCollapsed(prev => {
@@ -87,8 +100,10 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
     setSearch('')
   }
 
-  function renderNodes(parentId, depth) {
-    const kids = (childrenOf[String(parentId || '')] || []).filter(c => !exclude.has(String(c.ID)))
+  function renderNodes(parentId, depth, ancestors) {
+    ancestors = ancestors || new Set()
+    // Bỏ con đã nằm trong đường tổ tiên → chặn đệ quy vô hạn nếu dữ liệu cha-con bị vòng.
+    const kids = (childrenOf[String(parentId || '')] || []).filter(c => !exclude.has(String(c.ID)) && !ancestors.has(String(c.ID)))
     return kids.flatMap(c => {
       const id = String(c.ID)
       if (visibleIds && !visibleIds.has(id)) return []
@@ -114,7 +129,7 @@ export default function CategoryPickerDropdown({ categories, value, onChange, pl
           {hasChildren && <span className="text-[10px] text-on-surface-variant bg-surface-container px-1.5 rounded-full shrink-0">{childCount}</span>}
           {isSelected && <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: 14 }}>check</span>}
         </button>,
-        ...(isOpen && canDescend ? renderNodes(id, depth + 1) : [])
+        ...(isOpen && canDescend ? renderNodes(id, depth + 1, new Set(ancestors).add(id)) : [])
       ]
     })
   }

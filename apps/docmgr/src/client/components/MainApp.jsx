@@ -27,9 +27,8 @@ import { getDeadlineStatus } from '../utils/deadlineStatus.js'
 import Icon from './common/Icon.jsx'
 import PublishHistory from './documents/PublishHistory.jsx'
 import CategoryPickerDropdown from './common/CategoryPickerDropdown.jsx'
-import { viMatch } from '../utils/viSearch.js'
 
-const PAGE_SIZE = 100
+const PAGE_SIZE = 20 // phải khớp DOC_PAGE_SIZE phía server (012 đợt 3)
 
 function parseAssignees(value) {
   if (!value) return []
@@ -74,6 +73,7 @@ export default function MainApp() {
   const [serverCatId, setServerCatId] = useState('')   // '' = tất cả
   const pageRef        = useRef(1)
   const serverCatIdRef = useRef('')
+  const searchKeywordRef = useRef('')   // tìm kiếm toàn tập — gửi xuống server (012)
 
   // Unread tracking (DA_DOC stores unread records)
   const [unreadDocIds, setUnreadDocIds] = useState(new Set())
@@ -99,8 +99,10 @@ export default function MainApp() {
     const cat = danhMucId !== undefined ? danhMucId : serverCatIdRef.current
     if (!silent) { setLoading(true); setError('') }
     try {
+      const kw = (searchKeywordRef.current || '').trim()
       const filters = { page: targetPage }
       if (cat) filters.danhMucId = cat
+      if (kw) filters.keyword = kw   // tìm kiếm toàn tập phía server (012 — FR-016)
       const [docsRes, statsRes] = await Promise.all([
         gasCall('api_getDocuments', localStorage.getItem('docmgr_access_token'), filters),
         gasCall('api_getDocumentStats', localStorage.getItem('docmgr_access_token')),
@@ -110,7 +112,7 @@ export default function MainApp() {
       setHasNext(!!(docsRes && docsRes.hasNext))
       setDocPage(targetPage); pageRef.current = targetPage
       // Only cache page-1 unfiltered results (matches what background polling fetches)
-      if (targetPage === 1 && !cat) dataCache.set('docs', nextDocs)
+      if (targetPage === 1 && !cat && !kw) dataCache.set('docs', nextDocs)
       setStats(statsRes || {})
       failCountRef.current = 0
     } catch (err) {
@@ -133,6 +135,15 @@ export default function MainApp() {
     setServerCatId(id); serverCatIdRef.current = id
     pageRef.current = 1
     loadDocs({ page: 1, danhMucId: id })
+  }, [loadDocs])
+
+  // 012: tìm kiếm toàn tập — CHỈ chạy khi nhấn Enter (hoặc xoá). Server tải lại từ trang 1.
+  const commitSearch = useCallback((kw) => {
+    const v = (kw || '').trim()
+    setSearchKeyword(v)
+    searchKeywordRef.current = v
+    pageRef.current = 1
+    loadDocs({ page: 1 })
   }, [loadDocs])
 
   const upsertDocInCache = useCallback((nextDoc) => {
@@ -199,10 +210,10 @@ export default function MainApp() {
     // Subscribe to polling updates
     const unsubDocs = dataCache.subscribe('docs', data => {
       // Polling fetches page-1 unfiltered docs. Apply directly only when the user is
-      // viewing page 1 with no category filter; otherwise silently reload the exact
-      // current page/filter so pagination isn't clobbered.
+      // viewing page 1 with NO category AND NO keyword search; otherwise silently reload
+      // the exact current page/filter (loadDocs gửi cả keyword + danhMucId) để không bị đè.
       if (!data) return
-      if (pageRef.current === 1 && !serverCatIdRef.current) {
+      if (pageRef.current === 1 && !serverCatIdRef.current && !searchKeywordRef.current) {
         setAllDocs(data)
         setHasNext(data.length >= PAGE_SIZE)
       } else {
@@ -245,21 +256,10 @@ export default function MainApp() {
   }
 
   const docs = useMemo(() => {
-    // allDocs = trang hiện tại (server đã lọc danh mục + sắp ưu tiên). Giữ nguyên thứ tự.
-    // Các bộ lọc dưới đây áp CLIENT, chỉ trong phạm vi trang đang xem.
+    // allDocs = trang hiện tại (server đã lọc danh mục + TÌM KIẾM toàn tập + sắp ưu tiên).
+    // Tìm kiếm từ khóa nay chạy SERVER (toàn tập). Các bộ lọc phụ dưới đây vẫn áp CLIENT,
+    // chỉ trong phạm vi trang đang xem (012 — FR-016a).
     let result = [...allDocs]
-    if (searchKeyword) {
-      const kw = searchKeyword.trim()
-      result = result.filter(d =>
-        viMatch(d['Tên hồ sơ'], kw) ||
-        viMatch(d['Số hồ sơ'], kw) ||
-        viMatch(d['Dự án (Phòng ban)'], kw) ||
-        viMatch(d['Nhà cung cấp (Nơi ban hành)'], kw) ||
-        viMatch(d['Ghi chú'], kw) ||
-        viMatch(d['Phụ trách'], kw) ||
-        viMatch(d['Tên file'], kw)
-      )
-    }
     if (filters.tinhTrang) result = result.filter(d => d['Tình trạng'] === filters.tinhTrang)
     if (filters.duAn) result = result.filter(d => parseAssignees(d['Dự án (Phòng ban)']).includes(String(filters.duAn)))
     if (filters.nhaCungCap) result = result.filter(d => d['Nhà cung cấp (Nơi ban hành)'] === filters.nhaCungCap)
@@ -291,7 +291,7 @@ export default function MainApp() {
       })
     }
     return result
-  }, [allDocs, filters, unreadDocIds, searchKeyword])
+  }, [allDocs, filters, unreadDocIds])
 
   // Bell count = unread docs (DA_DOC has record = unread)
   const unreadCount = useMemo(
@@ -378,15 +378,16 @@ export default function MainApp() {
                   <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" style={{ fontSize: 18 }}>search</span>
                   <input
                     className={`bg-surface-container-low border-none rounded-xl pl-9 pr-8 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary/20 ${searchKeyword ? 'ring-2 ring-primary/30' : ''}`}
-                    placeholder="Tìm trong trang này…"
-                    title="Tìm kiếm/lọc chỉ áp dụng trên các hồ sơ của trang đang xem"
+                    placeholder="Tìm toàn bộ hồ sơ — nhấn Enter…"
+                    title="Tìm trên TOÀN BỘ hồ sơ (tên, số hồ sơ, dự án, NCC, ghi chú, phụ trách, tên file) — không phân biệt dấu. Nhấn Enter để tìm."
                     value={searchInput}
-                    onChange={e => { setSearchInput(e.target.value); setSearchKeyword(e.target.value) }}
+                    onChange={e => setSearchInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitSearch(searchInput) } }}
                   />
-                  {searchKeyword && (
+                  {searchInput && (
                     <button
                       type="button"
-                      onClick={() => { setSearchInput(''); setSearchKeyword('') }}
+                      onClick={() => { setSearchInput(''); commitSearch('') }}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
                     >
                       <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
@@ -401,7 +402,7 @@ export default function MainApp() {
                     value={serverCatId}
                     onChange={selectServerCategory}
                     rootOption="Tất cả danh mục"
-                    maxDepth={2}
+                    defaultCollapsed
                     testId="doc-category-filter"
                   />
                 </div>
@@ -413,7 +414,7 @@ export default function MainApp() {
                       setFilters({ myWork: false })
                     } else {
                       setFilters({ myWork: true })
-                      if (searchKeyword) { setSearchInput(''); setSearchKeyword('') }
+                      if (searchKeyword) { setSearchInput(''); commitSearch('') }
                     }
                   }}
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
@@ -469,7 +470,7 @@ export default function MainApp() {
                   value={filters.duAn || ''}
                   onChange={e => handleFilterChange('duAn', e.target.value)}
                 >
-                  <option value="">Tất cả dự án</option>
+                  <option value="">Tất cả Nơi nhận</option>
                   {(lookups.duAn || []).map(p => (
                     <option key={p.ID} value={p['Tên dự án viết tắt']}>{p['Tên dự án viết tắt']}</option>
                   ))}
@@ -480,7 +481,7 @@ export default function MainApp() {
                   value={filters.nhaCungCap || ''}
                   onChange={e => handleFilterChange('nhaCungCap', e.target.value)}
                 >
-                  <option value="">Tất cả NCC</option>
+                  <option value="">Tất cả Nơi gửi</option>
                   {(lookups.nhaCungCap || []).map(p => (
                     <option key={p.ID} value={p['Tên NCC viết tắt']}>{p['Tên NCC viết tắt']}</option>
                   ))}
@@ -500,6 +501,12 @@ export default function MainApp() {
                     </optgroup>
                   ))}
                 </select>
+
+                <span
+                  className="material-symbols-outlined text-on-surface-variant/70 self-center cursor-help"
+                  style={{ fontSize: 18 }}
+                  title="Tìm kiếm áp trên TOÀN BỘ hồ sơ. Các bộ lọc còn lại (tình trạng, dự án, NCC, phụ trách, hạn, đã đọc, 'Công việc của tôi') chỉ áp trong TRANG đang xem."
+                >info</span>
 
                 <div className="ml-auto flex items-center gap-2">
                   <button
@@ -738,8 +745,7 @@ function DocumentTable({ docs, loading, isAdmin, canDelete, usersMap, users, unr
           </tbody>
         </table>
       </div>
-      <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-between text-sm bg-surface-container-lowest">
-        <span className="text-on-surface-variant text-xs">Tìm kiếm/lọc nhanh chỉ áp dụng trong trang này</span>
+      <div className="px-4 py-3 border-t border-outline-variant/40 flex items-center justify-end text-sm bg-surface-container-lowest">
         <div className="flex items-center gap-2">
           <button type="button" onClick={onPrevPage} disabled={page <= 1}
             className="px-3 py-1.5 border border-outline-variant rounded-lg text-sm hover:bg-surface-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed">

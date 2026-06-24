@@ -21,6 +21,9 @@ function resetAll() {
   PropertiesService._reset()
   DriveApp._reset()
   GmailApp._reset()
+  // 012: memo map userId (biến module) — reset để test không lẫn dữ liệu giữa các ca
+  if (typeof _resetDocUserIdMemo === 'function') _resetDocUserIdMemo()
+  if (typeof _resetSheetColsMemo === 'function') _resetSheetColsMemo()
 }
 
 // ── Sheet setup helpers ──────────────────────────────────────────────────────
