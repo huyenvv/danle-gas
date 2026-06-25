@@ -91,3 +91,31 @@ describe('backfillDocDerived — idempotent (FR-007)', () => {
     expect(JSON.stringify(getSheetData(SHEETS.HO_SO))).toBe(before)
   })
 })
+
+describe('rebuildAllDerived (013) — batch, an toàn ở quy mô lớn', () => {
+  beforeEach(() => {
+    SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS_V13])
+    const sheet = SpreadsheetApp._sheets[SHEETS.HO_SO]
+    function addDoc(id, fields) {
+      const row = new Array(DOC_HEADERS_V13.length).fill('')
+      row[0] = id
+      Object.keys(fields).forEach(k => { row[DOC_HEADERS_V13.indexOf(k)] = fields[k] })
+      sheet._rows.push(row)
+    }
+    addDoc(1, { 'Tên hồ sơ': 'Có NKS', 'Tình trạng': 'Chờ xử lý', 'Người tạo': 'alice', 'Người kiểm soát': '["20"]' })
+    addDoc(2, { 'Tên hồ sơ': 'Không NKS', 'Tình trạng': 'Chờ xử lý', 'Người tạo': 'alice' })
+    invalidateSheetCache(SHEETS.HO_SO)
+  })
+
+  test('ghi lại 3 cột cho mọi hồ sơ; Token xem gồm Người kiểm soát', () => {
+    const n = rebuildAllDerived()
+    expect(n).toBe(2)
+    const docs = getSheetData(SHEETS.HO_SO)
+    const d1 = docs.find(d => String(d['ID']) === '1')
+    const d2 = docs.find(d => String(d['ID']) === '2')
+    expect(d1['Token xem']).toContain('|20|')   // NKS=20 nằm trong token
+    expect(d1['Token xem']).toContain('|10|')   // người tạo alice→10
+    expect(d2['Token xem']).toBe('|10|')        // không NKS → chỉ người tạo
+    expect(d1['Blob tìm kiếm']).toContain('co nks')
+  })
+})

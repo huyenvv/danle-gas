@@ -16,6 +16,14 @@ export function isPhuTrach(doc, session) {
   return list.includes(String(session.userId)) || list.includes(session.username)
 }
 
+// 013: Người kiểm soát của hồ sơ. giaoViec luôn lưu theo userId; trong hệ SSO này
+// username = email (tên đăng nhập). So trực tiếp userId/username là đủ (giống isPhuTrach).
+export function isController(doc, session) {
+  if (!doc || !session) return false
+  const list = parsePhuTrach(doc['Người kiểm soát'])
+  return list.includes(String(session.userId)) || list.includes(session.username)
+}
+
 const ADMIN_ROLES = ['admin', 'Quản trị viên']
 
 const ACTIONS = {
@@ -30,6 +38,7 @@ const ACTIONS = {
   xacNhanHT:      { key: 'xacNhanHT',      label: 'Xác nhận HT',     icon: 'verified',       color: 'emerald' },
   tuChoiKetQua:   { key: 'tuChoiKetQua',    label: 'Từ chối',         icon: 'cancel',         color: 'rose'    },
   hoanThanhLai:   { key: 'hoanThanhLai',    label: 'Hoàn thành',      icon: 'task_alt',       color: 'emerald' },
+  ksThemPhoiHop:  { key: 'ksThemPhoiHop',   label: 'Thêm phối hợp',   icon: 'group_add',      color: 'blue'    },
 }
 
 const ADMIN_ACTIONS = {
@@ -58,6 +67,13 @@ const PHUTRACH_ACTIONS = {
   'Từ chối kết quả':  ['hoanThanhLai'],
 }
 
+// 013: Người kiểm soát — thêm phối hợp (không đổi trạng thái) + duyệt tới hoàn thành
+const KIEM_SOAT_ACTIONS = {
+  'Chờ xử lý':       ['ksThemPhoiHop'],
+  'Đang xử lý':      ['ksThemPhoiHop'],
+  'Chờ xác nhận HT': ['xacNhanHT', 'tuChoiKetQua'],
+}
+
 export function getAvailableActions(doc, session) {
   if (!doc || !session) return []
   const status = doc['Tình trạng'] || ''
@@ -81,6 +97,11 @@ export function getAvailableActions(doc, session) {
     }
   } else if (isPhuTrach(doc, session)) {
     keys = PHUTRACH_ACTIONS[status] || []
+  }
+
+  // 013: Người kiểm soát có quyền song song — union thêm action NKS theo trạng thái
+  if (isController(doc, session)) {
+    (KIEM_SOAT_ACTIONS[status] || []).forEach(k => { if (!keys.includes(k)) keys.push(k) })
   }
 
   return keys.map(k => ACTIONS[k])

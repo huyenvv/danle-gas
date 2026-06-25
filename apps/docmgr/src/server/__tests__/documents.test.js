@@ -1198,6 +1198,6 @@ describe('getDocuments (gviz path)', () => {
     getDocuments(directorToken, { page: 1 })
     const tq = decodeURIComponent(UrlFetchApp._lastRequest.url.split('tq=')[1])
     expect(tq).not.toContain('AA contains')
-    expect(tq).toContain("order by Z asc, Q desc, A desc")
+    expect(tq).toContain("order by AA asc, Q desc, A desc")
   })
 })

@@ -42,7 +42,7 @@ var _DEFAULT_MAIL_TEMPLATES = {
   },
   giaoViec: {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
-    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn[[ và trình duyệt qua {vaiTròNgườiKiểmSoát} - {tênNgườiKiểmSoát}]].\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}'
   },
   phoiHop: {
     subject: '{hoảTốc}[Phối hợp] {tênHồSơ}',
@@ -76,6 +76,17 @@ function _getMailTemplates() {
 
 function _applyTemplate(tpl, vars) {
   var s = tpl || ''
+  // Đoạn điều kiện [[ ... ]]: chỉ giữ khi MỌI {biến} bên trong đều có giá trị; ngược lại bỏ cả đoạn.
+  // Template không có [[...]] → không đổi (tương thích ngược).
+  s = s.replace(/\[\[([\s\S]*?)\]\]/g, function(_m, inner) {
+    var keep = true
+    inner.replace(/\{[^{}]+\}/g, function(token) {
+      var v = vars[token]
+      if (v === undefined || v === null || String(v) === '') keep = false
+      return token
+    })
+    return keep ? inner : ''
+  })
   for (var key in vars) {
     s = s.split(key).join(vars[key] || '')
   }
@@ -213,6 +224,15 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
         }
       } catch(e) { Logger.log('sender dept info error: ' + e.message) }
     }
+    // Người kiểm soát (013): tên + chức danh thực, để dựng đoạn điều kiện [[...]] trong email giao việc.
+    var ksName = '', ksRole = ''
+    if (typeof doc === 'object' && doc['Người kiểm soát']) {
+      var _ksIds = _parseAssignees(doc['Người kiểm soát'])
+      if (_ksIds.length > 0) {
+        var _ksRcpt = _getRecipientsByUsernames([_ksIds[0]])
+        if (_ksRcpt && _ksRcpt.length > 0) { ksName = _ksRcpt[0].name || ''; ksRole = _ksRcpt[0].role || '' }
+      }
+    }
     var vars = {
       '{tênHồSơ}': docName,
       '{tênNgườiGửi}': session ? (session.name || session.username || '') : 'Hệ thống',
@@ -231,6 +251,8 @@ function _sendNotificationEmails(toRecipients, doc, mailType, session, ccRecipie
       '{lyDoTuChoi}': (typeof doc === 'object') ? (doc['Lý do từ chối'] || '') : '',
       '{nộiDungGiaoViec}': (typeof doc === 'object') ? (doc['Nội dung giao việc'] || '') : '',
       '{nộiDungPhoiHop}': (typeof doc === 'object') ? (doc['Nội dung phối hợp'] || '') : '',
+      '{tênNgườiKiểmSoát}': ksName,
+      '{vaiTròNgườiKiểmSoát}': ksRole,
       '{hoảTốc}': (typeof doc === 'object' && (doc['Khẩn'] === 'TRUE' || doc['Khẩn'] === true)) ? '[HOẢ TỐC] ' : ''
     }
     var subject = _applyTemplate(tpl.subject, vars)
@@ -434,6 +456,7 @@ function _docViewToken(doc, userMap) {
   if (status !== 'Nháp') {                                       // Nháp → chỉ người tạo
     vals = vals.concat(_parseAssignees(doc['Phụ trách']))
     vals = vals.concat(_parseAssignees(doc['Người phối hợp']))
+    vals = vals.concat(_parseAssignees(doc['Người kiểm soát']))  // 013: NKS được xem hồ sơ
   }
   if (status === 'Hoàn thành') {                                 // Người được xem chỉ khi Hoàn thành
     vals = vals.concat(_parseAssignees(doc['Người được xem']))
@@ -482,10 +505,44 @@ function _updateDocRow(id, updates, existingDoc) {
 function backfillDocDerived() {
   var props = PropertiesService.getScriptProperties()
   // V3: token map về userId (delimiter '|') → chạy lại 1 lần.
+  // ⚠️ KHÔNG bump cờ này để "ghi lại toàn bộ" — với 10k+ hồ sơ sẽ timeout doGet vĩnh viễn.
+  // Token xem cập nhật theo từng hồ sơ khi hồ sơ được ghi (_updateDocRow). Muốn tính lại toàn bộ
+  // (gồm hồ sơ cũ gán NKS) thì chạy thủ công rebuildAllDerived() — batch, an toàn ở quy mô lớn.
   if (props.getProperty('BACKFILL_DOCDERIVED_V3') === '1') return
   getSheetData(SHEETS.HO_SO).forEach(function(d) { _updateDocRow(d['ID'], {}, d) })
   invalidateSheetCache(SHEETS.HO_SO)
   props.setProperty('BACKFILL_DOCDERIVED_V3', '1')
+}
+
+// 013: REBUILD toàn bộ 3 cột tính sẵn (Hạng ưu tiên / Token xem / Blob tìm kiếm) cho MỌI hồ sơ.
+// An toàn ở 10k+ vì: ĐỌC 1 lần (getDataRange) → tính trong RAM → GHI mỗi cột bằng 1 setValues
+// (tổng ~3 lệnh ghi), KHÔNG ghi từng ô. Chạy THỦ CÔNG từ trình soạn thảo Apps Script — KHÔNG
+// bao giờ gọi trong doGet. Trả về số hồ sơ đã cập nhật.
+function rebuildAllDerived() {
+  var sheet = getSheet(SHEETS.HO_SO)
+  var data = sheet.getDataRange().getValues()
+  if (data.length < 2) return 0
+  var headers = data[0]
+  var idx = {}
+  for (var c = 0; c < headers.length; c++) idx[String(headers[c])] = c
+  var n = data.length - 1
+  var userMap = _getDocUserIdMap()
+  var pri = [], tok = [], blob = []
+  for (var i = 1; i < data.length; i++) {
+    var obj = {}
+    for (var h in idx) obj[h] = data[i][idx[h]]
+    var ns = _normalizeStatus(obj['Tình trạng'])
+    var nd = ns !== obj['Tình trạng'] ? Object.assign({}, obj, { 'Tình trạng': ns }) : obj
+    pri.push([_docPriorityRank(nd)])
+    tok.push([_docViewToken(nd, userMap)])
+    blob.push([_docSearchBlob(nd)])
+  }
+  if (idx['Hạng ưu tiên'] != null) sheet.getRange(2, idx['Hạng ưu tiên'] + 1, n, 1).setValues(pri)
+  if (idx['Token xem'] != null)    sheet.getRange(2, idx['Token xem'] + 1, n, 1).setValues(tok)
+  if (idx['Blob tìm kiếm'] != null) sheet.getRange(2, idx['Blob tìm kiếm'] + 1, n, 1).setValues(blob)
+  invalidateSheetCache(SHEETS.HO_SO)
+  Logger.log('rebuildAllDerived: đã tính lại ' + n + ' hồ sơ')
+  return n
 }
 
 // 012: doc list lấy qua truy vấn nguồn (gviz) — chỉ kéo 100 dòng/trang (FR-001/002).
@@ -935,6 +992,24 @@ function _parseAssignees(phuTrach) {
   return [String(phuTrach)]
 }
 
+// 013: hồ sơ này có session là Người kiểm soát không.
+// So theo UserID/username TRỰC TIẾP, và RESOLVE qua _getDocUserIdMap (email/Tên đăng nhập/ID → UserID)
+// để NHẤT QUÁN với "Token xem" (lọc danh sách). Nếu NKS thấy hồ sơ trong list thì cũng thao tác được.
+function _isController(doc, session) {
+  if (!doc || !session) return false
+  var ids = _parseAssignees(doc['Người kiểm soát'])
+  if (!ids.length) return false
+  var sid = String(session.userId)
+  var map = null
+  for (var i = 0; i < ids.length; i++) {
+    var raw = String(ids[i])
+    if (raw === sid || raw === session.username) return true
+    if (!map) map = _getDocUserIdMap()
+    if (String(map[raw] != null ? map[raw] : raw) === sid) return true
+  }
+  return false
+}
+
 // Build JSON array string for assignees from input (array, string, or null)
 function _buildAssignees(input, defaultUserId) {
   if (Array.isArray(input) && input.length > 0) {
@@ -967,6 +1042,8 @@ function _isParticipant(doc, session) {
   if (pt.indexOf(uid) !== -1 || pt.indexOf(session.username) !== -1) return true
   var ph = _parseAssignees(doc['Người phối hợp'])
   if (ph.indexOf(uid) !== -1 || ph.indexOf(session.username) !== -1) return true
+  var ks = _parseAssignees(doc['Người kiểm soát'])  // 013: NKS cũng là người tham gia
+  if (ks.indexOf(uid) !== -1 || ks.indexOf(session.username) !== -1) return true
   return false
 }
 
@@ -1412,9 +1489,11 @@ var WORKFLOW_ACTIONS = {
   tuChoi:         { from: 'Chờ duyệt', to: 'Từ chối', roles: ['Giám đốc'] },
   ycPhatHanh:     { from: 'Chờ duyệt', to: 'YC Phát hành', roles: ['Giám đốc'] },
   luuTru:         { from: 'Chờ duyệt', to: 'Hoàn thành', roles: ['Giám đốc'] },
-  xacNhanHT:      { from: 'Chờ xác nhận HT', to: 'Hoàn thành', roles: ['Giám đốc'] },
-  tuChoiKetQua:   { from: 'Chờ xác nhận HT', to: 'Từ chối kết quả', roles: ['Giám đốc'] },
+  xacNhanHT:      { from: 'Chờ xác nhận HT', to: 'Hoàn thành', roles: ['Giám đốc', '_kiemSoat'] },
+  tuChoiKetQua:   { from: 'Chờ xác nhận HT', to: 'Từ chối kết quả', roles: ['Giám đốc', '_kiemSoat'] },
   trinhDuyetLai:  { from: 'Từ chối', to: 'Chờ duyệt', roles: ['Văn thư'] },
+  // 013: Người kiểm soát thêm phối hợp (chỉ-thêm) — KHÔNG đổi trạng thái (sentinel '_keep')
+  ksThemPhoiHop:  { from: '_keep', to: '_keep', roles: ['_kiemSoat'] },
 }
 
 function transitionDocument(token, id, action, data, updateData) {
@@ -1443,20 +1522,26 @@ function transitionDocument(token, id, action, data, updateData) {
         if (assignees.indexOf(String(session.userId)) !== -1 || assignees.indexOf(session.username) !== -1) {
           allowed = true
         }
+      } else if (rule.roles[i] === '_kiemSoat') {
+        if (_isController(doc, session)) allowed = true
       } else if (session.role === rule.roles[i]) {
         allowed = true
       }
     }
     if (!allowed) throw new Error('Bạn không có quyền thực hiện hành động này')
 
-    // Check current status (null = any status allowed for create actions)
-    if (rule.from && doc['Tình trạng'] !== rule.from) {
+    // Check current status (null = any status; '_keep' = ràng buộc riêng theo action)
+    if (rule.from === '_keep') {
+      if (action === 'ksThemPhoiHop' && doc['Tình trạng'] !== 'Chờ xử lý' && doc['Tình trạng'] !== 'Đang xử lý') {
+        throw new Error('Chỉ thêm người phối hợp khi hồ sơ ở "Chờ xử lý" hoặc "Đang xử lý"')
+      }
+    } else if (rule.from && doc['Tình trạng'] !== rule.from) {
       throw new Error('Hồ sơ đang ở trạng thái "' + doc['Tình trạng'] + '", không thể ' + action)
     }
   }
 
   var updates = {
-    'Tình trạng': rule.to,
+    'Tình trạng': rule.to === '_keep' ? doc['Tình trạng'] : rule.to,
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
   }
@@ -1474,6 +1559,36 @@ function transitionDocument(token, id, action, data, updateData) {
       updates['Người phối hợp'] = _buildAssignees(data['Người phối hợp'], null)
     }
     updates['Nội dung giao việc'] = _gvNoiDung
+    // 013: Người kiểm soát (tuỳ chọn). giaoViec vốn chỉ GĐ/admin thực hiện → chỉ họ ghi được (FR-007).
+    // Lưu chuẩn theo UserID (data-model): map định danh picker (Tên đăng nhập/email/id) → UserID.
+    if (data['Người kiểm soát'] !== undefined) {
+      if (data['Người kiểm soát']) {
+        var _ksRaw = String(data['Người kiểm soát'])
+        var _ksMap = _getDocUserIdMap()
+        updates['Người kiểm soát'] = JSON.stringify([String(_ksMap[_ksRaw] != null ? _ksMap[_ksRaw] : _ksRaw)])
+      } else {
+        updates['Người kiểm soát'] = ''
+      }
+    }
+  }
+
+  // 013: Người kiểm soát thêm phối hợp (chỉ-thêm, KHÔNG đổi trạng thái, PT bất biến)
+  if (action === 'ksThemPhoiHop') {
+    data = data || {}
+    if (data['Người phối hợp'] === undefined) throw new Error('Thiếu danh sách người phối hợp')
+    var _ksNewStr = _buildAssignees(data['Người phối hợp'], null)
+    var _ksOld = _parseAssignees(doc['Người phối hợp'])
+    var _ksNew = _parseAssignees(_ksNewStr)
+    if (!isAdmin) {
+      for (var _ksI = 0; _ksI < _ksOld.length; _ksI++) {
+        if (_ksNew.indexOf(_ksOld[_ksI]) === -1) throw new Error('Không thể xoá người phối hợp đã có')
+      }
+    }
+    var _ksAdded = _ksNew.filter(function(u) { return _ksOld.indexOf(u) === -1 })
+    var _ksNoiDung = (data['Nội dung'] || '').trim()
+    if (_ksAdded.length >= 1 && !_ksNoiDung) throw new Error('Phải nhập nội dung gửi tới người phối hợp')
+    updates['Người phối hợp'] = _ksNewStr
+    if (_ksAdded.length >= 1) updates['Nội dung phối hợp'] = _ksNoiDung
   }
 
   // Phụ trách (người chủ trì) nhận việc: CHỈ được thêm người phối hợp, không xoá người đã có
@@ -1515,12 +1630,21 @@ function transitionDocument(token, id, action, data, updateData) {
     var phuTrachUsers = _parseAssignees(updates['Phụ trách'])
     var phoiHopUsers  = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
     var _excludeSelf = function(uid) { return String(uid) !== String(session.userId) && uid !== session.username }
+    // 013: Người kiểm soát MỚI (khác giá trị cũ, không phải người thao tác) → nhận CHUÔNG +
+    // EMAIL GIAO VIỆC CHUNG (CC). KHÔNG gửi mail riêng; đoạn [[...]] trong body đã nói về NKS.
+    var _ksOldArr = _parseAssignees(doc['Người kiểm soát'])
+    var _ksNewArr = _parseAssignees(updates['Người kiểm soát'] !== undefined ? updates['Người kiểm soát'] : doc['Người kiểm soát'])
+    var _ksNewId = (_ksNewArr.length > 0 && _ksOldArr.indexOf(_ksNewArr[0]) === -1 && _excludeSelf(_ksNewArr[0])) ? _ksNewArr[0] : null
     phuTrachUsers = phuTrachUsers.filter(_excludeSelf)
     phoiHopUsers  = phoiHopUsers.filter(_excludeSelf)
-    _markUnreadForUsers(phuTrachUsers.concat(phoiHopUsers), id)
+    var _ccUsers = phoiHopUsers.slice()
+    if (_ksNewId && phuTrachUsers.indexOf(_ksNewId) === -1 && _ccUsers.indexOf(_ksNewId) === -1) _ccUsers.push(_ksNewId)
+    var _bell = phuTrachUsers.concat(phoiHopUsers)
+    if (_ksNewId) _bell.push(_ksNewId)
+    _markUnreadForUsers(_bell, id)
     try {
       var toList = _getRecipientsByUsernames(phuTrachUsers)
-      var ccList = _getRecipientsByUsernames(phoiHopUsers)
+      var ccList = _getRecipientsByUsernames(_ccUsers)
       _sendNotificationEmails(toList, updated, 'giaoViec', session, ccList)
     } catch(e) { Logger.log('transitionDocument giaoViec email error: ' + e.message); emailError = e.message }
   } else if (action === 'tuChoi') {
@@ -1542,20 +1666,29 @@ function transitionDocument(token, id, action, data, updateData) {
       _sendNotificationEmails(ycRecipients, updated, 'ycPhatHanh', session)
     }
   } else if (action === 'tuChoiKetQua') {
-    // tuChoiKetQua: notify PT (assigned)
+    // tuChoiKetQua: notify PT (TO) + CC GĐ — để GĐ nắm khi NKS (hoặc GĐ khác) từ chối kết quả.
+    // Loại người thao tác khỏi CC (GĐ tự từ chối thì không tự gửi cho mình).
     var assignees = _parseAssignees(doc['Phụ trách'])
+    var _tcExSelf = function(u) { return String(u) !== String(session.userId) && u !== session.username }
+    var _tcDirCc = _getDirectorUserIds().filter(_tcExSelf)
     if (assignees.length > 0) {
       _markUnreadForUsers(assignees, id)
       try {
         var ptRecipients = _getRecipientsByUsernames(assignees)
-        _sendNotificationEmails(ptRecipients, updated, 'tuChoiKetQua', session)
+        var _tcCc = _tcDirCc.length ? _getRecipientsByIds(_tcDirCc) : []
+        _sendNotificationEmails(ptRecipients, updated, 'tuChoiKetQua', session, _tcCc)
       } catch(e) { Logger.log('transitionDocument tuChoiKetQua email error: ' + e.message); emailError = e.message }
     }
   } else if (action === 'hoanThanh' || action === 'hoanThanhLai') {
-    // hoanThanh/hoanThanhLai: chỉ báo chuông cho GĐ, không gửi email
+    // hoanThanh/hoanThanhLai → "Chờ xác nhận HT": báo chuông cho GĐ VÀ Người kiểm soát
+    // (013: NKS cũng có quyền xác nhận HT/từ chối kết quả nên phải được báo như GĐ). Không gửi email.
     var dirIds = _getDirectorUserIds()
-    if (dirIds.length > 0) {
-      _markUnreadForUsers(dirIds, id)
+    var ksIds = _parseAssignees(doc['Người kiểm soát'])
+    var htRecipients = dirIds.concat(ksIds).filter(function(u) {
+      return String(u) !== String(session.userId) && u !== session.username
+    })
+    if (htRecipients.length > 0) {
+      _markUnreadForUsers(htRecipients, id)
     }
   } else if (action === 'trinhDuyetLai') {
     // trinhDuyetLai: notify all GĐ (reuse trinhDuyet pattern)
@@ -1581,6 +1714,20 @@ function transitionDocument(token, id, action, data, updateData) {
           _sendNotificationEmails(_nvRcpt, updated, 'phoiHop', session)
         }
       } catch(e) { Logger.log('transitionDocument nhanViec phoiHop email error: ' + e.message); emailError = e.message }
+    }
+  } else if (action === 'ksThemPhoiHop' && updates['Người phối hợp']) {
+    // 013: NKS thêm phối hợp → gửi email phối hợp cho người phối hợp MỚI (mirror nhanViec)
+    var _ksOldPH = _parseAssignees(doc['Người phối hợp'])
+    var _ksNewPH = _parseAssignees(updates['Người phối hợp'])
+    var _ksExSelf = function(u) { return String(u) !== String(session.userId) && u !== session.username }
+    var _ksAddedPH = _ksNewPH.filter(function(u) { return _ksOldPH.indexOf(u) === -1 }).filter(_ksExSelf)
+    if (_ksAddedPH.length > 0) {
+      _markUnreadForUsers(_ksAddedPH, id)
+      try {
+        for (var _ksK = 0; _ksK < _ksAddedPH.length; _ksK++) {
+          _sendNotificationEmails(_getRecipientsByUsernames([_ksAddedPH[_ksK]]), updated, 'phoiHop', session)
+        }
+      } catch(e) { Logger.log('transitionDocument ksThemPhoiHop phoiHop email error: ' + e.message); emailError = e.message }
     }
   }
 

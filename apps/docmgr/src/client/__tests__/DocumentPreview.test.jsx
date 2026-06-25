@@ -342,8 +342,8 @@ describe('<DocumentPreview />', () => {
     const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)')
     fireEvent.change(noiDung, { target: { value: 'Ưu tiên xử lý trong tuần' } })
 
-    // Pick a Phụ trách (single-select picker shows the '-- Chọn --' placeholder when empty)
-    fireEvent.click(screen.getByText('-- Chọn --'))
+    // Pick a Phụ trách (first single-select picker; Người kiểm soát is a 2nd '-- Chọn --' picker)
+    fireEvent.click(screen.getAllByText('-- Chọn --')[0])
     fireEvent.click(screen.getByText('Viewer One'))
 
     // Confirm giao việc

@@ -13,7 +13,7 @@ const DEFAULT_TEMPLATES = {
   },
   giaoViec: {
     subject: '{hoảTốc}[Giao việc] {tênHồSơ}',
-    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn.\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
+    body: 'Xin chào {vaiTròNgườiNhận}: {tênNgườiNhận},\n\n{ngườiGửi} ({emailNgườiGửi}) đã giao việc hồ sơ "{tênHồSơ}" cho bạn[[ và trình duyệt qua {vaiTròNgườiKiểmSoát} - {tênNgườiKiểmSoát}]].\n\nNội dung: {nộiDungGiaoViec}\n\nVui lòng đăng nhập hệ thống để xem chi tiết và xử lý tại đây:\n{linkHệThống}',
   },
   phoiHop: {
     subject: '{hoảTốc}[Phối hợp] {tênHồSơ}',
@@ -51,8 +51,12 @@ const TEMPLATE_VARS = [
   { key: '{lyDoTuChoi}', desc: 'Lý do từ chối (chỉ dùng trong email Từ chối)' },
   { key: '{nộiDungGiaoViec}', desc: 'Nội dung giao việc (chỉ dùng trong email Giao việc)' },
   { key: '{nộiDungPhoiHop}', desc: 'Nội dung phối hợp (chỉ dùng trong email Phối hợp)' },
+  { key: '{tênNgườiKiểmSoát}', desc: 'Tên người kiểm soát (chỉ có khi hồ sơ có người kiểm soát)' },
+  { key: '{vaiTròNgườiKiểmSoát}', desc: 'Vai trò người kiểm soát (chỉ có khi hồ sơ có người kiểm soát)' },
   { key: '{hoảTốc}', desc: 'Tiền tố [HOẢ TỐC] nếu hồ sơ đánh dấu Khẩn' },
 ]
+
+// 013: đoạn [[...]] trong thân email chỉ hiển thị khi mọi biến bên trong có giá trị (vd biến người kiểm soát)
 
 const TOP_TABS = [
   { key: 'general', label: 'Cài đặt chung', icon: 'settings' },
@@ -295,7 +299,7 @@ export default function SettingsPage({ token, onCompanyNameChange, initialConfig
 
 const MAIL_TABS = [
   { key: 'trinhDuyet', label: 'Trình duyệt', icon: 'send', desc: 'Gửi cho Giám đốc khi có hồ sơ cần duyệt' },
-  { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách (TO) và Phối hợp (CC) khi Giám đốc giao việc' },
+  { key: 'giaoViec', label: 'Giao việc', icon: 'assignment_ind', desc: 'Gửi cho Phụ trách (TO), Phối hợp & Người kiểm soát (CC) khi Giám đốc giao việc. Đoạn [[...]] về người kiểm soát tự ẩn/hiện.' },
   { key: 'phoiHop', label: 'Phối hợp', icon: 'groups', desc: 'Gửi cho người phối hợp MỚI (người nhận chính) khi Phụ trách bổ sung lúc nhận việc' },
   { key: 'phatHanh', label: 'Phát hành', icon: 'mark_email_read', desc: 'Gửi khi phát hành hồ sơ cho người nhận' },
   { key: 'tuChoi', label: 'Từ chối', icon: 'cancel', desc: 'Gửi cho Văn thư khi Giám đốc từ chối hồ sơ (kèm lý do)' },

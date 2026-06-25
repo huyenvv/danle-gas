@@ -36,7 +36,14 @@ global.SpreadsheetApp = {
         return {
           getValue() { return sheet._rows[row - 1][col - 1] },
           setValue(v) { sheet._rows[row - 1][col - 1] = v },
-          getValues() { return [sheet._rows[row - 1].slice(col - 1, col - 1 + (numCols || 1))] }
+          getValues() { return [sheet._rows[row - 1].slice(col - 1, col - 1 + (numCols || 1))] },
+          setValues(vals) {
+            for (let r = 0; r < vals.length; r++) {
+              for (let cc = 0; cc < vals[r].length; cc++) {
+                sheet._rows[row - 1 + r][col - 1 + cc] = vals[r][cc]
+              }
+            }
+          },
         }
       },
       appendRow(row) { this._rows.push([...row]) },

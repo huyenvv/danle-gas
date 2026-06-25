@@ -25,6 +25,10 @@ From SSO `_Phân Bổ` highest: GĐ(6)>PGĐ(5)>VT(4)>admin(3)>TP(2)>PP(1)>NV(0).
 
 `Được tạo hồ sơ`(create docs), `Được tạo danh mục con`(sub-categories), `Được phát hành`(publish). Full-access roles get all 3 default, not editable. Server re-checks each action.
 
+## Người kiểm soát (013)
+
+Quyền uỷ quyền theo TỪNG hồ sơ (cột `Người kiểm soát`), KHÔNG nâng vai trò toàn hệ thống. Chỉ GĐ/QTV gán (lúc giaoViec). NKS trên hồ sơ được gán: thêm PH (chỉ-thêm, không đổi trạng thái, `ksThemPhoiHop`) + duyệt tới HT (xacNhanHT/tuChoiKetQua). Server kiểm `_isController(doc,session)`; chặn xoá PH cũ/đổi PT. Song song GĐ.
+
 ## Visibility
 
 Admin/GĐ/VT: all docs. Others: only PT or PH docs. Category: `Người/Nhóm được xem` (empty=all).

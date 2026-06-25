@@ -49,6 +49,18 @@ test('Email tab có tab "Phối hợp" và biến {nộiDungPhoiHop} (feature 01
   expect(screen.getByText(/\{nộiDungPhoiHop\}/)).toBeInTheDocument()
 })
 
+test('Email tab có biến người kiểm soát cho mẫu giao việc (feature 013)', () => {
+  renderWithProviders(
+    <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />
+  )
+  fireEvent.click(screen.getByText('Email thông báo'))
+  // Không còn tab/mẫu email riêng "Kiểm soát" — NKS nhận email giao việc chung
+  expect(screen.queryByRole('button', { name: /Kiểm soát/ })).not.toBeInTheDocument()
+  // Biến NKS vẫn có trong danh sách (dùng cho đoạn [[...]] của mẫu giao việc)
+  expect(screen.getByText(/\{tênNgườiKiểmSoát\}/)).toBeInTheDocument()
+  expect(screen.getByText(/\{vaiTròNgườiKiểmSoát\}/)).toBeInTheDocument()
+})
+
 test('save button calls api_setConfig with updated company name', async () => {
   renderWithProviders(
     <SettingsPage token={MOCK_TOKEN} initialConfigs={MOCK_CONFIGS} />

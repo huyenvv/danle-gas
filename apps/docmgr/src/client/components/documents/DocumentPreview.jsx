@@ -6,6 +6,7 @@ import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from '../../lib/workflowPermissions.js'
+import { retryWithVerify } from '../../utils/gasRetry.js'
 import WorkflowButtons from './WorkflowButtons.jsx'
 import PublishDialog from './PublishDialog.jsx'
 import UserPickerDropdown from '../common/UserPickerDropdown.jsx'
@@ -215,8 +216,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
 
   async function handleTransition(action, data) {
     if (transitioning) return
-    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', hoanThanhLai: 'Hoàn thành', tuChoi: 'Từ chối', tuChoiKetQua: 'Từ chối kết quả', xacNhanHT: 'Xác nhận HT', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại', ycPhatHanh: 'YC Phát hành' }[action] || action
-    if (!await confirm(`Xác nhận: ${actionLabel}?`)) return
+    const actionLabel = { giaoViec: 'Giao việc', thuHoi: 'Thu hồi', nhanViec: 'Nhận việc', hoanThanh: 'Hoàn thành', hoanThanhLai: 'Hoàn thành', tuChoi: 'Từ chối', tuChoiKetQua: 'Từ chối kết quả', xacNhanHT: 'Xác nhận hoàn thành', luuTru: 'Lưu trữ', trinhDuyetLai: 'Trình duyệt lại', ycPhatHanh: 'YC Phát hành', ksThemPhoiHop: 'Thêm người phối hợp' }[action] || action
+    if (!await confirm(`Bạn có chắc muốn "${actionLabel}" hồ sơ này?`)) return
     setTransitionLabel(actionLabel)
     setTransitioning(true)
     try {
@@ -226,7 +227,38 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       setGiaoViecForm(null)
       if (onDocUpdated) onDocUpdated(res.data)
     } catch (err) {
-      showToast(err.message, 'error')
+      // "Lỗi không xác định" = transport error: server có thể ĐÃ xong nhưng response bị rớt
+      // (thao tác nặng/chậm). Xác minh bằng cách đọc lại hồ sơ; nếu đã đổi → coi như thành công.
+      if (err.message === 'Lỗi không xác định') {
+        const wantPH = (data && data['Người phối hợp']) ? data['Người phối hợp'].map(String) : null
+        const r = await retryWithVerify({
+          fn: () => gasCall('api_transitionDocument', token, doc.ID, action, data).then(res => res.data),
+          verify: async () => {
+            try {
+              const result = await gasCall('api_getDocuments', token, {})
+              const fresh = (result.data || []).find(d => String(d.ID) === String(doc.ID))
+              if (!fresh) return null
+              if (wantPH) {
+                const have = parsePhuTrach(fresh['Người phối hợp'])
+                return wantPH.every(u => have.includes(String(u))) ? fresh : null
+              }
+              // action đổi trạng thái: coi là đã hiệu lực nếu "Ngày cập nhật" đã thay đổi
+              return (fresh['Ngày cập nhật'] !== doc['Ngày cập nhật']) ? fresh : null
+            } catch (_) { return null }
+          },
+          onRetry: (i, n) => setTransitionLabel(`${actionLabel} — đang thử lại ${i}/${n}…`),
+        })
+        if (r.ok) {
+          setDoc(prev => ({ ...prev, ...r.data }))
+          showToast('Đã cập nhật', 'success')
+          setGiaoViecForm(null)
+          if (onDocUpdated) onDocUpdated(r.data)
+        } else {
+          showToast(r.error || err.message, 'error')
+        }
+      } else {
+        showToast(err.message, 'error')
+      }
     } finally {
       setTransitioning(false)
       setTransitionLabel('')
@@ -234,25 +266,28 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   }
 
   function openGiaoViec(mode) {
-    if (mode === 'nhanViec') {
-      // Phụ trách nhận việc: chỉ được THÊM người phối hợp (không bỏ người do GĐ thêm)
+    if (mode === 'nhanViec' || mode === 'ksThemPhoiHop') {
+      // Chỉ được THÊM người phối hợp (không bỏ người đã có). NKS (ksThemPhoiHop) cũng vậy.
       const existing = parsePhuTrach(doc['Người phối hợp'])
-      setGiaoViecForm({ phoiHop: existing, phoiHopLocked: existing, noiDung: '', mode: 'nhanViec' })
+      setGiaoViecForm({ phoiHop: existing, phoiHopLocked: existing, noiDung: '', mode })
     } else {
       // Giám đốc/Admin giao việc
-      setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), noiDung: '', mode: 'giaoViec' })
+      // NKS lưu theo userId → đổi về 'Tên đăng nhập' cho picker hiển thị đúng người đã chọn
+      const _ksRaw = parsePhuTrach(doc['Người kiểm soát'])[0] || ''
+      const _ksU = _ksRaw ? (lookups.ssoUsers || lookups.users || []).find(u => String(u['ID']) === String(_ksRaw) || u['Tên đăng nhập'] === _ksRaw) : null
+      setGiaoViecForm({ phuTrach: '', phoiHop: parsePhuTrach(doc['Người phối hợp']), noiDung: '', nguoiKiemSoat: _ksU ? _ksU['Tên đăng nhập'] : _ksRaw, mode: 'giaoViec' })
     }
   }
 
   async function submitGiaoViec() {
-    if (giaoViecForm.mode === 'nhanViec') {
-      // Nhận việc + bổ sung phối hợp; nếu có người mới thì nội dung bắt buộc
+    if (giaoViecForm.mode === 'nhanViec' || giaoViecForm.mode === 'ksThemPhoiHop') {
+      // Chỉ thêm phối hợp; nếu có người mới thì nội dung bắt buộc
       const locked = giaoViecForm.phoiHopLocked || []
       const added = (giaoViecForm.phoiHop || []).filter(u => !locked.includes(u))
       if (added.length >= 1 && !(giaoViecForm.noiDung || '').trim()) {
         showToast('Phải nhập nội dung gửi tới người phối hợp', 'error'); return
       }
-      await handleTransition('nhanViec', {
+      await handleTransition(giaoViecForm.mode, {
         'Người phối hợp': giaoViecForm.phoiHop,
         'Nội dung': (giaoViecForm.noiDung || '').trim(),
       })
@@ -266,6 +301,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       'Phụ trách': giaoViecForm.phuTrach,
       'Người phối hợp': giaoViecForm.phoiHop,
       'Nội dung': (giaoViecForm.noiDung || '').trim(),
+      'Người kiểm soát': giaoViecForm.nguoiKiemSoat || '',
     })
   }
 
@@ -496,7 +532,7 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   if (isPhuTrachRejectedResult && a.key === 'hoanThanhLai') return false
                   return true
                 }}
-                onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach))
+                onAction={(key) => (key === 'giaoViec' || (key === 'nhanViec' && isPhuTrach) || key === 'ksThemPhoiHop')
                   ? openGiaoViec(key)
                   : (key === 'tuChoi' || key === 'tuChoiKetQua' || key === 'ycPhatHanh')
                     ? setTuChoiForm({ lyDo: '', action: key })
@@ -507,17 +543,19 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
               {/* Giao việc inline form */}
               {giaoViecForm && (() => {
                 const isNhanViec = giaoViecForm.mode === 'nhanViec'
-                const accent = isNhanViec ? 'blue-600' : 'primary'
+                const isKsThem = giaoViecForm.mode === 'ksThemPhoiHop'
+                const isAddOnly = isNhanViec || isKsThem  // chỉ thêm phối hợp, PT khoá
                 const lockedPH = giaoViecForm.phoiHopLocked || []
                 const hasAddedPH = (giaoViecForm.phoiHop || []).some(u => !lockedPH.includes(u))
-                // Hiện ô nhập nội dung: luôn ở giao việc; ở nhận việc chỉ khi có bổ sung người phối hợp mới
-                const showNoiDung = !isNhanViec || hasAddedPH
+                // Hiện ô nhập nội dung: luôn ở giao việc; ở chế độ chỉ-thêm chỉ khi có bổ sung người mới
+                const showNoiDung = !isAddOnly || hasAddedPH
+                const title = isKsThem ? 'Thêm người phối hợp' : isNhanViec ? 'Nhận việc — chọn người phối hợp' : 'Giao việc'
                 return (
-                <div className={`${isNhanViec ? 'bg-blue-50 border-blue-200' : 'bg-primary/5 border-primary/20'} border rounded-2xl p-4 space-y-3 mt-2`}>
-                  <p className={`text-xs font-semibold ${isNhanViec ? 'text-blue-600' : 'text-primary'} uppercase tracking-wide`}>
-                    {isNhanViec ? 'Nhận việc — chọn người phối hợp' : 'Giao việc'}
+                <div className={`${isAddOnly ? 'bg-blue-50 border-blue-200' : 'bg-primary/5 border-primary/20'} border rounded-2xl p-4 space-y-3 mt-2`}>
+                  <p className={`text-xs font-semibold ${isAddOnly ? 'text-blue-600' : 'text-primary'} uppercase tracking-wide`}>
+                    {title}
                   </p>
-                  {!isNhanViec && (
+                  {!isAddOnly && (
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">Người phụ trách *</label>
                     <UserPickerDropdown
@@ -537,27 +575,39 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                       assignments={lookups.assignments || []}
                       value={giaoViecForm.phoiHop}
                       onChange={v => setGiaoViecForm(f => {
-                        // Nhận việc: không cho bỏ người phối hợp đã có (luôn giữ phoiHopLocked)
-                        const next = (f.mode === 'nhanViec' && f.phoiHopLocked)
+                        // Chế độ chỉ-thêm: không cho bỏ người phối hợp đã có (luôn giữ phoiHopLocked)
+                        const next = f.phoiHopLocked
                           ? Array.from(new Set([...f.phoiHopLocked, ...v]))
                           : v
                         return { ...f, phoiHop: next }
                       })}
                       placeholder="+ Thêm..."
                       exclude={giaoViecForm.phuTrach ? [giaoViecForm.phuTrach] : []}
-                      excludeGroups={isNhanViec ? ['Ban Giám Đốc', 'Văn thư & Quản trị'] : undefined}
+                      excludeGroups={isAddOnly ? ['Ban Giám Đốc', 'Văn thư & Quản trị'] : undefined}
                       multiple
                     />
                   </div>
+                  {!isAddOnly && (
+                  <div>
+                    <label className="text-xs text-on-surface-variant mb-1 block">Người kiểm soát <span className="text-on-surface-variant/60">(tuỳ chọn)</span></label>
+                    <UserPickerDropdown
+                      users={lookups.ssoUsers || lookups.users || []}
+                      phongBan={lookups.phongBan || []}
+                      assignments={lookups.assignments || []}
+                      value={giaoViecForm.nguoiKiemSoat || ''}
+                      onChange={v => setGiaoViecForm(f => ({ ...f, nguoiKiemSoat: v }))}
+                    />
+                  </div>
+                  )}
                   {showNoiDung && (
                   <div>
                     <label className="text-xs text-on-surface-variant mb-1 block">
-                      {isNhanViec ? 'Nội dung gửi người phối hợp *' : 'Nội dung giao việc'}
+                      {isAddOnly ? 'Nội dung gửi người phối hợp *' : 'Nội dung giao việc'}
                     </label>
                     <textarea
                       value={giaoViecForm.noiDung || ''}
                       onChange={e => setGiaoViecForm(f => ({ ...f, noiDung: e.target.value }))}
-                      placeholder={isNhanViec ? 'Nhập nội dung gửi tới người phối hợp công việc…' : 'Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)'}
+                      placeholder={isAddOnly ? 'Nhập nội dung gửi tới người phối hợp công việc…' : 'Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)'}
                       rows={3}
                       className="w-full bg-white rounded-xl px-3 py-2 text-sm border border-primary/20 focus:border-primary/40 focus:outline-none resize-none"
                     />
@@ -566,9 +616,9 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                   <div className="flex gap-2 justify-end">
                     <button onClick={() => setGiaoViecForm(null)}
                       className="px-3 py-1.5 text-xs border border-outline-variant rounded-full text-on-surface-variant hover:bg-surface-container transition-colors">Hủy</button>
-                    <button onClick={submitGiaoViec} disabled={transitioning}
-                      className={`px-4 py-1.5 text-xs ${isNhanViec ? 'bg-blue-600' : 'bg-primary'} text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1`}>
-                      {transitioning ? 'Đang xử lý…' : isNhanViec ? 'Xác nhận nhận việc' : 'Xác nhận giao việc'}
+                    <button onClick={submitGiaoViec} disabled={transitioning || (isKsThem && !hasAddedPH)}
+                      className={`px-4 py-1.5 text-xs ${isAddOnly ? 'bg-blue-600' : 'bg-primary'} text-white rounded-full disabled:opacity-50 hover:opacity-90 transition-opacity shadow-md3-1`}>
+                      {transitioning ? 'Đang xử lý…' : isKsThem ? 'Xác nhận thêm phối hợp' : isNhanViec ? 'Xác nhận nhận việc' : 'Xác nhận giao việc'}
                     </button>
                   </div>
                 </div>
@@ -744,6 +794,34 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
                     })()}
                   </div>
                 </div>
+                {/* 013: Người kiểm soát — chỉ hiện khi có */}
+                {(() => {
+                  const ks = parsePhuTrach(doc['Người kiểm soát'])
+                  if (!ks.length) return null
+                  const u = (lookups.ssoUsers || lookups.users || []).find(u => u['Tên đăng nhập'] === ks[0] || String(u['ID']) === String(ks[0]))
+                  const dn = u?.['Tên nhân viên'] || ks[0]
+                  return (
+                    <div className="flex items-start gap-2">
+                      <Icon name="verified_user" size={15} className="text-on-surface-variant shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs text-on-surface-variant">Người kiểm soát</p>
+                        <div className="relative group inline-block mt-0.5">
+                          <span className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-700 text-xs px-2 py-0.5 rounded-full cursor-default">
+                            <span className="w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] font-bold shrink-0">{dn.charAt(0).toUpperCase()}</span>
+                            {dn}
+                          </span>
+                          {u?.['Email'] && (
+                            <div className="pointer-events-none absolute bottom-full left-0 mb-1.5 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              <div className="bg-on-surface text-surface text-xs rounded-lg px-2 py-1.5 whitespace-nowrap shadow-lg">
+                                <p className="text-surface/70">{u['Email']}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
 

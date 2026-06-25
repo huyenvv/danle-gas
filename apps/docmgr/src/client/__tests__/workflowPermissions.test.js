@@ -1,4 +1,4 @@
-import { parsePhuTrach, isPhuTrach, getAvailableActions } from '../lib/workflowPermissions'
+import { parsePhuTrach, isPhuTrach, isController, getAvailableActions } from '../lib/workflowPermissions'
 
 // ── parseAssignees ──────────────────────────────────────────────────────────
 
@@ -241,6 +241,62 @@ describe('getAvailableActions — acceptance gate statuses', () => {
   test('admin sees hoanThanhLai on Từ chối kết quả', () => {
     const actions = getAvailableActions(doc({ 'Tình trạng': 'Từ chối kết quả' }), session({ role: 'admin' }))
     expect(actions.map(a => a.key)).toEqual(['hoanThanhLai'])
+  })
+})
+
+// ── Người kiểm soát (feature 013) ────────────────────────────────────────────
+
+describe('isController', () => {
+  test('matches by username and by userId', () => {
+    expect(isController({ 'Người kiểm soát': '["ks"]' }, { userId: 9, username: 'ks' })).toBe(true)
+    expect(isController({ 'Người kiểm soát': '[9]' }, { userId: 9, username: 'ks' })).toBe(true)
+  })
+  test('false when empty or different user', () => {
+    expect(isController({ 'Người kiểm soát': '' }, { userId: 9, username: 'ks' })).toBe(false)
+    expect(isController({ 'Người kiểm soát': '["other"]' }, { userId: 9, username: 'ks' })).toBe(false)
+  })
+
+  test('lưu theo userId → khớp trực tiếp qua session.userId', () => {
+    expect(isController({ 'Người kiểm soát': '["3"]' }, { userId: 3, username: 'ks@mail.com' })).toBe(true)
+  })
+})
+
+describe('getAvailableActions — Người kiểm soát (013)', () => {
+  const ksSession = (st) => session({ role: 'Nhân viên', userId: 9, username: 'ks' })
+  const ksDoc = (st) => doc({ 'Tình trạng': st, 'Người kiểm soát': '["ks"]' })
+
+  test('NKS thấy ksThemPhoiHop ở Chờ xử lý và Đang xử lý', () => {
+    expect(getAvailableActions(ksDoc('Chờ xử lý'), ksSession()).map(a => a.key)).toEqual(['ksThemPhoiHop'])
+    expect(getAvailableActions(ksDoc('Đang xử lý'), ksSession()).map(a => a.key)).toEqual(['ksThemPhoiHop'])
+  })
+
+  test('NKS thấy xacNhanHT + tuChoiKetQua ở Chờ xác nhận HT', () => {
+    expect(getAvailableActions(ksDoc('Chờ xác nhận HT'), ksSession()).map(a => a.key))
+      .toEqual(['xacNhanHT', 'tuChoiKetQua'])
+  })
+
+  test('NKS KHÔNG có giaoViec/thuHoi ở Chờ duyệt/Chờ xử lý', () => {
+    expect(getAvailableActions(ksDoc('Chờ duyệt'), ksSession()).map(a => a.key)).toEqual([])
+    expect(getAvailableActions(ksDoc('Chờ xử lý'), ksSession()).map(a => a.key)).not.toContain('giaoViec')
+    expect(getAvailableActions(ksDoc('Chờ xử lý'), ksSession()).map(a => a.key)).not.toContain('thuHoi')
+  })
+
+  test('không phải NKS → không có action NKS', () => {
+    const other = session({ role: 'Nhân viên', userId: 99, username: 'other' })
+    expect(getAvailableActions(ksDoc('Chờ xử lý'), other)).toEqual([])
+  })
+
+  test('NKS lưu userId → có ksThemPhoiHop khi session.userId khớp', () => {
+    const d = doc({ 'Tình trạng': 'Chờ xử lý', 'Người kiểm soát': '["3"]' })
+    const s = session({ userId: 3, username: 'ks@mail.com' })
+    expect(getAvailableActions(d, s).map(a => a.key)).toContain('ksThemPhoiHop')
+  })
+
+  test('quyền song song: PT đồng thời là NKS thấy cả nhanViec lẫn ksThemPhoiHop (Chờ xử lý)', () => {
+    const d = doc({ 'Tình trạng': 'Chờ xử lý', 'Phụ trách': '["ks"]', 'Người kiểm soát': '["ks"]' })
+    const keys = getAvailableActions(d, ksSession()).map(a => a.key)
+    expect(keys).toContain('nhanViec')
+    expect(keys).toContain('ksThemPhoiHop')
   })
 })
 
