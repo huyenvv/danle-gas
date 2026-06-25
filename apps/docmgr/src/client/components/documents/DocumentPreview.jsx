@@ -336,18 +336,52 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch (_) { return [] }
   })()
 
+  // Số lần đã phát hành (độ dài "Lịch sử phát hành") — dùng để xác minh khi response bị rớt.
+  function _publishCount(d) {
+    try {
+      const h = d && d['Lịch sử phát hành']
+      if (!h) return 0
+      const arr = typeof h === 'string' ? JSON.parse(h) : h
+      return Array.isArray(arr) ? arr.length : 0
+    } catch (_) { return 0 }
+  }
+
   async function handlePublishFromDialog(toIds, ccIds) {
     setPublishing(true)
-    try {
-      const res = await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
+    const beforeLen = _publishCount(doc)
+    const applyResult = (data) => {
       showToast('Đã phát hành thành công', 'success')
       setShowPublishDialog(false)
-      if (res.data) {
-        setDoc(prev => ({ ...prev, ...res.data }))
-        if (onDocUpdated) onDocUpdated(res.data)
+      if (data) {
+        setDoc(prev => ({ ...prev, ...data }))
+        if (onDocUpdated) onDocUpdated(data)
       }
+    }
+    try {
+      const res = await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
+      applyResult(res.data)
     } catch (err) {
-      showToast(err.message || 'Lỗi phát hành', 'error')
+      // "Lỗi không xác định" = transport error: phát hành nặng (đọc cả bảng + gửi mail + cross-script)
+      // có thể ĐÃ xong nhưng response rớt. Xác minh qua "Lịch sử phát hành" tăng (tìm hồ sơ bằng
+      // keyword tên/số để chắc chắn thấy đúng hồ sơ, không phụ thuộc phân trang). retryWithVerify
+      // verify TRƯỚC khi gọi lại → không phát hành lại (tránh gửi mail trùng) khi đã thành công.
+      if (err.message === 'Lỗi không xác định') {
+        const kw = String(doc['Số hồ sơ'] || doc['Tên hồ sơ'] || '')
+        const r = await retryWithVerify({
+          fn: () => gasCall('api_publishDocument', token, doc.ID, toIds, ccIds).then(res => res.data),
+          verify: async () => {
+            try {
+              const result = await gasCall('api_getDocuments', token, kw ? { keyword: kw } : {})
+              const fresh = (result.data || []).find(d => String(d.ID) === String(doc.ID))
+              return fresh && _publishCount(fresh) > beforeLen ? fresh : null
+            } catch (_) { return null }
+          },
+        })
+        if (r.ok) applyResult(r.data)
+        else showToast(r.error || err.message || 'Lỗi phát hành', 'error')
+      } else {
+        showToast(err.message || 'Lỗi phát hành', 'error')
+      }
     } finally {
       setPublishing(false)
     }
