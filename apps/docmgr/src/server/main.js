@@ -256,7 +256,7 @@ function api_getInitialData(token) {
     // 4. Unread IDs — intersect with visible docs (role-based category filter)
     var visibleDocIds = {}
     docs.forEach(function(d) { visibleDocIds[String(d.ID)] = true })
-    var daDocRows = getSheetData(SHEETS.DA_DOC)
+    var daDocRows = getSheetData(SHEETS.CHUA_DOC)
     var unreadIds = daDocRows
       .filter(function(r) { return String(r['UserID']) === String(session.userId) })
       .map(function(r) { return String(r['DocID']) })
@@ -318,7 +318,7 @@ function api_pollUpdates(token, opts) {
     var pollDocs = docsResult.data || []
     var pollVisibleIds = {}
     pollDocs.forEach(function(d) { pollVisibleIds[String(d.ID)] = true })
-    var daDocRows = getSheetData(SHEETS.DA_DOC)
+    var daDocRows = getSheetData(SHEETS.CHUA_DOC)
     var userUnreads = daDocRows.filter(function(r) { return String(r['UserID']) === String(session.userId) })
     var unreadIds = userUnreads
       .map(function(r) { return String(r['DocID']) })
@@ -356,6 +356,10 @@ function api_checkVersion(token, versions) {
 
 function api_getDocuments(token, filters) {
   return _wrap(function() { return getDocuments(token, filters) })
+}
+
+function api_getDocById(token, id) {
+  return _wrap(function() { return getDocById(token, id) })
 }
 
 function api_createDocument(token, data, fileInfos, notifyTarget) {
@@ -851,17 +855,17 @@ function api_getAuditLogs(token, filters) {
   })
 }
 
-// DA_DOC stores UNREAD records: has record = unread, no record = read
+// CHUA_DOC stores UNREAD records: has record = unread, no record = read
 function api_markAsRead(token, docId) {
   return _wrap(function() {
     var session = requireAuth(token)
-    var reads = getSheetData(SHEETS.DA_DOC)
+    var reads = getSheetData(SHEETS.CHUA_DOC)
     var entry = reads.find(function(r) {
       return String(r['UserID']) === String(session.userId) && String(r['DocID']) === String(docId)
     })
     if (entry) {
-      _coreDeleteRow(SHEETS.DA_DOC, entry['ID'])
-      invalidateSheetCache(SHEETS.DA_DOC)
+      _coreDeleteRow(SHEETS.CHUA_DOC, entry['ID'])
+      invalidateSheetCache(SHEETS.CHUA_DOC)
     }
     return { success: true }
   })
@@ -870,7 +874,7 @@ function api_markAsRead(token, docId) {
 function api_getUnreadCount(token) {
   return _wrap(function() {
     var session = requireAuth(token)
-    var reads = getSheetData(SHEETS.DA_DOC)
+    var reads = getSheetData(SHEETS.CHUA_DOC)
     var count = reads.filter(function(r) { return String(r['UserID']) === String(session.userId) }).length
     return { count: count }
   })
@@ -879,7 +883,7 @@ function api_getUnreadCount(token) {
 function api_getUnreadDocIds(token) {
   return _wrap(function() {
     var session = requireAuth(token)
-    var reads = getSheetData(SHEETS.DA_DOC)
+    var reads = getSheetData(SHEETS.CHUA_DOC)
     var userReads = reads.filter(function(r) { return String(r['UserID']) === String(session.userId) })
     var unreadIds = userReads.map(function(r) { return String(r['DocID']) })
     return { unreadIds: unreadIds }
@@ -890,12 +894,12 @@ function api_markMultipleAsRead(token, docIds) {
   return _wrap(function() {
     var session = requireAuth(token)
     if (!Array.isArray(docIds) || docIds.length === 0) return { success: true, marked: 0 }
-    var reads = getSheetData(SHEETS.DA_DOC)
+    var reads = getSheetData(SHEETS.CHUA_DOC)
     var toDelete = reads.filter(function(r) {
       return String(r['UserID']) === String(session.userId) && docIds.indexOf(String(r['DocID'])) !== -1
     })
-    toDelete.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
-    if (toDelete.length > 0) invalidateSheetCache(SHEETS.DA_DOC)
+    toDelete.forEach(function(r) { _coreDeleteRow(SHEETS.CHUA_DOC, r['ID']) })
+    if (toDelete.length > 0) invalidateSheetCache(SHEETS.CHUA_DOC)
     return { success: true, marked: toDelete.length }
   })
 }

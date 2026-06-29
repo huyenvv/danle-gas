@@ -286,10 +286,23 @@ describe('setDocumentViewers', () => {
     expect(() => setDocumentViewers(createSession(3, 'nv', 'nv@test.com', 'Nhân viên'), '52', JSON.stringify(['3']), '')).toThrow('không có quyền')
   })
 
+  test('side-effect lỗi (báo unread ném) → VẪN lưu + trả success (tách save khỏi side-effect)', () => {
+    seedDoc({ ID: 54, 'Tên hồ sơ': 'F', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người tạo': 'vt' })
+    delete SpreadsheetApp._sheets[SHEETS.CHUA_DOC]   // → _markUnreadForUsers ném khi truy cập sheet này
+    const logSpy = jest.spyOn(Logger, 'log')
+    const r = setDocumentViewers(createSession(9, 'gd', 'gd@test.com', 'Giám đốc'), '54', JSON.stringify(['2']))
+    expect(JSON.parse(r.data['Người được xem'])).toEqual(['2'])          // KHÔNG ném, trả về đã lưu
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('side-effect error'))  // lỗi side-effect bị nuốt + log
+    logSpy.mockRestore()
+    invalidateSheetCache(SHEETS.HO_SO)
+    const saved = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === '54')
+    expect(JSON.parse(saved['Người được xem'])).toEqual(['2'])           // dữ liệu THẬT đã lưu
+  })
+
   test('thêm người vào Người được xem → báo (unread) cho người MỚI, không re-báo người cũ', () => {
     seedDoc({ ID: 53, 'Tên hồ sơ': 'W', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành', 'Người tạo': 'vt', 'Người được xem': JSON.stringify(['2']) })
     setDocumentViewers(createSession(9, 'gd', 'gd@test.com', 'Giám đốc'), '53', JSON.stringify(['2', '3']))
-    const daDoc = getSheetData(SHEETS.DA_DOC)
+    const daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '3' && String(r['DocID']) === '53')).toBe(true)  // mới → báo
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '53')).toBe(false) // cũ → không re-báo
   })

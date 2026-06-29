@@ -155,7 +155,16 @@ function _processQueue() {
     .withFailureHandler(err => {
       _activeCount--
       const msg = err.message || String(err)
-      if (retries > 0 && !_isSessionExpired(msg) && (_isRetryableError(msg) || _isReadOnly(fnName))) {
+      if (_isSessionExpired(msg)) {
+        reject(new Error(msg))
+      } else if (!_isReadOnly(fnName)) {
+        // MUTATION: KHÔNG auto-retry. Lỗi transport (response bị rớt) → thao tác có thể ĐÃ chạy
+        // ở server; gọi lại sẽ double-execute → xung đột (vd "đang ở trạng thái X không thể Y").
+        // Chuẩn hoá về 'Lỗi không xác định' để caller tự VERIFY rồi quyết (retryWithVerify),
+        // thay vì gọi lại mù.
+        reject(new Error('Lỗi không xác định'))
+      } else if (retries > 0) {
+        // Read-only idempotent → an toàn để tự thử lại.
         requeue()
       } else {
         reject(new Error(msg))

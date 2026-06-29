@@ -121,5 +121,5 @@ npm run build:license      # .js → .gs conversion
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/013-nguoi-kiem-soat/plan.md`
+at `specs/014-gviz-ho-so-access/plan.md`
 <!-- SPECKIT END -->

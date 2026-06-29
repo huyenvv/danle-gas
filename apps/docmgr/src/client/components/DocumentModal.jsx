@@ -245,6 +245,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
   const isPhuTrachOfDoc = isEdit && (() => { const list = parseAssignees(doc?.['Phụ trách']); return list.includes(String(session?.userId)) || list.includes(session?.username) })()
   const canEditPhoiHop = isAdminRole || isPhuTrachOfDoc
   const canEditFields = isAdminRole || isVanThu
+  const canManageViewers = isAdminRole || isVanThu   // chỉ vai trò toàn quyền đổi "Người được xem" (khớp server)
   const canPublish = isAdminRole || isVanThu || session?.canPublish
   const canPickDrive = isAdminRole || isVanThu || session?.canPickDrive
   const canQuickAddLookup = isAdminRole || isVanThu
@@ -684,7 +685,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
         const r = await retryWithVerify({
           fn: () => gasCall('api_updateDocument', token, doc.ID, submitForm, [], keepFileIds, notifyTarget, eagerFileInfos),
           verify: _makeVerify(),
-          onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
+          onRetry: (i, n) => console.log(`[gasCall] thử lại lần ${i}/${n}`),  // chỉ log, KHÔNG báo UI
         })
         if (r.ok) {
           showToast('Đã lưu hồ sơ', 'success')
@@ -701,6 +702,13 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
     } finally {
       setUploading(false)
     }
+  }
+
+  // Payload cho các nút transition gọi thẳng api_transitionDocument (trinhDuyetLai/hoanThanhLai).
+  // `viewers` là state RIÊNG, KHÔNG nằm trong `form` — nếu chỉ {...form} thì "Người được xem"
+  // không được gửi → updateDocument bỏ qua → sửa viewers bị mất. Phải merge như handleSubmit.
+  function editFormWithViewers() {
+    return { ...form, 'Người được xem': viewers.length ? JSON.stringify(viewers) : '' }
   }
 
   return (
@@ -833,7 +841,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </Field>
               ) : null}
 
-              {/* Phân quyền xem (008) — nút mở popup chọn người */}
+              {/* Phân quyền xem (008) — chỉ vai trò toàn quyền (server cũng enforce; người khác → snapshot danh mục) */}
+              {canManageViewers && (
               <button type="button" onClick={() => setShowViewerModal(true)}
                 className="w-full flex items-center justify-between border border-outline-variant rounded-xl px-3 py-2.5 text-left hover:bg-surface-container-low transition-colors">
                 <span className="flex items-center gap-2 text-sm font-medium text-on-surface">
@@ -845,7 +854,8 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                 </span>
                 <span className="text-on-surface-variant text-base">›</span>
               </button>
-              {showViewerModal && (
+              )}
+              {canManageViewers && showViewerModal && (
                 <ViewerPickerModal
                   users={eligibleViewerUsers}
                   phongBan={initialLookups.phongBan}
@@ -1163,7 +1173,7 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                       .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
                     try {
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
-                        formData: { ...form }, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
+                        formData: editFormWithViewers(), fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                       })
                       showToast('Đã trình duyệt lại', 'success')
                       onSaved(res.data)
@@ -1171,10 +1181,10 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                       if (err.message === 'Lỗi không xác định') {
                         const r = await retryWithVerify({
                           fn: () => gasCall('api_transitionDocument', token, doc.ID, 'trinhDuyetLai', {}, {
-                            formData: { ...form }, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
+                            formData: editFormWithViewers(), fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                           }).then(res => res.data),
                           verify: _makeVerify('Chờ duyệt'),
-                          onRetry: (i, n) => setError(`Có lỗi xảy ra — đang thử lại lần ${i}/${n}…`),
+                          onRetry: (i, n) => console.log(`[gasCall] thử lại lần ${i}/${n}`),  // chỉ log, KHÔNG báo UI
                         })
                         if (r.ok) {
                           showToast('Đã trình duyệt lại', 'success')
@@ -1201,18 +1211,34 @@ export default function DocumentModal({ mode, doc, lookups: initialLookups, toke
                     if (!form['Danh mục']) { setError('Danh mục là bắt buộc'); return }
                     if (!await confirm('Có chắc gửi Hoàn thành lại?')) return
                     setUploading(true)
+                    const keepFileIds = existingFiles.map(f => f.fileId)
+                    const eagerInfos = eagerUploads
+                      .filter(u => u.status === 'done' && u.fileId)
+                      .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
                     try {
-                      const keepFileIds = existingFiles.map(f => f.fileId)
-                      const eagerInfos = eagerUploads
-                        .filter(u => u.status === 'done' && u.fileId)
-                        .map(u => ({ fileId: u.fileId, fileName: u.fileName, mimeType: u.mimeType, size: u.size }))
-                      const submitForm = { ...form }
                       const res = await gasCall('api_transitionDocument', token, doc.ID, 'hoanThanhLai', {}, {
-                        formData: submitForm, fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
+                        formData: editFormWithViewers(), fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
                       })
+                      showToast('Đã gửi hoàn thành lại', 'success')
                       onSaved(res.data)
                     } catch (err) {
-                      setError(err.message)
+                      if (err.message === 'Lỗi không xác định') {
+                        const r = await retryWithVerify({
+                          fn: () => gasCall('api_transitionDocument', token, doc.ID, 'hoanThanhLai', {}, {
+                            formData: editFormWithViewers(), fileInfos: [], keepFileIds, eagerFileInfos: eagerInfos,
+                          }).then(res => res.data),
+                          verify: _makeVerify('Chờ xác nhận HT'),
+                          onRetry: (i, n) => console.log(`[gasCall] thử lại lần ${i}/${n}`),  // chỉ log, KHÔNG báo UI
+                        })
+                        if (r.ok) {
+                          showToast('Đã gửi hoàn thành lại', 'success')
+                          onSaved(r.data)
+                        } else {
+                          setError(r.error)
+                        }
+                      } else {
+                        setError(err.message)
+                      }
                     } finally {
                       setUploading(false)
                     }

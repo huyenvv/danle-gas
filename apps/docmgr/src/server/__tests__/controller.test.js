@@ -83,7 +83,7 @@ describe('US1 — giaoViec ghi NKS + NKS vào CC email giao việc chung', () =>
     expect(gv).toBeTruthy()
     expect(gv.options.cc || '').toContain('ks@test.com')
     // NKS vẫn nhận chuông
-    const daDoc = getSheetData(SHEETS.DA_DOC)
+    const daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r2 => String(r2['UserID']) === '4' && String(r2['DocID']) === '1')).toBe(true)
   })
 
@@ -232,14 +232,14 @@ describe('US2 — quyền & thao tác của Người kiểm soát', () => {
 })
 
 describe('US2b — PT trình duyệt/trình duyệt lại → báo chuông cả GĐ lẫn NKS', () => {
-  // Xoá hết DA_DOC (giữ header) để chỉ đo notify do bước đang test sinh ra.
+  // Xoá hết CHUA_DOC (giữ header) để chỉ đo notify do bước đang test sinh ra.
   function clearUnread() {
-    const da = SpreadsheetApp._sheets[SHEETS.DA_DOC]
+    const da = SpreadsheetApp._sheets[SHEETS.CHUA_DOC]
     da._rows = [da._rows[0]]
-    invalidateSheetCache(SHEETS.DA_DOC)
+    invalidateSheetCache(SHEETS.CHUA_DOC)
   }
   const isUnread = (uid) =>
-    getSheetData(SHEETS.DA_DOC).some(r => String(r['UserID']) === String(uid) && String(r['DocID']) === '1')
+    getSheetData(SHEETS.CHUA_DOC).some(r => String(r['UserID']) === String(uid) && String(r['DocID']) === '1')
 
   test('hoanThanh (trình duyệt) → NKS (4) + GĐ (2) đều có chuông', () => {
     seedAssigned({ nks: 4 })
@@ -273,7 +273,7 @@ describe('US2b — PT trình duyệt/trình duyệt lại → báo chuông cả 
     transitionDocument(ptToken, 1, 'hoanThanh')
     expect(isUnread(2)).toBe(true)
     // không phát sinh bản ghi UserID rỗng
-    expect(getSheetData(SHEETS.DA_DOC).some(r => String(r['UserID']) === '')).toBe(false)
+    expect(getSheetData(SHEETS.CHUA_DOC).some(r => String(r['UserID']) === '')).toBe(false)
   })
 })
 

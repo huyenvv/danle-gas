@@ -4,7 +4,7 @@
 
 **Created**: 2026-06-10
 
-**Status**: Draft
+**Status**: ⛔ Superseded (2026-06-29) — tính năng đã **gỡ bỏ hoàn toàn** ở nhánh `014-gviz-ho-so-access`: xoá sheet `_FileIndex`, `file-index.js` và guard "1 file 1 hồ sơ". 1 file Drive nay có thể thuộc nhiều hồ sơ. Tài liệu này giữ làm lịch sử. Xem `specs/014-gviz-ho-so-access/spec.md` mục "Triển khai thực tế".
 
 **Input**: User description: "Đảm bảo bất biến 1 file Drive chỉ thuộc 1 hồ sơ để việc move file theo danh mục luôn an toàn, qua một bảng index và quy tắc chỉ-link-file-orphaned."
 

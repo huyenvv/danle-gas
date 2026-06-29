@@ -92,7 +92,7 @@ describe('backfillDocDerived — idempotent (FR-007)', () => {
   })
 })
 
-describe('rebuildAllDerived (013) — batch, an toàn ở quy mô lớn', () => {
+describe('rebuildGvizQueryColumns (013) — batch, an toàn ở quy mô lớn', () => {
   beforeEach(() => {
     SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS_V13])
     const sheet = SpreadsheetApp._sheets[SHEETS.HO_SO]
@@ -108,7 +108,7 @@ describe('rebuildAllDerived (013) — batch, an toàn ở quy mô lớn', () => 
   })
 
   test('ghi lại 3 cột cho mọi hồ sơ; Token xem gồm Người kiểm soát', () => {
-    const n = rebuildAllDerived()
+    const n = rebuildGvizQueryColumns()
     expect(n).toBe(2)
     const docs = getSheetData(SHEETS.HO_SO)
     const d1 = docs.find(d => String(d['ID']) === '1')

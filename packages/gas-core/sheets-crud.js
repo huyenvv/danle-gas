@@ -153,6 +153,20 @@ function batchWrite(sheetName, operations) {
 
 // ===== Write (private unlocked — must be called inside a lock) =====
 
+// Định vị dòng theo cột 'ID' KHÔNG nạp cả sheet: TextFinder chạy phía Google trên range cột ID.
+// Trả số dòng tuyệt đối (1-based) hoặc -1 nếu không có. Ném nếu thiếu cột 'ID'.
+function _findRowIndexById(sheet, id) {
+  var lastRow = sheet.getLastRow()
+  if (lastRow <= 1) return -1
+  var lastCol = sheet.getLastColumn()
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+  var idCol = headers.indexOf('ID')
+  if (idCol === -1) throw new Error('Sheet không có cột ID')
+  var found = sheet.getRange(2, idCol + 1, lastRow - 1, 1)
+    .createTextFinder(String(id)).matchEntireCell(true).findNext()
+  return found ? found.getRow() : -1
+}
+
 function _addRowUnlocked(sheetName, rowObject) {
   var sheet = getSheet(sheetName)
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
@@ -165,38 +179,23 @@ function _addRowUnlocked(sheetName, rowObject) {
 
 function _updateRowUnlocked(sheetName, id, updatedFields) {
   var sheet = getSheet(sheetName)
-  var data = sheet.getDataRange().getValues()
-  var headers = data[0]
-  var idCol = headers.indexOf('ID')
-  if (idCol === -1) throw new Error('Sheet không có cột ID')
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(id)) {
-      headers.forEach(function(h, col) {
-        if (updatedFields.hasOwnProperty(h)) {
-          sheet.getRange(i + 1, col + 1).setValue(updatedFields[h])
-        }
-      })
-      invalidateSheetCache(sheetName)
-      return true
+  var rowIdx = _findRowIndexById(sheet, id)   // định vị dòng KHÔNG nạp cả sheet (TextFinder)
+  if (rowIdx === -1) throw new Error('Không tìm thấy bản ghi ID: ' + id)
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+  headers.forEach(function(h, col) {
+    if (updatedFields.hasOwnProperty(h)) {
+      sheet.getRange(rowIdx, col + 1).setValue(updatedFields[h])
     }
-  }
-  throw new Error('Không tìm thấy bản ghi ID: ' + id)
+  })
+  invalidateSheetCache(sheetName)
+  return true
 }
 
 function _deleteRowUnlocked(sheetName, id) {
   var sheet = getSheet(sheetName)
-  var data = sheet.getDataRange().getValues()
-  var headers = data[0]
-  var idCol = headers.indexOf('ID')
-  if (idCol === -1) throw new Error('Sheet không có cột ID')
-
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][idCol]) === String(id)) {
-      sheet.deleteRow(i + 1)
-      invalidateSheetCache(sheetName)
-      return true
-    }
-  }
-  throw new Error('Không tìm thấy bản ghi ID: ' + id)
+  var rowIdx = _findRowIndexById(sheet, id)   // định vị dòng KHÔNG nạp cả sheet (TextFinder)
+  if (rowIdx === -1) throw new Error('Không tìm thấy bản ghi ID: ' + id)
+  sheet.deleteRow(rowIdx)
+  invalidateSheetCache(sheetName)
+  return true
 }

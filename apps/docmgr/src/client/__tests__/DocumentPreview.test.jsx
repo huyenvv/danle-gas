@@ -50,6 +50,40 @@ describe('<DocumentPreview />', () => {
     expect(screen.getByTestId('vpm')).toBeInTheDocument() // popup dùng chung với add/edit
   })
 
+  // Regression: transport rớt nhưng server ĐÃ lưu → cập nhật LẠC QUAN (không đọc-lại) → báo OK.
+  test('Phân quyền xem: transport rớt → cập nhật lạc quan → "Đã cập nhật", KHÔNG gọi getDocById', async () => {
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_setDocumentViewers') return Promise.reject(new Error('Lỗi không xác định'))
+      return Promise.resolve({})
+    })
+    renderPreview()
+    fireEvent.click(screen.getByTestId('edit-viewers-btn'))
+    fireEvent.click(screen.getAllByTestId(/^vpm-u-/)[0])
+    fireEvent.click(screen.getByTestId('vpm-confirm'))
+
+    await waitFor(() => expect(screen.getByText('Đã cập nhật phân quyền xem')).toBeInTheDocument())
+    expect(screen.queryByText(/Lỗi phân quyền/)).not.toBeInTheDocument()
+    expect(gasCall).not.toHaveBeenCalledWith('api_getDocById', expect.anything(), expect.anything())  // không đọc-lại
+  })
+
+  // Lỗi THẬT (server ném ra, không phải transport) → vẫn báo lỗi, KHÔNG lạc quan.
+  test('Phân quyền xem: lỗi thật → báo lỗi, không lạc quan', async () => {
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_setDocumentViewers') return Promise.reject(new Error('Bạn không có quyền phân quyền xem tài liệu'))
+      return Promise.resolve({})
+    })
+    renderPreview()
+    fireEvent.click(screen.getByTestId('edit-viewers-btn'))
+    fireEvent.click(screen.getAllByTestId(/^vpm-u-/)[0])
+    fireEvent.click(screen.getByTestId('vpm-confirm'))
+
+    await waitFor(() => expect(screen.getByText(/Lỗi phân quyền: Bạn không có quyền/)).toBeInTheDocument())
+  })
+
   test('Details - shows creator name', async () => {
     renderPreview()
     // creator 'admin' → looks up MOCK_USERS → 'Tên nhân viên': 'Admin'
@@ -360,6 +394,69 @@ describe('<DocumentPreview />', () => {
         expect.objectContaining({ 'Nội dung': 'Ưu tiên xử lý trong tuần' }),
       )
     })
+  })
+
+  // Regression: verify chuyển-trạng-thái dựa "Tình trạng" (robust), KHÔNG dựa "Ngày cập nhật"
+  // (gviz convert khác _getDocById) hay khớp "Người phối hợp" (lưu userId khác client).
+  test('giaoViec: transport error + Tình trạng đổi (Ngày cập nhật GIỮ NGUYÊN) → báo thành công', async () => {
+    const gdSession = { ...MOCK_ADMIN_SESSION, userId: 2, username: 'giamdoc', role: 'Giám đốc' }
+    const choDuyetDoc = { ...MOCK_DOC, 'Tình trạng': 'Chờ duyệt', 'Ngày cập nhật': '2026-01-01' }
+    // verify đọc lại: Tình trạng ĐÃ đổi, "Ngày cập nhật" GIỮ NGUYÊN → verify cũ (theo ngày) sẽ fail.
+    const freshDoc = { ...choDuyetDoc, 'Tình trạng': 'Chờ xử lý' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_transitionDocument') return Promise.reject(new Error('Lỗi không xác định'))
+      if (fn === 'api_getDocById') return Promise.resolve(freshDoc)
+      return Promise.resolve({})
+    })
+    renderPreview({ doc: choDuyetDoc, session: gdSession, isAdmin: false, canDelete: false })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /giao việc/i })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /giao việc/i }))
+    const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)')
+    fireEvent.change(noiDung, { target: { value: 'x' } })
+    fireEvent.click(screen.getAllByText('-- Chọn --')[0])
+    fireEvent.click(screen.getByText('Viewer One'))
+    fireEvent.click(screen.getByText('Xác nhận giao việc'))
+    await waitFor(() => {
+      const confirmBtn = screen.getAllByRole('button').find(b => b.textContent.trim() === 'Xác nhận')
+      expect(confirmBtn).toBeTruthy()
+      fireEvent.click(confirmBtn)
+    })
+
+    await waitFor(() => expect(screen.getByText('Đã cập nhật')).toBeInTheDocument())
+  })
+
+  // Regression: lỗi "đang ở trạng thái <đích>, không thể <action>" = transition ĐÃ xảy ra → thành công.
+  // Tin lỗi write-path; KHÔNG lệ thuộc đọc-lại (ở đây api_getDocById trả STALE 'Chờ duyệt' vẫn OK).
+  test('giaoViec: xung đột-tại-đích (đã "Chờ xử lý") → coi thành công dù đọc-lại còn stale', async () => {
+    const gdSession = { ...MOCK_ADMIN_SESSION, userId: 2, username: 'giamdoc', role: 'Giám đốc' }
+    const choDuyetDoc = { ...MOCK_DOC, 'Tình trạng': 'Chờ duyệt' }
+    gasCall.mockImplementation((fn) => {
+      if (fn === 'api_getComments') return Promise.resolve({ data: [] })
+      if (fn === 'api_markAsRead') return Promise.resolve({ success: true })
+      if (fn === 'api_transitionDocument') return Promise.reject(new Error('Hồ sơ đang ở trạng thái "Chờ xử lý", không thể giaoViec'))
+      if (fn === 'api_getDocById') return Promise.resolve({ ...choDuyetDoc, 'Tình trạng': 'Chờ duyệt' }) // replica trễ
+      return Promise.resolve({})
+    })
+    renderPreview({ doc: choDuyetDoc, session: gdSession, isAdmin: false, canDelete: false })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /giao việc/i })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /giao việc/i }))
+    const noiDung = await screen.findByPlaceholderText('Nhập nội dung giao việc… (bắt buộc nếu có người phối hợp)')
+    fireEvent.change(noiDung, { target: { value: 'x' } })
+    fireEvent.click(screen.getAllByText('-- Chọn --')[0])
+    fireEvent.click(screen.getByText('Viewer One'))
+    fireEvent.click(screen.getByText('Xác nhận giao việc'))
+    await waitFor(() => {
+      const confirmBtn = screen.getAllByRole('button').find(b => b.textContent.trim() === 'Xác nhận')
+      expect(confirmBtn).toBeTruthy()
+      fireEvent.click(confirmBtn)
+    })
+
+    await waitFor(() => expect(screen.getByText('Đã cập nhật')).toBeInTheDocument())
+    expect(screen.queryByText(/không thể giaoViec/)).not.toBeInTheDocument()
   })
 
   test('Workflow - renders at least one action button for admin + Chờ duyệt', async () => {

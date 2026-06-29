@@ -92,7 +92,7 @@ enforced in application code.
 - Delete lookup (Danh Mục / Dự Án / NCC) → check `Hồ Sơ` refs first.
 - Delete category → check child categories first.
 - Schema change → bump `SCHEMA_V` to force `ensureInitialized()`.
-- `_Đã Đọc`: has record = unread, delete record = read. Don't invert.
+- `_Chưa Đọc`: has record = unread, delete record = read. Don't invert.
 - Role from SSO `_Phân Bổ` (highest wins):
   GĐ(6) > PGĐ(5) > VT(4) > admin(3) > TP(2) > PP(1) > NV(0).
 

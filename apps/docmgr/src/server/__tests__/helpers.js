@@ -23,7 +23,7 @@ function resetAll() {
   GmailApp._reset()
   // 012: memo map userId (biến module) — reset để test không lẫn dữ liệu giữa các ca
   if (typeof _resetDocUserIdMemo === 'function') _resetDocUserIdMemo()
-  if (typeof _resetSheetColsMemo === 'function') _resetSheetColsMemo()
+  if (typeof _resetDocColLetters === 'function') _resetDocColLetters()
 }
 
 // ── Sheet setup helpers ──────────────────────────────────────────────────────
@@ -35,7 +35,7 @@ function setupDocSheets() {
   SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS])
   SpreadsheetApp._addSheet(SHEETS.DANH_MUC, [CAT_HEADERS])
   SpreadsheetApp._addSheet(SHEETS.NHOM, [NHOM_HEADERS])
-  SpreadsheetApp._addSheet(SHEETS.DA_DOC, [['ID', 'UserID', 'DocID', 'Thời gian']])
+  SpreadsheetApp._addSheet(SHEETS.CHUA_DOC, [['ID', 'UserID', 'DocID', 'Thời gian']])
   SpreadsheetApp._addSheet(SHEETS.COMMENTS, [['ID', 'DocID', 'UserID', 'Tên người dùng', 'Nội dung', 'Thời gian']])
 }
 

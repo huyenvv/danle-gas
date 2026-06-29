@@ -3,9 +3,10 @@
 // This file adds: referential integrity checks, getAllData, and overrides deleteRow/batchWrite with ref checks.
 
 var REFERENCE_MAP = {}
-REFERENCE_MAP[SHEETS.DANH_MUC]     = { targetSheet: SHEETS.HO_SO, targetColumn: 'Danh mục' }
-REFERENCE_MAP[SHEETS.DU_AN]        = { targetSheet: SHEETS.HO_SO, targetColumn: 'Dự án (Phòng ban)' }
-REFERENCE_MAP[SHEETS.NHA_CUNG_CAP] = { targetSheet: SHEETS.HO_SO, targetColumn: 'Nhà cung cấp (Nơi ban hành)' }
+// matchBy: 'id' = cột lưu ID số (khớp '='); 'name' = cột lưu tên đơn/mảng JSON (khớp '=' + matches).
+REFERENCE_MAP[SHEETS.DANH_MUC]     = { targetSheet: SHEETS.HO_SO, targetColumn: 'Danh mục', matchBy: 'id' }
+REFERENCE_MAP[SHEETS.DU_AN]        = { targetSheet: SHEETS.HO_SO, targetColumn: 'Dự án (Phòng ban)', matchBy: 'name' }
+REFERENCE_MAP[SHEETS.NHA_CUNG_CAP] = { targetSheet: SHEETS.HO_SO, targetColumn: 'Nhà cung cấp (Nơi ban hành)', matchBy: 'name' }
 
 function getAllData(session) {
   // Read authorized users from local _Phân Quyền (users are managed by SSO Portal)
@@ -166,26 +167,14 @@ batchWrite = function(sheetName, operations) {
 function checkReferences(sheetName, id) {
   var ref = REFERENCE_MAP[sheetName]
   if (!ref) return { inUse: false, count: 0, sampleDocuments: [] }
+  // Seam gviz đếm/đọc-điểm chỉ chạy trên Hồ Sơ (xem _fetchGvizTable) → chặn ánh xạ nhầm sheet.
+  if (ref.targetSheet !== SHEETS.HO_SO) throw new Error('checkReferences chỉ hỗ trợ target Hồ Sơ')
 
   var sourceData = getSheetData(sheetName)
   var sourceRecord = sourceData.find(function(r) { return String(r['ID']) === String(id) })
   var recordName = sourceRecord ? (sourceRecord['Tên danh mục'] || sourceRecord['Tên dự án viết tắt'] || sourceRecord['Tên NCC viết tắt'] || sourceRecord['Tên đăng nhập'] || String(id)) : String(id)
 
-  var targetData = getSheetData(ref.targetSheet)
-  var matches = targetData.filter(function(row) {
-    var cell = row[ref.targetColumn]
-    // Multi-value columns (e.g. 'Dự án (Phòng ban)') store a JSON array of names
-    if (typeof cell === 'string' && cell.charAt(0) === '[') {
-      var arr = []
-      try { arr = JSON.parse(cell).map(String) } catch(e) {}
-      return arr.indexOf(String(recordName)) !== -1 || arr.indexOf(String(id)) !== -1
-    }
-    return String(cell) === String(recordName) || String(cell) === String(id)
-  })
-
-  return {
-    inUse: matches.length > 0,
-    count: matches.length,
-    sampleDocuments: matches.slice(0, 3).map(function(r) { return r['Tên hồ sơ'] || String(r['ID']) }),
-  }
+  // 014/G1: đếm tham chiếu QUA gviz (không đọc toàn bộ Hồ Sơ). gviz lỗi → ném → chặn xoá (fail-closed).
+  var res = _countDocRefs(ref.targetColumn, ref.matchBy, recordName, id)
+  return { inUse: res.count > 0, count: res.count, sampleDocuments: res.sampleDocuments }
 }

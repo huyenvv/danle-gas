@@ -75,7 +75,7 @@ export default function MainApp() {
   const serverCatIdRef = useRef('')
   const searchKeywordRef = useRef('')   // tìm kiếm toàn tập — gửi xuống server (012)
 
-  // Unread tracking (DA_DOC stores unread records)
+  // Unread tracking (CHUA_DOC stores unread records)
   const [unreadDocIds, setUnreadDocIds] = useState(new Set())
   const [selectedIds, setSelectedIds] = useState(new Set())
 
@@ -293,7 +293,7 @@ export default function MainApp() {
     return result
   }, [allDocs, filters, unreadDocIds])
 
-  // Bell count = unread docs (DA_DOC has record = unread)
+  // Bell count = unread docs (CHUA_DOC has record = unread)
   const unreadCount = useMemo(
     () => unreadDocIds.size,
     [unreadDocIds]
@@ -428,15 +428,17 @@ export default function MainApp() {
                 </button>
                 )}
 
-                <select
-                  className="min-w-0 bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-on-surface"
-                  value={filters.readStatus || ''}
-                  onChange={e => handleFilterChange('readStatus', e.target.value)}
+                <button
+                  onClick={() => handleFilterChange('readStatus', filters.readStatus === 'unread' ? '' : 'unread')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    filters.readStatus === 'unread'
+                      ? 'bg-accent text-white shadow-md3-1'
+                      : 'bg-surface-container-low text-on-surface-variant hover:bg-accent/10 hover:text-accent'
+                  }`}
                 >
-                  <option value="">Tất cả</option>
-                  <option value="unread">Chưa đọc</option>
-                  <option value="read">Đã đọc</option>
-                </select>
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>mark_email_unread</span>
+                  Chưa đọc
+                </button>
 
                 <select
                   className="min-w-0 bg-surface-container-low border-none rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 text-on-surface"
@@ -505,7 +507,7 @@ export default function MainApp() {
                 <span
                   className="material-symbols-outlined text-on-surface-variant/70 self-center cursor-help"
                   style={{ fontSize: 18 }}
-                  title="Tìm kiếm áp trên TOÀN BỘ hồ sơ. Các bộ lọc còn lại (tình trạng, dự án, NCC, phụ trách, hạn, đã đọc, 'Công việc của tôi') chỉ áp trong TRANG đang xem."
+                  title="Tìm kiếm áp trên TOÀN BỘ hồ sơ. Các bộ lọc còn lại (tình trạng, dự án, NCC, phụ trách, hạn, 'Chưa đọc', 'Công việc của tôi') chỉ áp trong TRANG đang xem."
                 >info</span>
 
                 <div className="ml-auto flex items-center gap-2">

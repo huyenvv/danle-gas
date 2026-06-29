@@ -316,6 +316,22 @@ describe('transitionDocument', () => {
     expect(result.data['Người phối hợp']).toBe(JSON.stringify(['staff2']))
   })
 
+  test('side-effect lỗi (báo unread ném) → VẪN chuyển trạng thái + trả success (tách save khỏi side-effect)', () => {
+    createDocument(directorToken, { 'Tên hồ sơ': 'SE Doc', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const chuaDoc = SpreadsheetApp._sheets[SHEETS.CHUA_DOC]
+    delete SpreadsheetApp._sheets[SHEETS.CHUA_DOC]   // → _markUnreadForUsers ném khi truy cập sheet này
+    const logSpy = jest.spyOn(Logger, 'log')
+    const result = transitionDocument(directorToken, 1, 'giaoViec', { 'Phụ trách': 'staff1' })
+    expect(result.data['Tình trạng']).toBe('Chờ xử lý')                                  // KHÔNG ném, đã chuyển
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('side-effect error'))    // lỗi side-effect bị nuốt + log
+    logSpy.mockRestore()
+    SpreadsheetApp._sheets[SHEETS.CHUA_DOC] = chuaDoc
+    invalidateSheetCache(SHEETS.HO_SO)
+    const saved = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === '1')
+    expect(saved['Tình trạng']).toBe('Chờ xử lý')                                        // dữ liệu THẬT đã lưu
+  })
+
   test('giaoViec stores optional Nội dung in its own Nội dung giao việc column', () => {
     createDocument(directorToken, { 'Tên hồ sơ': 'Doc ND', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt' }, null)
     invalidateSheetCache(SHEETS.HO_SO)
@@ -460,8 +476,8 @@ describe('transitionDocument — tuChoi', () => {
 
   test('tuChoi marks unread for doc creator', () => {
     transitionDocument(directorToken, 1, 'tuChoi', { lyDoTuChoi: 'Sai thông tin' })
-    invalidateSheetCache(SHEETS.DA_DOC)
-    const unread = getSheetData(SHEETS.DA_DOC)
+    invalidateSheetCache(SHEETS.CHUA_DOC)
+    const unread = getSheetData(SHEETS.CHUA_DOC)
     expect(unread.length).toBeGreaterThan(0)
     // Creator is 'vanthu' — should have unread record
     const creatorUnread = unread.find(r => String(r['DocID']) === '1')
@@ -826,6 +842,15 @@ describe('finalizeDraft', () => {
     invalidateSheetCache(SHEETS.HO_SO)
     expect(getSheetData(SHEETS.HO_SO)[0]['Tệp đính kèm']).toBeTruthy()
   })
+
+  test('lưu "Người được xem" từ form (regression: trước đây finalizeDraft bỏ sót cột này)', () => {
+    finalizeDraft(directorToken, draftId, {
+      'Tên hồ sơ': 'Có viewer', 'Danh mục': 1,
+      'Người được xem': JSON.stringify(['9', '5', '10']),
+    })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)[0]['Người được xem']).toBe(JSON.stringify(['9', '5', '10']))
+  })
 })
 
 describe('createDraft', () => {
@@ -846,6 +871,54 @@ describe('createDraft', () => {
 
   test('ném lỗi khi thiếu cả Tên hồ sơ lẫn Danh mục', () => {
     expect(() => createDraft(directorToken, { 'Ghi chú': 'x' })).toThrow('Tên hồ sơ hoặc Danh mục')
+  })
+
+  test('lưu "Người được xem" vào nháp (regression)', () => {
+    createDraft(directorToken, { 'Tên hồ sơ': 'Nháp có viewer', 'Người được xem': JSON.stringify(['7', '8']) })
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(getSheetData(SHEETS.HO_SO)[0]['Người được xem']).toBe(JSON.stringify(['7', '8']))
+  })
+})
+
+describe('phân quyền "Người được xem" — chỉ vai trò toàn quyền được đổi (server enforce)', () => {
+  beforeEach(() => {
+    // Danh mục 1 có viewer mặc định để kiểm chứng snapshot cho người KHÔNG đủ quyền (giữ dòng header).
+    SpreadsheetApp._sheets[SHEETS.DANH_MUC]._rows = [CAT_HEADERS, [1, 'DM', '', '', '', JSON.stringify(['20', '21']), '', '']]
+    invalidateSheetCache(SHEETS.DANH_MUC)
+    seedUser(50, 'nv', 'nv@x.com', 'Nhân viên')
+  })
+
+  test('_canManageViewers: chỉ FULL_ACCESS', () => {
+    expect(_canManageViewers({ role: 'Giám đốc' })).toBe(true)
+    expect(_canManageViewers({ role: 'Văn thư' })).toBe(true)
+    expect(_canManageViewers({ role: 'Nhân viên' })).toBe(false)
+  })
+
+  test('_viewersForCreate: FULL_ACCESS giữ giá trị form; người khác → snapshot danh mục (bỏ giá trị client)', () => {
+    expect(_viewersForCreate({ role: 'Giám đốc' }, JSON.stringify(['9']), 1)).toBe(JSON.stringify(['9']))
+    // Nhân viên gửi ['99'] tuỳ ý → server bỏ qua, snapshot theo danh mục 1 = ['20','21']
+    expect(_viewersForCreate({ role: 'Nhân viên', userId: 50 }, JSON.stringify(['99']), 1)).toBe(JSON.stringify(['20', '21']))
+  })
+
+  test('updateDocument: Phụ trách (không đủ quyền) KHÔNG đổi được "Người được xem"', () => {
+    const created = createDocument(directorToken, {
+      'Tên hồ sơ': 'Doc', 'Danh mục': 1, 'Phụ trách': 50, 'Người được xem': JSON.stringify(['20']),
+    }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    const nvToken = createSession(50, 'nv', 'nv@x.com', 'Nhân viên')
+    updateDocument(nvToken, created.data['ID'], { 'Tên hồ sơ': 'Doc sửa', 'Người được xem': JSON.stringify(['99']) }, [], [])
+    invalidateSheetCache(SHEETS.HO_SO)
+    const doc = _getDocById(created.data['ID'])
+    expect(doc['Tên hồ sơ']).toBe('Doc sửa')                 // field thường: đổi được
+    expect(doc['Người được xem']).toBe(JSON.stringify(['20'])) // viewer: GIỮ NGUYÊN
+  })
+
+  test('updateDocument: Giám đốc (đủ quyền) đổi được "Người được xem"', () => {
+    const created = createDocument(directorToken, { 'Tên hồ sơ': 'Doc', 'Danh mục': 1, 'Người được xem': JSON.stringify(['20']) }, null)
+    invalidateSheetCache(SHEETS.HO_SO)
+    updateDocument(directorToken, created.data['ID'], { 'Người được xem': JSON.stringify(['99']) }, [], [])
+    invalidateSheetCache(SHEETS.HO_SO)
+    expect(_getDocById(created.data['ID'])['Người được xem']).toBe(JSON.stringify(['99']))
   })
 })
 
@@ -1034,8 +1107,8 @@ describe('transitionDocument — ycPhatHanh', () => {
 
   test('ycPhatHanh marks unread for doc creator', () => {
     transitionDocument(directorToken, 1, 'ycPhatHanh', { lyDoTuChoi: 'Phát hành ngay' })
-    invalidateSheetCache(SHEETS.DA_DOC)
-    const unread = getSheetData(SHEETS.DA_DOC)
+    invalidateSheetCache(SHEETS.CHUA_DOC)
+    const unread = getSheetData(SHEETS.CHUA_DOC)
     const creatorUnread = unread.find(r => String(r['DocID']) === '1')
     expect(creatorUnread).toBeTruthy()
   })
@@ -1089,22 +1162,43 @@ describe('transitionDocument — ycPhatHanh', () => {
 })
 
 describe('getDocumentStats', () => {
+  // 014: stats đẩy tổng hợp xuống nguồn (gviz group by) → mock phản hồi group-by.
+  function gvizGroupBy(groups) {
+    const cols = [{ label: 'Tình trạng' }, { label: 'count' }, { label: 'sum' }]
+    const rows = groups.map(g => ({ c: [{ v: g.status }, { v: g.count }, { v: g.sum }] }))
+    return "/*O_o*/\ngoogle.visualization.Query.setResponse(" +
+      JSON.stringify({ status: 'ok', table: { cols, rows } }) + ');'
+  }
+
   test('returns correct totals and breakdown', () => {
-    createDocument(directorToken, {
-      'Tên hồ sơ': 'A', 'Danh mục': 1, 'Tình trạng': 'Chờ duyệt',
-      'Giá trị HĐ': 100,
-    }, null)
-    createDocument(directorToken, {
-      'Tên hồ sơ': 'B', 'Danh mục': 1, 'Tình trạng': 'Hoàn thành',
-      'Giá trị HĐ': 200,
-    }, null)
-    invalidateSheetCache(SHEETS.HO_SO)
+    UrlFetchApp._nextResponse = { code: 200, body: gvizGroupBy([
+      { status: 'Chờ duyệt', count: 1, sum: 100 },
+      { status: 'Hoàn thành', count: 1, sum: 200 },
+    ]) }
 
     const stats = getDocumentStats(directorToken)
     expect(stats.total).toBe(2)
     expect(stats.byStatus['Chờ duyệt']).toBe(1)
     expect(stats.byStatus['Hoàn thành']).toBe(1)
     expect(stats.totalValue).toBe(300)
+  })
+
+  test('Tình trạng rỗng/null → gộp vào "Không rõ"; sum null → 0', () => {
+    UrlFetchApp._nextResponse = { code: 200, body: gvizGroupBy([
+      { status: null, count: 2, sum: null },
+      { status: '', count: 1, sum: 50 },
+      { status: 'Không rõ', count: 1, sum: null },
+    ]) }
+
+    const stats = getDocumentStats(directorToken)
+    expect(stats.total).toBe(4)
+    expect(stats.byStatus['Không rõ']).toBe(4) // null + '' + literal 'Không rõ' gộp chung
+    expect(stats.totalValue).toBe(50)
+  })
+
+  test('gviz lỗi sau retry → ném lỗi, KHÔNG fallback đọc cả sheet', () => {
+    UrlFetchApp._nextResponse = { code: 500, body: 'err' }
+    expect(() => getDocumentStats(directorToken)).toThrow()
   })
 })
 
@@ -1130,37 +1224,102 @@ describe('getDocuments — Dự án multi-value filter', () => {
   })
 })
 
-describe('checkReferences — Dự án used inside a multi-value doc', () => {
+describe('checkReferences — đếm tham chiếu QUA gviz, không full-read (G1)', () => {
+  // gviz mock bỏ qua tq & nội dung sheet → ta chủ động set phản hồi + soi tq để kiểm chứng mệnh đề khớp.
+  function gvizNames(names, status) {
+    const obj = status === 'error'
+      ? { status: 'error', errors: [{ detailed_message: 'bad' }] }
+      : { status: 'ok', table: { cols: [{ label: 'Tên hồ sơ' }], rows: names.map(n => ({ c: [{ v: n }] })) } }
+    return "/*O_o*/\ngoogle.visualization.Query.setResponse(" + JSON.stringify(obj) + ');'
+  }
+  function setGviz(body, code) { UrlFetchApp._nextResponse = { code: code || 200, body } }
+  function tqOf() { return decodeURIComponent((UrlFetchApp._lastRequest.url.match(/[?&]tq=([^&]*)/) || [])[1] || '') }
+
   beforeEach(() => {
+    UrlFetchApp._lastRequest = null
     SpreadsheetApp._addSheet(SHEETS.DU_AN, [['ID', 'Tên dự án viết tắt', 'Tên dự án đầy đủ', 'Địa chỉ']])
-    SpreadsheetApp._sheets[SHEETS.DU_AN]._rows.push([1, 'DA-01', 'Dự án 1', ''])
-    invalidateSheetCache(SHEETS.DU_AN)
+    SpreadsheetApp._addSheet(SHEETS.NHA_CUNG_CAP, [['ID', 'Tên NCC viết tắt', 'Tên NCC đầy đủ', 'Địa chỉ']])
+    addRow(SHEETS.DU_AN, { ID: 3, 'Tên dự án viết tắt': 'DA-01' }); invalidateSheetCache(SHEETS.DU_AN)
+    addRow(SHEETS.NHA_CUNG_CAP, { ID: 2, 'Tên NCC viết tắt': 'NCC-1' }); invalidateSheetCache(SHEETS.NHA_CUNG_CAP)
   })
 
-  test('detects a project referenced inside a JSON-array column', () => {
-    createDocument(directorToken, { 'Tên hồ sơ': 'Uses DA-01', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-01', 'DA-02']) }, null)
-    invalidateSheetCache(SHEETS.HO_SO)
-    const ref = checkReferences(SHEETS.DU_AN, 1)
-    expect(ref.inUse).toBe(true)
-    expect(ref.count).toBe(1)
+  // ── Danh Mục: cột ID số → khớp '=' chính xác, KHÔNG dùng matches ──
+  test('Danh Mục: tq khớp id (số + chuỗi), không matches; count/sample từ gviz', () => {
+    setGviz(gvizNames(['Doc A', 'Doc B']))
+    const r = checkReferences(SHEETS.DANH_MUC, 1)   // id 1 = 'Hợp đồng' (seed ở beforeEach ngoài)
+    expect(r).toEqual({ inUse: true, count: 2, sampleDocuments: ['Doc A', 'Doc B'] })
+    const tq = tqOf()
+    expect(tq).toContain('select B where')   // chỉ kéo cột Tên hồ sơ (B)
+    expect(tq).toContain('C = 1')            // id số
+    expect(tq).toContain("C = '1'")          // biến thể chuỗi (cột lẫn kiểu)
+    expect(tq).not.toContain('matches')      // cột số → không regex
   })
 
-  test('not in use when no doc references it', () => {
-    createDocument(directorToken, { 'Tên hồ sơ': 'Uses other', 'Danh mục': 1, 'Dự án (Phòng ban)': JSON.stringify(['DA-09']) }, null)
-    invalidateSheetCache(SHEETS.HO_SO)
-    expect(checkReferences(SHEETS.DU_AN, 1).inUse).toBe(false)
+  test('Danh Mục: gviz rỗng → inUse false', () => {
+    setGviz(gvizNames([]))
+    expect(checkReferences(SHEETS.DANH_MUC, 1)).toEqual({ inUse: false, count: 0, sampleDocuments: [] })
+  })
+
+  // ── Dự Án: cột tên (đơn HOẶC mảng JSON) → '=' + matches neo dấu nháy JSON ──
+  test('Dự Án: tq có khớp đơn + khớp phần-tử-mảng (neo " "), cho cả tên lẫn id', () => {
+    setGviz(gvizNames(['Doc X']))
+    const r = checkReferences(SHEETS.DU_AN, 3)
+    expect(r.inUse).toBe(true); expect(r.count).toBe(1)
+    const tq = tqOf()
+    expect(tq).toContain("I = 'DA-01'")                // tên — khớp đơn
+    expect(tq).toContain('I matches \'.*"DA-01".*\'')  // tên — phần tử mảng, bọc " " chống khớp chuỗi con
+    expect(tq).toContain("I = '3'")                    // id — khớp đơn
+    expect(tq).toContain('I matches \'.*"3".*\'')      // id — phần tử mảng
+  })
+
+  test('Dự Án: tên chứa nháy đơn → literal bọc nháy kép (gviz KHÔNG doubling)', () => {
+    addRow(SHEETS.DU_AN, { ID: 4, 'Tên dự án viết tắt': "O'Brien" }); invalidateSheetCache(SHEETS.DU_AN)
+    setGviz(gvizNames([]))
+    checkReferences(SHEETS.DU_AN, 4)
+    expect(tqOf()).toContain('I = "O\'Brien"')      // khớp đơn: bọc " (giữ nguyên dấu nháy)
+    expect(tqOf()).not.toContain("''")              // không còn cú pháp doubling sai
+  })
+
+  test('Dự Án: escape ký tự regex trong tên (matches an toàn)', () => {
+    addRow(SHEETS.DU_AN, { ID: 5, 'Tên dự án viết tắt': 'A.B*C' }); invalidateSheetCache(SHEETS.DU_AN)
+    setGviz(gvizNames([]))
+    checkReferences(SHEETS.DU_AN, 5)
+    expect(tqOf()).toContain('A\\.B\\*C')
+  })
+
+  test('NCC: định tuyến đúng cột J', () => {
+    setGviz(gvizNames(['D']))
+    checkReferences(SHEETS.NHA_CUNG_CAP, 2)
+    expect(tqOf()).toContain("J = 'NCC-1'")
+  })
+
+  // ── fail-closed: gviz lỗi → ném (chặn xoá), KHÔNG trả false thầm lặng ──
+  test('gviz HTTP lỗi sau retry → ném (fail-closed)', () => {
+    setGviz('boom', 500)
+    expect(() => checkReferences(SHEETS.DANH_MUC, 1)).toThrow()
+  })
+  test('gviz status=error → ném', () => {
+    setGviz(gvizNames([], 'error'))
+    expect(() => checkReferences(SHEETS.DANH_MUC, 1)).toThrow('Lỗi truy vấn nguồn')
+  })
+
+  // ── không full-read: count đến từ gviz, không từ nội dung sheet Hồ Sơ ──
+  test('không đọc sheet Hồ Sơ: count theo phản hồi gviz dù sheet trống', () => {
+    setGviz(gvizNames(['a', 'b', 'c']))
+    expect(checkReferences(SHEETS.DANH_MUC, 1).count).toBe(3)
+    expect(UrlFetchApp._lastRequest).not.toBeNull()
   })
 })
 
 // ── 012: getDocuments qua gviz (integration, mock UrlFetchApp) ────────────────
 describe('getDocuments (gviz path)', () => {
   beforeEach(() => {
-    // HO_SO cần 3 cột tính sẵn để _sheetCols tính đúng chữ cái (gviz đã mock nên không cần data)
+    // HO_SO cần 3 cột tính sẵn để _docColLetters tính đúng chữ cái (gviz đã mock nên không cần data)
     SpreadsheetApp._addSheet(SHEETS.HO_SO, [DOC_HEADERS.concat(['Hạng ưu tiên', 'Token xem', 'Blob tìm kiếm'])])
   })
   function gvizBody(docs, status) {
-    const cols = DOC_QUERY_HEADERS.map(label => ({ label }))
-    const rows = docs.map(d => ({ c: DOC_QUERY_HEADERS.map(h => ({ v: d[h] != null ? d[h] : null })) }))
+    const cols = HO_SO_HEADERS.map(label => ({ label }))
+    const rows = docs.map(d => ({ c: HO_SO_HEADERS.map(h => ({ v: d[h] != null ? d[h] : null })) }))
     const obj = status === 'error'
       ? { status: 'error', errors: [{ detailed_message: 'bad' }] }
       : { status: 'ok', table: { cols, rows } }
@@ -1197,7 +1356,7 @@ describe('getDocuments (gviz path)', () => {
     UrlFetchApp._nextResponse = { code: 200, body: gvizBody(makeDocs(1)) }
     getDocuments(directorToken, { page: 1 })
     const tq = decodeURIComponent(UrlFetchApp._lastRequest.url.split('tq=')[1])
-    expect(tq).not.toContain('AA contains')
-    expect(tq).toContain("order by AA asc, Q desc, A desc")
+    expect(tq).not.toContain('AA contains')                   // Token xem = AA → full quyền không có clause này
+    expect(tq).toContain("order by Z asc, Q desc, A desc")     // Hạng ưu tiên = Z
   })
 })

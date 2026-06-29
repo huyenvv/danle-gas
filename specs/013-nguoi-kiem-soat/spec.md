@@ -159,7 +159,7 @@ Ví dụ khách hàng mong muốn — mẫu hiện tại:
 - Người kiểm soát mới được gán nhận chuông + nằm trong CC email giao việc chung (không có template riêng), best-effort như feature 010.
 - Gửi email là best-effort (kế thừa feature 010): lỗi gửi không rollback việc giao việc.
 - Quyền người kiểm soát là quyền **theo hồ sơ**, không nâng vai trò toàn hệ thống của người đó.
-- Hiển thị danh sách (012) lọc phía server qua cột tính sẵn "Token xem"; NKS được thêm vào token này để thấy hồ sơ. Hồ sơ gán NKS **trước bản vá** cần chạy **một lần** hàm bảo trì thủ công `rebuildAllDerived()` (tính lại token theo lô, an toàn ở 10k+) hoặc thu hồi→giao lại. Tuyệt đối KHÔNG tính lại toàn bộ trong `doGet` (sẽ timeout ở quy mô lớn).
+- Hiển thị danh sách (012) lọc phía server qua cột tính sẵn "Token xem"; NKS được thêm vào token này để thấy hồ sơ. Hồ sơ gán NKS **trước bản vá** cần chạy **một lần** hàm bảo trì thủ công `rebuildGvizQueryColumns()` (tính lại token theo lô, an toàn ở 10k+) hoặc thu hồi→giao lại. Tuyệt đối KHÔNG tính lại toàn bộ trong `doGet` (sẽ timeout ở quy mô lớn).
 
 ## Dependencies
 

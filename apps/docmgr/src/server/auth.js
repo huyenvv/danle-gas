@@ -57,6 +57,34 @@ function _getDeptInfo(parentSs, userId) {
   return out
 }
 
+// Như _getDeptInfo nhưng cho MỌI user trong MỘT lần đọc (tránh N+1: trước đây gửi mail nhiều người
+// thì mỗi người đọc lại cả _Phân Bổ + _Phòng Ban). Trả map userId(chuỗi) → {role, phongBan} (rank cao nhất).
+function _buildDeptInfoMap(parentSs) {
+  var out = {}
+  var sheet = parentSs.getSheetByName('_Phân Bổ')
+  if (!sheet) return out
+  var data = sheet.getDataRange().getValues()
+  if (data.length < 2) return out
+  var headers = data[0]
+  var colUid = headers.indexOf('UserID')
+  var colRole = headers.indexOf('Chức vụ')
+  var colPb = headers.indexOf('PhongBanID')
+  if (colUid === -1 || colRole === -1) return out
+  var deptMap = _buildDeptMap(parentSs)
+  var bestRank = {}
+  for (var i = 1; i < data.length; i++) {
+    var uid = String(data[i][colUid])
+    var r = data[i][colRole]
+    if (!r || _DEPT_ROLE_EXCLUDE[r]) continue
+    var rank = _ROLE_RANK[r] || 0
+    if (bestRank[uid] == null || rank > bestRank[uid]) {
+      bestRank[uid] = rank
+      out[uid] = { role: r, phongBan: (colPb !== -1 && data[i][colPb]) ? (deptMap[String(data[i][colPb])] || '') : '' }
+    }
+  }
+  return out
+}
+
 function _getDeptRole(parentSs, userId) {
   return _getDeptInfo(parentSs, userId).role || null
 }

@@ -6,7 +6,7 @@
 |---|---|
 | Cột mới | `Người kiểm soát` |
 | Kiểu | Chuỗi JSON mảng ≤1 UserID (vd `["5"]`), hoặc `""` = không có NKS |
-| ⚠ Định dạng lưu | **BẮT BUỘC** chuỗi JSON `["id"]` — KHÔNG lưu số trần `5`. gviz (012) suy luận KIỂU cột theo dữ liệu; nếu cột lẫn số + chuỗi → coi cột là NUMBER → trả RỖNG cho ô chuỗi → client mất NKS. `giaoViec` luôn ghi `JSON.stringify([String(id)])`; cột production đã đặt numberFormat `@` + chuẩn hoá 1 lần. Nếu dữ liệu cũ lại lẫn số, chuẩn hoá lại bằng một lần ghi cột (kiểu `rebuildAllDerived`). |
+| ⚠ Định dạng lưu | **BẮT BUỘC** chuỗi JSON `["id"]` — KHÔNG lưu số trần `5`. gviz (012) suy luận KIỂU cột theo dữ liệu; nếu cột lẫn số + chuỗi → coi cột là NUMBER → trả RỖNG cho ô chuỗi → client mất NKS. `giaoViec` luôn ghi `JSON.stringify([String(id)])`; cột production đã đặt numberFormat `@` + chuẩn hoá 1 lần. Nếu dữ liệu cũ lại lẫn số, chuẩn hoá lại bằng một lần ghi cột (kiểu `rebuildGvizQueryColumns`). |
 | Bắt buộc | Không (tuỳ chọn) |
 | Ghi bởi | GĐ/QTV qua `giaoViec` (đổi/gỡ = thu hồi→giao lại); admin toàn quyền |
 | Đọc bởi | Server (kiểm tra quyền NKS, dựng biến email), Client (hiển thị + gating nút) |
@@ -90,5 +90,5 @@ NKS phải **thấy + mở** được hồ sơ được gán. Tích hợp vào 2
 | `_isController` (kiểm quyền hành động) | Resolve danh tính qua **cùng `_getDocUserIdMap`** (UserID/tên đăng nhập/email) — nhất quán với Token xem; "thấy được ⇒ thao tác được" |
 
 **Migration token cho hồ sơ cũ**: KHÔNG tính lại toàn bộ trong `doGet` (timeout ở 10k+). Dùng hàm **thủ công**:
-- `rebuildAllDerived()` — tính lại 3 cột tính sẵn (gồm Token xem) cho MỌI hồ sơ; đọc 1 lần + ghi mỗi cột 1 `setValues` → an toàn ở quy mô lớn.
+- `rebuildGvizQueryColumns()` — tính lại 3 cột tính sẵn (gồm Token xem) cho MỌI hồ sơ; đọc 1 lần + ghi mỗi cột 1 `setValues` → an toàn ở quy mô lớn.
 - `backfillControllerTokens()` — bản nhẹ, chỉ ghi hồ sơ có NKS.

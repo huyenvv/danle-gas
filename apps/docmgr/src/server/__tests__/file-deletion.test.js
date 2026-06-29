@@ -109,7 +109,6 @@ describe('updateDocument / finalizeDraft — đổi danh mục move fail-loud', 
     updateDocument(adminToken, id, { 'Danh mục': 2 }, [], ['L'], 'none')
     const doc = getSheetData(SHEETS.HO_SO).find(d => String(d['ID']) === String(id))
     expect(String(doc['Danh mục'])).toBe('2')
-    _assertIndexMatchesDocs()
   })
 
   test('updateDocument: move thất bại → throw & danh mục giữ nguyên (không lưu nửa vời)', () => {

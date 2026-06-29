@@ -93,29 +93,21 @@ function _applyTemplate(tpl, vars) {
   return s
 }
 
-// Add unread record for each user (DA_DOC stores unread, no record = read)
+// Add unread record for each user (CHUA_DOC stores unread, no record = read)
 /**
- * Resolve usernames/mixed IDs to numeric UserIDs.
- * _parseAssignees may return usernames ("truongphong") or IDs ("5").
- * DA_DOC and api_getUnreadDocIds use session.userId (numeric), so we must store numeric IDs.
+ * Chuẩn hoá danh sách định danh (userId / username / EMAIL) → numeric UserID.
+ * _parseAssignees / Người tạo có thể trả username, email (dữ liệu cũ), hoặc id.
+ * CHUA_DOC + api_getUnreadDocIds CHỈ so theo session.userId (numeric) → phải lưu userId.
+ * Dùng _getDocUserIdMap() (map từ _Phân Quyền + SSO _Người Dùng — gồm cả Email) để map về userId.
+ * Định danh lạ (không có trong map) → giữ nguyên (không mất dữ liệu).
  */
 function _resolveUserIds(usernamesOrIds) {
   if (!usernamesOrIds || usernamesOrIds.length === 0) return []
-  var roles = getSheetData(SHEETS.APP_ROLES)
-  var resolved = []
-  usernamesOrIds.forEach(function(val) {
-    // Try to find by username first
-    var role = roles.find(function(r) {
-      return r['AppID'] === APP_ID && (r['Tên đăng nhập'] === val || String(r['UserID']) === String(val))
-    })
-    if (role) {
-      resolved.push(String(role['UserID']))
-    } else {
-      // Fallback: use as-is (might already be a userId)
-      resolved.push(String(val))
-    }
+  var map = _getDocUserIdMap()
+  return usernamesOrIds.map(function (v) {
+    var k = String(v)
+    return String(map[k] != null ? map[k] : k)
   })
-  return resolved
 }
 
 function _markUnreadForUsers(usernamesOrIds, docId) {
@@ -123,17 +115,17 @@ function _markUnreadForUsers(usernamesOrIds, docId) {
   if (!usernamesOrIds || usernamesOrIds.length === 0) { Logger.log('[_markUnreadForUsers] EMPTY input, skipping'); return }
   var userIds = _resolveUserIds(usernamesOrIds)
   Logger.log('[_markUnreadForUsers] resolved userIds=' + JSON.stringify(userIds))
-  var daDocRows = getSheetData(SHEETS.DA_DOC)
+  var daDocRows = getSheetData(SHEETS.CHUA_DOC)
   userIds.forEach(function(uid) {
     var exists = daDocRows.find(function(r) {
       return String(r['UserID']) === String(uid) && String(r['DocID']) === String(docId)
     })
     Logger.log('[_markUnreadForUsers] uid=' + uid + ' exists=' + !!exists)
     if (!exists) {
-      addRow(SHEETS.DA_DOC, { 'UserID': uid, 'DocID': docId, 'Thời gian': new Date().toISOString() })
+      addRow(SHEETS.CHUA_DOC, { 'UserID': uid, 'DocID': docId, 'Thời gian': new Date().toISOString() })
     }
   })
-  invalidateSheetCache(SHEETS.DA_DOC)
+  invalidateSheetCache(SHEETS.CHUA_DOC)
 }
 
 function _getAppLink() {
@@ -306,13 +298,14 @@ function _getRecipientsByUsernames(usernames) {
     var sheet = ss.getSheetByName('_Người Dùng')
     if (!sheet) return []
     var users = rowsToObjects(sheet.getDataRange().getValues())
+    var deptByUser = _buildDeptInfoMap(ss)   // đọc _Phân Bổ + _Phòng Ban MỘT lần (tránh N+1)
     var result = []
     usernames.forEach(function(uname) {
       var user = users.find(function(u) {
         return u['Tên đăng nhập'] === uname || String(u['ID']) === String(uname)
       })
       if (user && user['Email']) {
-        var info = _getDeptInfo(ss, user['ID'])
+        var info = deptByUser[String(user['ID'])] || { role: '', phongBan: '' }
         result.push({ email: user['Email'], name: user['Tên nhân viên'] || user['Tên đăng nhập'] || uname, role: info.role || '', phongBan: info.phongBan || '' })
       }
     })
@@ -332,11 +325,12 @@ function _getRecipientsByIds(userIds) {
     var sheet = ss.getSheetByName('_Người Dùng')
     if (!sheet) return []
     var data = rowsToObjects(sheet.getDataRange().getValues())
+    var deptByUser = _buildDeptInfoMap(ss)   // đọc _Phân Bổ + _Phòng Ban MỘT lần (tránh N+1)
     var result = []
     userIds.forEach(function(uid) {
       var user = data.find(function(u) { return String(u['ID']) === String(uid) })
       if (user && user['Email']) {
-        var info = _getDeptInfo(ss, uid)
+        var info = deptByUser[String(uid)] || { role: '', phongBan: '' }
         result.push({
           userId: user['ID'],
           email: user['Email'],
@@ -495,7 +489,7 @@ function _addDocRow(record) {
 }
 function _updateDocRow(id, updates, existingDoc) {
   var doc = existingDoc
-  if (!doc) doc = getSheetData(SHEETS.HO_SO).find(function(d) { return String(d['ID']) === String(id) })
+  if (!doc) doc = _getDocById(id)
   var merged = Object.assign({}, doc || {}, updates)
   var withDerived = Object.assign({}, updates, _docDerivedColumns(merged))
   return updateRow(SHEETS.HO_SO, id, withDerived)
@@ -507,7 +501,7 @@ function backfillDocDerived() {
   // V3: token map về userId (delimiter '|') → chạy lại 1 lần.
   // ⚠️ KHÔNG bump cờ này để "ghi lại toàn bộ" — với 10k+ hồ sơ sẽ timeout doGet vĩnh viễn.
   // Token xem cập nhật theo từng hồ sơ khi hồ sơ được ghi (_updateDocRow). Muốn tính lại toàn bộ
-  // (gồm hồ sơ cũ gán NKS) thì chạy thủ công rebuildAllDerived() — batch, an toàn ở quy mô lớn.
+  // (gồm hồ sơ cũ gán NKS) thì chạy thủ công rebuildGvizQueryColumns() — batch, an toàn ở quy mô lớn.
   if (props.getProperty('BACKFILL_DOCDERIVED_V3') === '1') return
   getSheetData(SHEETS.HO_SO).forEach(function(d) { _updateDocRow(d['ID'], {}, d) })
   invalidateSheetCache(SHEETS.HO_SO)
@@ -518,7 +512,7 @@ function backfillDocDerived() {
 // An toàn ở 10k+ vì: ĐỌC 1 lần (getDataRange) → tính trong RAM → GHI mỗi cột bằng 1 setValues
 // (tổng ~3 lệnh ghi), KHÔNG ghi từng ô. Chạy THỦ CÔNG từ trình soạn thảo Apps Script — KHÔNG
 // bao giờ gọi trong doGet. Trả về số hồ sơ đã cập nhật.
-function rebuildAllDerived() {
+function rebuildGvizQueryColumns() {
   var sheet = getSheet(SHEETS.HO_SO)
   var data = sheet.getDataRange().getValues()
   if (data.length < 2) return 0
@@ -541,7 +535,7 @@ function rebuildAllDerived() {
   if (idx['Token xem'] != null)    sheet.getRange(2, idx['Token xem'] + 1, n, 1).setValues(tok)
   if (idx['Blob tìm kiếm'] != null) sheet.getRange(2, idx['Blob tìm kiếm'] + 1, n, 1).setValues(blob)
   invalidateSheetCache(SHEETS.HO_SO)
-  Logger.log('rebuildAllDerived: đã tính lại ' + n + ' hồ sơ')
+  Logger.log('rebuildGvizQueryColumns: đã tính lại ' + n + ' hồ sơ')
   return n
 }
 
@@ -553,6 +547,20 @@ function getDocuments(token, filters) {
   filters = filters || {}
   var ctx = { role: session.role, userId: session.userId, username: session.username }
   return _queryDocPage(ctx, { page: filters.page, danhMucId: filters.danhMucId, keyword: filters.keyword })
+}
+
+// 014: đọc-điểm 1 hồ sơ theo ID cho client (vd xác minh sau khi đổi trạng thái — không phụ thuộc
+// phân trang/sort như getDocuments). Áp quyền xem GIỐNG danh sách gviz: full-role thấy hết; còn lại
+// phải nằm trong "Token xem". Trả doc hoặc null (không tồn tại HOẶC không có quyền xem).
+function getDocById(token, id) {
+  var session = requireAuth(token)
+  var doc = _getDocById(id)
+  if (!doc) return null
+  if (DOC_QUERY_FULL_ROLES.indexOf(session.role) === -1) {
+    var tok = String(doc['Token xem'] || '')
+    if (tok.indexOf('|' + session.userId + '|') === -1) return null
+  }
+  return doc
 }
 
 // Bản đọc-toàn-bộ + lọc/sắp/cắt trong RAM (hành vi 011) — giữ làm THAM CHIẾU NGỮ NGHĨA
@@ -704,7 +712,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
     'Tên file': fileNameCol,
     'Phụ trách': data['Phụ trách'] ? JSON.stringify([String(data['Phụ trách'])]) : '',
     'Người phối hợp': _buildAssignees(data['Người phối hợp'], null),
-    'Người được xem': data['Người được xem'] || '',
+    'Người được xem': _viewersForCreate(session, data['Người được xem'], data['Danh mục']),
     'Ghi chú': data['Ghi chú'] || '',
     'Nơi lưu hồ sơ cứng': data['Nơi lưu hồ sơ cứng'] || '',
     'Ngày cập nhật': new Date().toISOString(),
@@ -746,8 +754,7 @@ function createDocument(token, data, fileInfos, notifyTarget) {
 function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, eagerFileInfos) {
   var session = requireAuth(token)
 
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
+  var doc = _getDocById(id)
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
   if (session.role === 'Văn thư' && doc['Người tạo'] !== session.username) {
@@ -781,13 +788,17 @@ function updateDocument(token, id, data, fileInfos, keepFileIds, notifyTarget, e
   var textFields = [
     'Tên hồ sơ', 'Danh mục', 'Số hồ sơ',
     'Dự án (Phòng ban)', 'Nhà cung cấp (Nơi ban hành)', 'Ngày ban hành', 'Ngày kết thúc',
-    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Khẩn',
-    'Người được xem'
+    'Tình trạng', 'Ghi chú', 'Nơi lưu hồ sơ cứng', 'Khẩn'
   ]
-  // Phân quyền xem đặt qua màn tạo/sửa (data['Người được xem']) hoặc setDocumentViewers (màn chi tiết).
   textFields.forEach(function(f) {
     if (data[f] !== undefined) updates[f] = typeof data[f] === 'string' ? data[f].trim() : data[f]
   })
+
+  // "Người được xem": CHỈ vai trò toàn quyền mới được đổi qua màn sửa (hoặc setDocumentViewers ở
+  // màn chi tiết). Người khác sửa hồ sơ → giữ nguyên danh sách xem hiện có (không tin client gửi).
+  if (data['Người được xem'] !== undefined && _canManageViewers(session)) {
+    updates['Người được xem'] = typeof data['Người được xem'] === 'string' ? data['Người được xem'].trim() : data['Người được xem']
+  }
 
   if (data['Giá trị HĐ'] !== undefined) updates['Giá trị HĐ'] = data['Giá trị HĐ']
 
@@ -897,8 +908,7 @@ function deleteDocument(token, id) {
   var deleteRoles = ['admin', 'Quản trị viên']
   if (deleteRoles.indexOf(session.role) === -1) throw new Error('Chỉ quản trị viên mới có quyền xóa hồ sơ')
 
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
+  var doc = _getDocById(id)
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
   // Only trash machine-uploaded files of a Nháp document; otherwise leave orphaned
@@ -912,19 +922,28 @@ function deleteDocument(token, id) {
   return { success: true }
 }
 
+// 014: thống kê đẩy tổng hợp xuống nguồn (gviz group by) thay vì nạp cả sheet.
+// Tương đương ngữ nghĩa bản đọc-toàn-bộ cũ: byStatus theo Tình trạng THÔ (rỗng/null → 'Không rõ'),
+// total = tổng số hồ sơ, totalValue = tổng 'Giá trị HĐ' (ô không phải số → bỏ qua, như Number()||0).
 function getDocumentStats(token) {
   requireAuth(token)
 
-  var docs = getSheetData(SHEETS.HO_SO)
+  var b = _gvizQueryBuilder(_docColLetters())
+  var tq = b.select(b.col('Tình trạng') + ', count(' + b.col('ID') + '), sum(' + b.col('Giá trị HĐ') + ')')
+    .groupBy('Tình trạng').build()
+  var table = _gvizQueryWithRetry(tq)
 
-  var total = docs.length
+  var total = 0, totalValue = 0
   var byStatus = {}
-  var totalValue = 0
-
-  docs.forEach(function(d) {
-    var s = d['Tình trạng'] || 'Không rõ'
-    byStatus[s] = (byStatus[s] || 0) + 1
-    totalValue += Number(d['Giá trị HĐ']) || 0
+  ;(table.rows || []).forEach(function(r) {
+    var c = r.c || []
+    var raw = c[0] ? c[0].v : null
+    var status = (raw == null || raw === '') ? 'Không rõ' : raw
+    var count = (c[1] && c[1].v != null) ? Number(c[1].v) || 0 : 0
+    var sum = (c[2] && c[2].v != null) ? Number(c[2].v) || 0 : 0
+    byStatus[status] = (byStatus[status] || 0) + count
+    total += count
+    totalValue += sum
   })
 
   return {
@@ -1074,6 +1093,20 @@ function _categoryViewerIds(catId) {
   return Object.keys(ids)
 }
 
+// Quyền phân quyền XEM tài liệu: chỉ vai trò toàn quyền. Dùng cho setDocumentViewers + MỌI điểm
+// ghi "Người được xem" (tạo/sửa) để người KHÔNG đủ quyền không tự đổi danh sách người được xem.
+function _canManageViewers(session) {
+  return ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư'].indexOf(session.role) !== -1
+}
+
+// "Người được xem" khi TẠO mới (create/draft/finalize): FULL_ACCESS được tự đặt theo form;
+// người khác → snapshot theo danh mục (server tự tính, KHÔNG tin giá trị client gửi).
+function _viewersForCreate(session, provided, catId) {
+  if (_canManageViewers(session)) return provided || ''
+  var snap = _categoryViewerIds(catId)
+  return snap.length ? JSON.stringify(snap) : ''
+}
+
 // Migration backfill (FR-013): snapshot quyền danh mục vào các tài liệu cũ đang rỗng "Người được xem",
 // để dữ liệu cũ không bị ẩn khi bỏ fallback danh mục động. Idempotent qua cờ ScriptProperties.
 function _backfillDocViewers() {
@@ -1196,16 +1229,6 @@ function linkDriveFiles(token, fileIds, categoryId, draftId, docId) {
     }
   })
 
-  // Bất biến 1-file-1-hồ-sơ: từ chối file đang thuộc hồ sơ KHÁC. File của chính
-  // hồ sơ đang thao tác (docId khi sửa, hoặc draftId khi tạo nháp) thì hợp lệ.
-  var currentDoc = docId || ((draftId && draftId !== 'edit') ? draftId : null)
-  resolved.forEach(function(r) {
-    var owner = _indexFindDoc(r.fileId)
-    if (owner !== null && owner !== undefined && String(owner) !== String(currentDoc)) {
-      throw new Error('File "' + r.file.getName() + '" đã thuộc hồ sơ khác, không thể liên kết.')
-    }
-  })
-
   // Pass 2: ensure sharing, attach (linked, no copy)
   var outDraftId = (draftId === 'edit') ? 'edit' : (draftId || null)
   var lastData
@@ -1237,8 +1260,7 @@ function _attachFileToDraft(session, fileInfo, categoryId, draftId) {
   }
 
   if (draftId) {
-    var docs = getSheetData(SHEETS.HO_SO)
-    var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+    var draft = _getDocById(draftId)
     if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
     if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
 
@@ -1310,8 +1332,7 @@ function finalizeChunkedUpload(token, uploadUri, fileName, mimeType, fileSize, c
 function finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) {
   var session = requireAuth(token)
 
-  var docs = getSheetData(SHEETS.HO_SO)
-  var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+  var draft = _getDocById(draftId)
   if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
   if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
   if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được hoàn tất hồ sơ nháp')
@@ -1334,6 +1355,7 @@ function finalizeDraft(token, draftId, formData, notifyTarget, keepFileIds) {
     'Nơi lưu hồ sơ cứng': formData['Nơi lưu hồ sơ cứng'] || '',
     'Phụ trách': formData['Phụ trách'] ? JSON.stringify([String(formData['Phụ trách'])]) : '',
     'Người phối hợp': _buildAssignees(formData['Người phối hợp'], null),
+    'Người được xem': _viewersForCreate(session, formData['Người được xem'], formData['Danh mục'] || draft['Danh mục']),
     'Khẩn': formData['Khẩn'] === true || formData['Khẩn'] === 'TRUE' ? 'TRUE' : '',
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
@@ -1423,6 +1445,7 @@ function createDraft(token, formData) {
     'Nơi lưu hồ sơ cứng': formData['Nơi lưu hồ sơ cứng'] || '',
     'Phụ trách': formData['Phụ trách'] ? JSON.stringify([String(formData['Phụ trách'])]) : '',
     'Người phối hợp': _buildAssignees(formData['Người phối hợp'], null),
+    'Người được xem': _viewersForCreate(session, formData['Người được xem'], formData['Danh mục']),
     'Khẩn': formData['Khẩn'] === true || formData['Khẩn'] === 'TRUE' ? 'TRUE' : '',
     'Người tạo': session.username,
     'Người cập nhật': session.username,
@@ -1436,8 +1459,7 @@ function createDraft(token, formData) {
 function cancelDraft(token, draftId) {
   var session = requireAuth(token)
 
-  var docs = getSheetData(SHEETS.HO_SO)
-  var draft = docs.find(function(d) { return String(d['ID']) === String(draftId) })
+  var draft = _getDocById(draftId)
   if (!draft) throw new Error('Không tìm thấy hồ sơ nháp')
   if (draft['Tình trạng'] !== 'Nháp') throw new Error('Hồ sơ không ở trạng thái Nháp')
   if (draft['Người tạo'] !== session.username) throw new Error('Chỉ người tạo mới được huỷ hồ sơ nháp')
@@ -1507,8 +1529,7 @@ function transitionDocument(token, id, action, data, updateData) {
   var rule = WORKFLOW_ACTIONS[action]
   if (!rule) throw new Error('Hành động không hợp lệ: ' + action)
 
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(id) })
+  var doc = _getDocById(id)
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
   // Admin can do anything
@@ -1621,11 +1642,15 @@ function transitionDocument(token, id, action, data, updateData) {
     updates['Lý do từ chối'] = ''
   }
 
-  _updateDocRow(id, updates, doc)
+  _updateDocRow(id, updates, doc)   // LƯU — tới đây không ném là đã commit.
   var updated = Object.assign({}, doc, updates)
 
-  // giaoViec: TO = Phụ trách, CC = Người phối hợp
+  // Báo unread + gửi email + ghi audit là SIDE-EFFECT (phụ). Lỗi ở đây KHÔNG được làm transition
+  // "thất bại": save đã commit ở trên. Trước đây side-effect ném (email/markUnread/audit) → client
+  // tưởng lỗi dù ĐÃ lưu. Bọc try/catch, chỉ log. Client cập nhật LẠC QUAN nên KHÔNG cần flush (đã bỏ).
   var emailError = null
+  try {
+  // giaoViec: TO = Phụ trách, CC = Người phối hợp
   if (action === 'giaoViec') {
     var phuTrachUsers = _parseAssignees(updates['Phụ trách'])
     var phoiHopUsers  = _parseAssignees(updates['Người phối hợp'] || doc['Người phối hợp'])
@@ -1732,6 +1757,9 @@ function transitionDocument(token, id, action, data, updateData) {
   }
 
   logAudit(session, action, 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: id, from: doc['Tình trạng'], to: rule.to }))
+  } catch (e) {
+    Logger.log('transitionDocument side-effect error (đã lưu thành công): ' + e.message)
+  }
   // Double-invalidate: updateRow already invalidates, but GAS CacheService
   // remove() has eventual consistency — re-invalidate before returning to
   // ensure the next getSheetData call reads fresh data from the sheet.
@@ -1754,8 +1782,7 @@ function publishDocument(token, docId, toUserIds, ccUserIds) {
   }
 
   // Load document
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(docId) })
+  var doc = _getDocById(docId)
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
 
   // Build recipient lists from user IDs (lookup from SSO _Người Dùng)
@@ -1812,12 +1839,10 @@ function publishDocument(token, docId, toUserIds, ccUserIds) {
 // tài liệu đã Hoàn thành (đã khóa sửa). Chỉ vai trò toàn quyền (admin/QTV/GĐ/VT).
 function setDocumentViewers(token, docId, nguoiDuocXem) {
   var session = requireAuth(token)
-  var FULL_ACCESS = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
-  if (FULL_ACCESS.indexOf(session.role) === -1) {
+  if (!_canManageViewers(session)) {
     throw new Error('Bạn không có quyền phân quyền xem tài liệu')
   }
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(docId) })
+  var doc = _getDocById(docId)
   if (!doc) throw new Error('Không tìm thấy hồ sơ')
   var oldViewers = _parseAssignees(doc['Người được xem'])
   var newViewers = _parseAssignees(nguoiDuocXem)
@@ -1826,11 +1851,16 @@ function setDocumentViewers(token, docId, nguoiDuocXem) {
     'Người cập nhật': session.username,
     'Ngày cập nhật': new Date().toISOString(),
   }
-  _updateDocRow(docId, updates)
-  // Báo (unread) cho những người MỚI được thêm vào danh sách xem — không re-báo người đã có.
-  var addedViewers = newViewers.filter(function(v) { return oldViewers.indexOf(v) === -1 })
-  if (addedViewers.length) _markUnreadForUsers(addedViewers, docId)
-  logAudit(session, 'Phân quyền xem', 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: docId }))
+  _updateDocRow(docId, updates)   // ← LƯU: phần quan trọng. Tới đây không ném là đã commit.
+  // Báo unread + ghi audit là SIDE-EFFECT (phụ). Lỗi ở đây KHÔNG được làm cả thao tác "thất bại":
+  // trước đây save OK nhưng side-effect ném → client tưởng lỗi dù ĐÃ lưu. Chỉ log, vẫn trả success.
+  try {
+    var addedViewers = newViewers.filter(function(v) { return oldViewers.indexOf(v) === -1 })
+    if (addedViewers.length) _markUnreadForUsers(addedViewers, docId)
+    logAudit(session, 'Phân quyền xem', 'Hồ sơ', doc['Tên hồ sơ'], JSON.stringify({ id: docId }))
+  } catch (e) {
+    Logger.log('setDocumentViewers side-effect error (đã lưu thành công): ' + e.message)
+  }
   return { data: Object.assign({}, doc, updates) }
 }
 
@@ -1848,13 +1878,14 @@ function addComment(token, docId, content) {
   var session = requireAuth(token)
   if (!content || !String(content).trim()) throw new Error('Nội dung không được để trống')
 
+  // Đọc-điểm một lần, dùng cho cả kiểm tra quyền (dưới) lẫn đánh dấu chưa đọc (sau khi thêm).
+  var doc = _getDocById(docId)
+
   var COMMENT_ROLES = ['admin', 'Quản trị viên', 'Giám đốc', 'Văn thư']
   if (COMMENT_ROLES.indexOf(session.role) === -1) {
-    var allDocs = getSheetData(SHEETS.HO_SO)
-    var targetDoc = allDocs.find(function(d) { return String(d['ID']) === String(docId) })
-    if (!targetDoc) throw new Error('Không tìm thấy hồ sơ')
-    var docAssignees = _parseAssignees(targetDoc['Phụ trách'])
-    var docCollaborators = _parseAssignees(targetDoc['Người phối hợp'])
+    if (!doc) throw new Error('Không tìm thấy hồ sơ')
+    var docAssignees = _parseAssignees(doc['Phụ trách'])
+    var docCollaborators = _parseAssignees(doc['Người phối hợp'])
     var uid = String(session.userId)
     if (docAssignees.indexOf(uid) === -1 && docAssignees.indexOf(session.username) === -1 &&
         docCollaborators.indexOf(uid) === -1 && docCollaborators.indexOf(session.username) === -1) {
@@ -1871,20 +1902,14 @@ function addComment(token, docId, content) {
   }
   var added = addRow(SHEETS.COMMENTS, record)
 
-  // Clear DA_DOC for all assignees except commenter (doc becomes unread for others)
-  var docs = getSheetData(SHEETS.HO_SO)
-  var doc = docs.find(function(d) { return String(d['ID']) === String(docId) })
+  // Bình luận = hoạt động mới → đánh dấu CHƯA ĐỌC cho người liên quan khác (Phụ trách + Người phối hợp),
+  // trừ người vừa bình luận. (_markUnreadForUsers tự resolve username/email → userId.)
   if (doc) {
-    var assignees = _parseAssignees(doc['Phụ trách'])
-    var daDocRows = getSheetData(SHEETS.DA_DOC)
-    assignees.forEach(function(uid) {
-      if (String(uid) !== String(session.userId) && uid !== session.username) {
-        var entries = daDocRows.filter(function(r) {
-          return (String(r['UserID']) === String(uid) || r['UserID'] === uid) && String(r['DocID']) === String(docId)
-        })
-        entries.forEach(function(r) { _coreDeleteRow(SHEETS.DA_DOC, r['ID']) })
-      }
+    var involved = _parseAssignees(doc['Phụ trách']).concat(_parseAssignees(doc['Người phối hợp']))
+    var others = involved.filter(function(u) {
+      return String(u) !== String(session.userId) && u !== session.username
     })
+    if (others.length) _markUnreadForUsers(others, docId)
   }
 
   logAudit(session, 'Bình luận', 'Hồ sơ', String(docId), String(content).trim().substring(0, 100))

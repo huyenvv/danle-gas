@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { groupUsersByDept } from '../../utils/groupUsers.js'
 
+// Gmail/Apps Script chặn ~50 người nhận / 1 email. Phát hành gửi 1 email (TO + CC) nên giới hạn tổng
+// số người nhận duy nhất mỗi lần; vượt thì phát hành thành nhiều lần.
+const MAX_RECIPIENTS = 50
+
 function RecipientColumn({ label, users, phongBan, assignments, selectedIds, onChange }) {
   const [search, setSearch] = useState('')
 
@@ -181,9 +185,17 @@ export default function PublishDialog({ users, phongBan, assignments, onPublish,
   const [ccIds, setCcIds] = useState(new Set())
   const [error, setError] = useState('')
 
+  // Gmail/Apps Script giới hạn ~50 người nhận / 1 email; phát hành gửi 1 email duy nhất (TO + CC)
+  // nên chặn tại đây. Muốn gửi nhiều hơn → phát hành thành nhiều lần.
+  const uniqueRecipients = new Set([...toIds, ...ccIds]).size
+
   function handlePublish() {
     if (toIds.size === 0) {
       setError('Vui lòng chọn ít nhất 1 người nhận')
+      return
+    }
+    if (uniqueRecipients > MAX_RECIPIENTS) {
+      setError(`Gmail giới hạn ${MAX_RECIPIENTS} người nhận mỗi lần phát hành. Hiện đã chọn ${uniqueRecipients} (người nhận + CC). Vui lòng bớt xuống ≤ ${MAX_RECIPIENTS} hoặc phát hành thành nhiều lần.`)
       return
     }
     setError('')
@@ -242,7 +254,10 @@ export default function PublishDialog({ users, phongBan, assignments, onPublish,
         )}
 
         {/* Footer */}
-        <div className="bg-surface-container-low border-t border-outline-variant px-6 py-4 flex justify-end gap-3 shrink-0">
+        <div className="bg-surface-container-low border-t border-outline-variant px-6 py-4 flex items-center justify-end gap-3 shrink-0">
+          <span className={`mr-auto text-xs ${uniqueRecipients > MAX_RECIPIENTS ? 'text-error font-medium' : 'text-on-surface-variant'}`}>
+            {uniqueRecipients}/{MAX_RECIPIENTS} người nhận
+          </span>
           <button type="button" onClick={onClose} disabled={loading}
             className="px-5 py-2.5 border border-outline-variant rounded-full text-sm text-on-surface hover:bg-surface-container transition-colors font-medium disabled:opacity-60">
             Hủy

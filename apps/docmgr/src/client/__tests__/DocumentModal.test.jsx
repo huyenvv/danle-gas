@@ -409,6 +409,7 @@ describe('DocumentModal', () => {
       'Tình trạng': 'Từ chối',
       'Lý do từ chối': 'Thiếu file',
       'Người tạo': 'vanthu',
+      'Người được xem': JSON.stringify(['9', '5']),
     }
     const transitionResult = { ...rejectedDoc, 'Tình trạng': 'Chờ duyệt', 'Lý do từ chối': '' }
     gasCall.mockImplementation((fn) => {
@@ -437,7 +438,8 @@ describe('DocumentModal', () => {
         'trinhDuyetLai',
         {},
         expect.objectContaining({
-          formData: expect.objectContaining({ 'Tên hồ sơ': 'HĐ Đã Sửa' }),
+          // regression: "Người được xem" phải nằm trong formData (trước đây chỉ gửi {...form} → mất viewers)
+          formData: expect.objectContaining({ 'Tên hồ sơ': 'HĐ Đã Sửa', 'Người được xem': JSON.stringify(['9', '5']) }),
           fileInfos: expect.any(Array),
           keepFileIds: expect.any(Array),
         }),
@@ -911,32 +913,27 @@ describe('DocumentModal', () => {
   })
 
   // Test: handleSubmit edit mode — verify also fails, retries with delay, shows retry messages
-  it('retries with delay and shows retry messages in handleSubmit edit mode', async () => {
+  it('retries with delay (log-only, KHÔNG báo UI) then error in handleSubmit edit mode', async () => {
     jest.useFakeTimers()
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     gasCall.mockRejectedValue(new Error('Lỗi không xác định'))
 
     renderModal({ mode: 'edit', doc: MOCK_DOCS[0], session: MOCK_ADMIN_SESSION })
     fireEvent.click(screen.getByRole('button', { name: /cập nhật/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 1\/3/)).toBeInTheDocument()
-    })
-    await act(async () => { await jest.advanceTimersByTimeAsync(2000) })
-
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 2\/3/)).toBeInTheDocument()
-    })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 1/3')))
+    await act(async () => { await jest.advanceTimersByTimeAsync(500) })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 2/3')))
+    await act(async () => { await jest.advanceTimersByTimeAsync(1500) })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 3/3')))
     await act(async () => { await jest.advanceTimersByTimeAsync(3000) })
-
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 3\/3/)).toBeInTheDocument()
-    })
-    await act(async () => { await jest.advanceTimersByTimeAsync(5000) })
 
     await waitFor(() => {
       expect(screen.getByText('Lỗi không xác định')).toBeInTheDocument()
     })
     expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
+    expect(screen.queryByText(/thử lại/)).not.toBeInTheDocument()   // chỉ console, không UI
+    logSpy.mockRestore()
     jest.useRealTimers()
   })
 
@@ -956,18 +953,18 @@ describe('DocumentModal', () => {
       return Promise.resolve({})
     })
 
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     renderModal({ mode: 'edit', doc: MOCK_DOCS[0], session: MOCK_ADMIN_SESSION })
     fireEvent.click(screen.getByRole('button', { name: /cập nhật/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 1\/3/)).toBeInTheDocument()
-    })
-    await act(async () => { await jest.advanceTimersByTimeAsync(2000) })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 1/3')))
+    await act(async () => { await jest.advanceTimersByTimeAsync(500) })
 
     await waitFor(() => {
       expect(screen.getByText('Bạn không có quyền chỉnh sửa')).toBeInTheDocument()
     })
     expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
+    logSpy.mockRestore()
     jest.useRealTimers()
   })
 
@@ -1038,6 +1035,7 @@ describe('DocumentModal', () => {
   // Test: trinhDuyetLai retries with delay and succeeds after initial verify fails
   it('retries with delay and succeeds on "Lỗi không xác định" in trinhDuyetLai', async () => {
     jest.useFakeTimers()
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     const vanThuSession = {
       ...MOCK_ADMIN_SESSION,
       userId: 3,
@@ -1074,22 +1072,22 @@ describe('DocumentModal', () => {
       fireEvent.click(confirmBtn)
     })
 
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 1\/3/)).toBeInTheDocument()
-    })
-    await act(async () => { await jest.advanceTimersByTimeAsync(2000) })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 1/3')))
+    await act(async () => { await jest.advanceTimersByTimeAsync(500) })
 
     await waitFor(() => {
       expect(DEFAULT_PROPS.onSaved).toHaveBeenCalled()
     })
     const toast = screen.getByRole('alert')
     expect(toast).toHaveTextContent('Đã trình duyệt lại')
+    logSpy.mockRestore()
     jest.useRealTimers()
   })
 
   // Test: trinhDuyetLai retry also fails but post-retry verify finds doc updated
   it('succeeds via post-retry verify when retry also gets transport error in trinhDuyetLai', async () => {
     jest.useFakeTimers()
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     const vanThuSession = {
       ...MOCK_ADMIN_SESSION,
       userId: 3,
@@ -1127,22 +1125,22 @@ describe('DocumentModal', () => {
       fireEvent.click(confirmBtn)
     })
 
-    await waitFor(() => {
-      expect(screen.getByText(/đang thử lại lần 1\/3/)).toBeInTheDocument()
-    })
-    await act(async () => { await jest.advanceTimersByTimeAsync(2000) })
+    await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('thử lại lần 1/3')))
+    await act(async () => { await jest.advanceTimersByTimeAsync(500) })
 
     await waitFor(() => {
       expect(DEFAULT_PROPS.onSaved).toHaveBeenCalledWith(freshDoc)
     })
     const toast = screen.getByRole('alert')
     expect(toast).toHaveTextContent('Đã trình duyệt lại')
+    logSpy.mockRestore()
     jest.useRealTimers()
   })
 
   // Test: trinhDuyetLai exhausts retries with delays, shows retry messages
-  it('shows retry messages then error after retries exhaust in trinhDuyetLai', async () => {
+  it('retries (log-only) then error after retries exhaust in trinhDuyetLai', async () => {
     jest.useFakeTimers()
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     const vanThuSession = {
       ...MOCK_ADMIN_SESSION,
       userId: 3,
@@ -1171,18 +1169,18 @@ describe('DocumentModal', () => {
       fireEvent.click(confirmBtn)
     })
 
-    const delays = [2000, 3000, 5000]
+    const delays = [500, 1500, 3000]
     for (let i = 1; i <= 3; i++) {
-      await waitFor(() => {
-        expect(screen.getByText(new RegExp(`đang thử lại lần ${i}/3`))).toBeInTheDocument()
-      })
+      await waitFor(() => expect(logSpy).toHaveBeenCalledWith(expect.stringContaining(`thử lại lần ${i}/3`)))
       await act(async () => { await jest.advanceTimersByTimeAsync(delays[i - 1]) })
     }
 
     await waitFor(() => {
       expect(screen.getByText('Lỗi không xác định')).toBeInTheDocument()
     })
+    expect(screen.queryByText(/thử lại/)).not.toBeInTheDocument()   // chỉ console, không UI
     expect(DEFAULT_PROPS.onSaved).not.toHaveBeenCalled()
+    logSpy.mockRestore()
     jest.useRealTimers()
   })
 

@@ -118,6 +118,6 @@ Lấy bằng `_getRecipientsByUsernames([controllerUid])[0]` (có `name` + `role
 
 ## C7. Hàm bảo trì (chạy THỦ CÔNG từ Apps Script editor — KHÔNG gọi trong doGet)
 
-- `rebuildAllDerived()` → tính lại 3 cột tính sẵn (Hạng ưu tiên / Token xem / Blob tìm kiếm) cho MỌI hồ sơ. **An toàn ở 10k+**: đọc 1 lần (`getDataRange`) → tính RAM → ghi mỗi cột bằng 1 `setValues`. Trả số hồ sơ đã cập nhật.
+- `rebuildGvizQueryColumns()` → tính lại 3 cột tính sẵn (Hạng ưu tiên / Token xem / Blob tìm kiếm) cho MỌI hồ sơ. **An toàn ở 10k+**: đọc 1 lần (`getDataRange`) → tính RAM → ghi mỗi cột bằng 1 `setValues`. Trả số hồ sơ đã cập nhật.
 - `backfillControllerTokens()` → bản nhẹ: chỉ ghi lại hồ sơ **có** NKS.
 - ⚠️ TUYỆT ĐỐI không full-scan + ghi từng dòng trong `ensureInitialized`/`doGet` (timeout vĩnh viễn ở quy mô lớn — bài học 013).

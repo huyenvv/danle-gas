@@ -55,9 +55,10 @@ describe('deleteRow', () => {
   test('throws when category is in use', () => {
     addRow(SHEETS.DANH_MUC, { 'Tên danh mục': 'Hợp đồng', ID: 1 })
     invalidateSheetCache(SHEETS.DANH_MUC)
-    // Add a document referencing this category
-    SpreadsheetApp._sheets[SHEETS.HO_SO]._rows.push([10, 'Doc A', '1', 'user1', 'Hiệu lực', ''])
-    invalidateSheetCache(SHEETS.HO_SO)
+    // 014/G1: checkReferences đếm tham chiếu QUA gviz → mô phỏng phản hồi có 1 hồ sơ dùng danh mục.
+    UrlFetchApp._nextResponse = { code: 200, body:
+      "/*O_o*/\ngoogle.visualization.Query.setResponse(" +
+      JSON.stringify({ status: 'ok', table: { cols: [{ label: 'Tên hồ sơ' }], rows: [{ c: [{ v: 'Doc A' }] }] } }) + ');' }
     expect(() => deleteRow(SHEETS.DANH_MUC, 1)).toThrow('đang được sử dụng')
   })
 })

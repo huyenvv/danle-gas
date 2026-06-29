@@ -199,31 +199,22 @@ describe('bulkImportDocuments — orphaned-only (US3)', () => {
     }
   }
 
-  test('file đã thuộc hồ sơ khác → bỏ + cảnh báo, file orphaned vẫn nhập', () => {
-    bulkImportDocuments(vanThuToken, { groups: [grp('A', ['g1'])] })           // A sở hữu g1
+  test('file trùng hồ sơ khác → VẪN nhập đủ file (đã bỏ guard 1-file-1-hồ-sơ)', () => {
+    bulkImportDocuments(vanThuToken, { groups: [grp('A', ['g1'])] })
     const res = bulkImportDocuments(vanThuToken, { groups: [grp('B', ['g1', 'g2'], 3)] })
     expect(res.created).toBe(1)
-    expect(res.warnings.some(w => /đã thuộc hồ sơ khác/.test(w.message))).toBe(true)
+    expect(res.warnings.some(w => /đã thuộc hồ sơ khác/.test(w.message))).toBe(false)
     const docB = getSheetData(SHEETS.HO_SO).find(d => d['Tên hồ sơ'] === 'B')
-    expect(JSON.parse(docB['Tệp đính kèm']).map(f => f.fileId)).toEqual(['g2'])
-    _assertIndexMatchesDocs()
+    expect(JSON.parse(docB['Tệp đính kèm']).map(f => f.fileId)).toEqual(['g1', 'g2'])
   })
 
-  test('group toàn file đã dùng → lỗi "Không có file đính kèm"', () => {
-    bulkImportDocuments(vanThuToken, { groups: [grp('A', ['g1'])] })
-    const res = bulkImportDocuments(vanThuToken, { groups: [grp('C', ['g1'], 4)] })
-    expect(res.created).toBe(0)
-    expect(res.errors.some(e => /Không có file đính kèm/.test(e.message))).toBe(true)
-  })
-
-  test('2 group cùng batch cùng fileId → group sau bỏ file đó (cross-batch)', () => {
+  test('2 group cùng batch cùng fileId → cả hai giữ file (không còn bỏ)', () => {
     const res = bulkImportDocuments(vanThuToken, { groups: [
       grp('D1', ['shared'], 2),
       grp('D2', ['shared', 'd2extra'], 3),
     ] })
     expect(res.created).toBe(2)
-    expect(res.warnings.some(w => w.group === 'D2' && /đã thuộc hồ sơ khác/.test(w.message))).toBe(true)
     const d2 = getSheetData(SHEETS.HO_SO).find(d => d['Tên hồ sơ'] === 'D2')
-    expect(JSON.parse(d2['Tệp đính kèm']).map(f => f.fileId)).toEqual(['d2extra'])
+    expect(JSON.parse(d2['Tệp đính kèm']).map(f => f.fileId)).toEqual(['shared', 'd2extra'])
   })
 })

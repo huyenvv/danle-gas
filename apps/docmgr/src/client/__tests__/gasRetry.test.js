@@ -50,6 +50,26 @@ describe('retryWithVerify', () => {
     expect(onRetry).toHaveBeenCalledWith(1, 3)
   })
 
+  it('succeeds when retry throws a state-conflict but post-retry verify passes (slow-commit race)', async () => {
+    // Bug thực tế: GĐ Từ chối → server chạy chậm (gửi email) → client "Lỗi không xác định".
+    // verify ban đầu chạy SỚM (server chưa commit) → null. Sau 2s retry gọi lại → server đã commit
+    // lần 1 → ném "đang ở trạng thái Từ chối, không thể tuChoi" (non-transport). Phải verify lại → OK.
+    const freshDoc = { id: 1, 'Tình trạng': 'Từ chối' }
+    let verifyCalls = 0
+    const verify = jest.fn().mockImplementation(() => {
+      verifyCalls++
+      return verifyCalls >= 2 ? Promise.resolve(freshDoc) : Promise.resolve(null)
+    })
+    const fn = jest.fn().mockRejectedValue(new Error('Hồ sơ đang ở trạng thái "Từ chối", không thể tuChoi'))
+
+    const promise = retryWithVerify({ fn, verify })
+    await jest.advanceTimersByTimeAsync(2000)
+
+    const r = await promise
+    expect(r).toEqual({ ok: true, data: freshDoc })
+    expect(fn).toHaveBeenCalledTimes(1)   // verify thành công → KHÔNG retry tiếp
+  })
+
   it('stops immediately on real server error', async () => {
     const verify = jest.fn().mockResolvedValue(null)
     const fn = jest.fn().mockRejectedValue(new Error('Bạn không có quyền'))
@@ -85,34 +105,34 @@ describe('retryWithVerify', () => {
     expect(onRetry).toHaveBeenNthCalledWith(3, 3, 3)
   })
 
-  it('uses escalating delays: 2s, 3s, 5s', async () => {
+  it('uses escalating delays: 0.5s, 1.5s, 3s', async () => {
     const verify = jest.fn().mockResolvedValue(null)
     const fn = jest.fn().mockRejectedValue(new Error('Lỗi không xác định'))
     const onRetry = jest.fn()
 
     const promise = retryWithVerify({ fn, verify, onRetry })
 
-    // After 1999ms — retry 1 not yet triggered
-    await jest.advanceTimersByTimeAsync(1999)
+    // After 499ms — retry 1 not yet triggered
+    await jest.advanceTimersByTimeAsync(499)
     expect(fn).toHaveBeenCalledTimes(0)
 
-    // At 2000ms — retry 1 fires
+    // At 500ms — retry 1 fires
     await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(1)
 
-    // After 2999ms more — retry 2 not yet triggered
+    // After 1499ms more — retry 2 not yet triggered
+    await jest.advanceTimersByTimeAsync(1499)
+    expect(fn).toHaveBeenCalledTimes(1)
+
+    // At 1500ms — retry 2 fires
+    await jest.advanceTimersByTimeAsync(1)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    // After 2999ms more — retry 3 not yet triggered
     await jest.advanceTimersByTimeAsync(2999)
-    expect(fn).toHaveBeenCalledTimes(1)
-
-    // At 3000ms — retry 2 fires
-    await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(2)
 
-    // After 4999ms more — retry 3 not yet triggered
-    await jest.advanceTimersByTimeAsync(4999)
-    expect(fn).toHaveBeenCalledTimes(2)
-
-    // At 5000ms — retry 3 fires
+    // At 3000ms — retry 3 fires
     await jest.advanceTimersByTimeAsync(1)
     expect(fn).toHaveBeenCalledTimes(3)
 

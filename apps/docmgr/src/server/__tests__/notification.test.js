@@ -260,7 +260,7 @@ describe('Transition notifications (acceptance gate)', () => {
 
     expect(GmailApp._sent).toHaveLength(1)
     expect(GmailApp._sent[0].to).toBe('giamdoc@test.com')
-    var daDoc = getSheetData(SHEETS.DA_DOC)
+    var daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 
@@ -282,7 +282,7 @@ describe('Transition notifications (acceptance gate)', () => {
     transitionDocument(ptToken, 1, 'hoanThanh')
 
     expect(GmailApp._sent).toHaveLength(0)
-    var daDoc = getSheetData(SHEETS.DA_DOC)
+    var daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 
@@ -304,7 +304,7 @@ describe('Transition notifications (acceptance gate)', () => {
     transitionDocument(ptToken, 1, 'hoanThanhLai')
 
     expect(GmailApp._sent).toHaveLength(0)
-    var daDoc = getSheetData(SHEETS.DA_DOC)
+    var daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 })
@@ -345,7 +345,7 @@ describe('Phối hợp email notification (nhận việc — feature 010)', () =
     expect(GmailApp._sent[0].body).toContain('PT giao phối hợp')
     // {tênNgườiGửi} = người thực hiện nhận việc = người Phụ trách (chủ trì), không phải GĐ
     expect(GmailApp._sent[0].body).toContain('phutrach')
-    var daDoc = getSheetData(SHEETS.DA_DOC)
+    var daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r2 => String(r2['UserID']) === '5' && String(r2['DocID']) === '1')).toBe(true)
   })
 
@@ -397,7 +397,7 @@ describe('transitionDocument succeeds when email throws', () => {
     expect(result.data['Tình trạng']).toBe('Chờ duyệt')
     expect(result.emailError).toContain('Quota exceeded')
     // Bell still works — _markUnreadForUsers runs before email
-    var daDoc = getSheetData(SHEETS.DA_DOC)
+    var daDoc = getSheetData(SHEETS.CHUA_DOC)
     expect(daDoc.some(r => String(r['UserID']) === '2' && String(r['DocID']) === '1')).toBe(true)
   })
 

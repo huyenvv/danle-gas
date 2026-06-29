@@ -1,5 +1,37 @@
 // Mock GAS global APIs for Jest
 
+// TextFinder mock — quét vùng [startRow,startCol] kích thước numRows×numCols trên sheet._rows.
+function _mockTextFinder(sheet, startRow, startCol, numRows, numCols, query) {
+  var entire = false
+  var q = String(query)
+  function scan(collect) {
+    var out = []
+    for (var r = 0; r < numRows; r++) {
+      var rowArr = sheet._rows[startRow - 1 + r]
+      if (!rowArr) continue
+      for (var c = 0; c < numCols; c++) {
+        var cell = rowArr[startCol - 1 + c]
+        var s = cell == null ? '' : String(cell)
+        var hit = entire ? s === q : s.indexOf(q) !== -1
+        if (hit) {
+          var absRow = startRow + r, absCol = startCol + c
+          var range = { getRow: () => absRow, getColumn: () => absCol, getValue: () => cell }
+          if (!collect) return range
+          out.push(range)
+        }
+      }
+    }
+    return collect ? out : null
+  }
+  return {
+    matchEntireCell(b) { entire = b; return this },
+    matchCase() { return this },
+    matchDiacritics() { return this },
+    findNext() { return scan(false) },
+    findAll()  { return scan(true) },
+  }
+}
+
 // ── SpreadsheetApp ────────────────────────────────────────────────────────────
 global.SpreadsheetApp = {
   _sheets: {},
@@ -29,15 +61,18 @@ global.SpreadsheetApp = {
             getValues() {
               return [sheet._rows[row - 1].slice(col - 1, col - 1 + numCols)]
             },
-            getValue() { return sheet._rows[row - 1][col - 1] }
+            getValue() { return sheet._rows[row - 1][col - 1] },
+            createTextFinder(q) { return _mockTextFinder(sheet, row, col, numRows, numCols, q) }
           }
         }
         return {
           getValue() { return sheet._rows[row - 1][col - 1] },
           setValue(v) { sheet._rows[row - 1][col - 1] = v },
-          getValues() { return [sheet._rows[row - 1].slice(col - 1, col - 1 + (numCols || 1))] }
+          getValues() { return [sheet._rows[row - 1].slice(col - 1, col - 1 + (numCols || 1))] },
+          createTextFinder(q) { return _mockTextFinder(sheet, row, col, numRows || 1, numCols || 1, q) }
         }
       },
+      createTextFinder(q) { return _mockTextFinder(this, 1, 1, this._rows.length, (this._rows[0] || []).length, q) },
       appendRow(row) { this._rows.push([...row]) },
       deleteRow(n) { this._rows.splice(n - 1, 1) },
       hideSheet() {},

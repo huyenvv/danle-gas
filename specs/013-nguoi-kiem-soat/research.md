@@ -129,7 +129,7 @@ Server kiểm tra vai trò người gọi là GĐ/admin trước khi ghi trườ
 
 **Decision**: gộp NKS vào `_docViewToken` + `_isParticipant`. Hồ sơ cũ: tính lại token bằng hàm **thủ công** theo lô.
 
-**Bài học (quan trọng)**: KHÔNG được "ghi lại toàn bộ hồ sơ" trong `ensureInitialized`/`doGet`. Bản đầu bump cờ backfill làm `_updateDocRow` chạy 12k lần (mỗi lần đọc lại cả sheet + ghi từng ô) → vượt 6' → cờ không kịp set → **timeout vĩnh viễn**. Thay bằng `rebuildAllDerived()` (đọc 1 lần + ghi mỗi cột 1 `setValues`) chạy tay. → Nguyên tắc: **mọi thao tác trên toàn bảng phải bulk I/O và nằm ngoài hot path `doGet`**.
+**Bài học (quan trọng)**: KHÔNG được "ghi lại toàn bộ hồ sơ" trong `ensureInitialized`/`doGet`. Bản đầu bump cờ backfill làm `_updateDocRow` chạy 12k lần (mỗi lần đọc lại cả sheet + ghi từng ô) → vượt 6' → cờ không kịp set → **timeout vĩnh viễn**. Thay bằng `rebuildGvizQueryColumns()` (đọc 1 lần + ghi mỗi cột 1 `setValues`) chạy tay. → Nguyên tắc: **mọi thao tác trên toàn bảng phải bulk I/O và nằm ngoài hot path `doGet`**.
 
 ## R9 — Nhất quán nhận diện NKS (phát hiện khi triển khai)
 

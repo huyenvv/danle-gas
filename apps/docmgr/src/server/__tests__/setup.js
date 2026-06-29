@@ -30,7 +30,6 @@ const APP_FILES = [
   'auth.js',
   'documents.js',
   'doc-query.js',
-  'file-index.js',
   'import.js',
   'export-catalog.js',
   'main.js',

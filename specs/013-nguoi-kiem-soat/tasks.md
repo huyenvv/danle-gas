@@ -124,7 +124,7 @@ Monorepo docmgr: server `apps/docmgr/src/server/`, client `apps/docmgr/src/clien
 
 - [x] T024 [US2] NKS **thấy + mở** được hồ sơ được gán (FR-014): gộp NKS vào `_docViewToken` (cột Token xem) và `_isParticipant` trong `apps/docmgr/src/server/documents.js` + test visibility trong `controller.test.js`
 - [x] T025 [US2] "Thấy được ⇒ thao tác được" (FR-015): `_isController` resolve danh tính qua `_getDocUserIdMap` (UserID/tên đăng nhập/email) trong `apps/docmgr/src/server/documents.js` + test ca lưu NKS bằng email
-- [x] T026 Hàm bảo trì `rebuildAllDerived()` + `backfillControllerTokens()` (chạy tay, bulk I/O, KHÔNG trong doGet) trong `apps/docmgr/src/server/documents.js`; nâng mock `getRange().setValues()` đa dòng; test trong `docDerived.test.js`
+- [x] T026 Hàm bảo trì `rebuildGvizQueryColumns()` + `backfillControllerTokens()` (chạy tay, bulk I/O, KHÔNG trong doGet) trong `apps/docmgr/src/server/documents.js`; nâng mock `getRange().setValues()` đa dòng; test trong `docDerived.test.js`
 - [x] T027 Khôi phục `backfillDocDerived` về no-op (gỡ full-scan gây timeout doGet ở 10k+) trong `apps/docmgr/src/server/documents.js`
 
 > **Lưu ý sửa ngược tài liệu**: UI workflow thực tế ở `DocumentPreview.jsx` (không phải `DocumentModal.jsx` như giả định ban đầu của T007/T012). Đã ghi chú trong [contracts/server-api.md](contracts/server-api.md) C4.

@@ -6,12 +6,28 @@ import Icon from '../common/Icon.jsx'
 import { useConfirm } from '../../context/ConfirmContext.jsx'
 import { useToast } from '../../context/ToastContext.jsx'
 import { parsePhuTrach, isPhuTrach as checkPhuTrach, getAvailableActions } from '../../lib/workflowPermissions.js'
-import { retryWithVerify } from '../../utils/gasRetry.js'
 import WorkflowButtons from './WorkflowButtons.jsx'
 import PublishDialog from './PublishDialog.jsx'
 import UserPickerDropdown from '../common/UserPickerDropdown.jsx'
 import ViewerPickerModal from '../common/ViewerPickerModal.jsx'
 import PublishHistory from './PublishHistory.jsx'
+
+// Trạng thái ĐÍCH của mỗi action workflow (gương WORKFLOW_ACTIONS phía server). Dùng để nhận biết
+// "transition đã xảy ra" qua chính lỗi xung đột — đáng tin hơn đọc-lại vì Google Sheets có thể trễ
+// đồng bộ giữa các read-replica (đọc lại thấy trạng thái cũ dù write đã commit).
+const TRANSITION_TARGET = {
+  trinhDuyet: 'Chờ duyệt', luuTaiLieu: 'Hoàn thành',
+  giaoViec: 'Chờ xử lý', thuHoi: 'Chờ duyệt',
+  nhanViec: 'Đang xử lý', hoanThanh: 'Chờ xác nhận HT', hoanThanhLai: 'Chờ xác nhận HT',
+  tuChoi: 'Từ chối', ycPhatHanh: 'YC Phát hành', luuTru: 'Hoàn thành',
+  xacNhanHT: 'Hoàn thành', tuChoiKetQua: 'Từ chối kết quả', trinhDuyetLai: 'Chờ duyệt',
+  // ksThemPhoiHop: KHÔNG đổi trạng thái → không có đích
+}
+// Bóc trạng thái hiện tại từ lỗi server: 'Hồ sơ đang ở trạng thái "X", không thể Y' → 'X'.
+function _conflictStatus(msg) {
+  const m = /đang ở trạng thái "([^"]+)"/.exec(msg || '')
+  return m ? m[1] : null
+}
 
 function parseFileInfos(fileIdCol) {
   if (!fileIdCol) return []
@@ -94,15 +110,26 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
   // Lưu phân quyền từ popup (api_setDocumentViewers — đặt được kể cả khi tài liệu đã khóa sửa).
   async function handleConfirmViewers(ids) {
     setSavingViewers(true)
+    const payload = ids.length ? JSON.stringify(ids) : ''
     try {
-      const res = await gasCall('api_setDocumentViewers', token, doc['ID'],
-        ids.length ? JSON.stringify(ids) : '')
+      const res = await gasCall('api_setDocumentViewers', token, doc['ID'], payload)
       setDoc(res.data)
       if (onDocUpdated) onDocUpdated(res.data)
       setShowViewerModal(false)
       showToast('Đã cập nhật phân quyền xem', 'success')
     } catch (e) {
-      showToast('Lỗi phân quyền: ' + e.message, 'error')
+      // "Lỗi không xác định" = response RỚT: save chạy TRƯỚC khi trả lời nên gần như chắc ĐÃ lưu.
+      // Cập nhật LẠC QUAN theo đúng lựa chọn vừa gửi — KHÔNG đọc-lại (đọc-lại còn dính đồng-bộ-trễ).
+      // Poll 60s / F5 sau tự đối chiếu nếu lệch. Lỗi THẬT (chữ khác) → server ném ra → vẫn báo.
+      if (e.message === 'Lỗi không xác định') {
+        const next = { ...doc, 'Người được xem': payload }
+        setDoc(next)
+        if (onDocUpdated) onDocUpdated(next)
+        setShowViewerModal(false)
+        showToast('Đã cập nhật phân quyền xem', 'success')
+      } else {
+        showToast('Lỗi phân quyền: ' + e.message, 'error')
+      }
     } finally {
       setSavingViewers(false)
     }
@@ -227,35 +254,42 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       setGiaoViecForm(null)
       if (onDocUpdated) onDocUpdated(res.data)
     } catch (err) {
-      // "Lỗi không xác định" = transport error: server có thể ĐÃ xong nhưng response bị rớt
-      // (thao tác nặng/chậm). Xác minh bằng cách đọc lại hồ sơ; nếu đã đổi → coi như thành công.
-      if (err.message === 'Lỗi không xác định') {
-        const wantPH = (data && data['Người phối hợp']) ? data['Người phối hợp'].map(String) : null
-        const r = await retryWithVerify({
-          fn: () => gasCall('api_transitionDocument', token, doc.ID, action, data).then(res => res.data),
-          verify: async () => {
-            try {
-              const result = await gasCall('api_getDocuments', token, {})
-              const fresh = (result.data || []).find(d => String(d.ID) === String(doc.ID))
-              if (!fresh) return null
-              if (wantPH) {
-                const have = parsePhuTrach(fresh['Người phối hợp'])
-                return wantPH.every(u => have.includes(String(u))) ? fresh : null
-              }
-              // action đổi trạng thái: coi là đã hiệu lực nếu "Ngày cập nhật" đã thay đổi
-              return (fresh['Ngày cập nhật'] !== doc['Ngày cập nhật']) ? fresh : null
-            } catch (_) { return null }
-          },
-          onRetry: (i, n) => setTransitionLabel(`${actionLabel} — đang thử lại ${i}/${n}…`),
-        })
-        if (r.ok) {
-          setDoc(prev => ({ ...prev, ...r.data }))
-          showToast('Đã cập nhật', 'success')
-          setGiaoViecForm(null)
-          if (onDocUpdated) onDocUpdated(r.data)
-        } else {
-          showToast(r.error || err.message, 'error')
+      const target = TRANSITION_TARGET[action] || null
+      const applySuccess = (d) => {
+        setDoc(prev => ({ ...prev, ...d }))
+        showToast('Đã cập nhật', 'success')
+        setGiaoViecForm(null)
+        if (onDocUpdated) onDocUpdated(d)
+      }
+      // Xung đột cho thấy hồ sơ ĐÃ ở trạng thái đích → transition đã xảy ra (lần gọi trước thành công
+      // nhưng response rớt). Tin vào lỗi WRITE-PATH — KHÔNG đọc-lại vì read-replica của Sheets có thể
+      // trễ (đọc thấy trạng thái cũ dù đã commit).
+      if (target && _conflictStatus(err.message) === target) {
+        applySuccess({ ...doc, 'Tình trạng': target })
+      } else if (err.message === 'Lỗi không xác định') {
+        // "Lỗi không xác định" = response RỚT (transport): server chạy độc lập với kết nối client nên
+        // gần như chắc ĐÃ lưu. Cập nhật LẠC QUAN từ action + data vừa gửi — KHÔNG gọi lại (double-
+        // execute → xung đột) và KHÔNG đọc-lại (đồng-bộ-trễ). Phản chiếu ĐÚNG các field server ghi
+        // trong transitionDocument; poll 60s / F5 đối chiếu lại nếu lệch (vd Người kiểm soát server
+        // map về userId, ở đây giữ giá trị picker — chỉ lệch hiển thị tới lần đồng bộ kế tiếp).
+        const d = data || {}
+        const next = { ...doc, 'Người cập nhật': session?.username || doc['Người cập nhật'], 'Ngày cập nhật': new Date().toISOString() }
+        if (target) next['Tình trạng'] = target
+        if (d['Phụ trách']) next['Phụ trách'] = JSON.stringify([String(d['Phụ trách'])])
+        if (d['Người phối hợp'] !== undefined) {
+          next['Người phối hợp'] = (d['Người phối hợp'] && d['Người phối hợp'].length)
+            ? JSON.stringify(d['Người phối hợp'].map(String)) : ''
         }
+        if (action === 'giaoViec') {
+          next['Nội dung giao việc'] = (d['Nội dung'] || '').trim()
+          if (d['Người kiểm soát'] !== undefined) next['Người kiểm soát'] = d['Người kiểm soát'] ? JSON.stringify([String(d['Người kiểm soát'])]) : ''
+        }
+        if ((action === 'ksThemPhoiHop' || action === 'nhanViec') && (d['Nội dung'] || '').trim()) {
+          next['Nội dung phối hợp'] = d['Nội dung'].trim()
+        }
+        if (action === 'tuChoi' || action === 'tuChoiKetQua' || action === 'ycPhatHanh') next['Lý do từ chối'] = d['lyDoTuChoi'] || ''
+        if (action === 'trinhDuyetLai' || action === 'hoanThanh' || action === 'hoanThanhLai') next['Lý do từ chối'] = ''
+        applySuccess(next)
       } else {
         showToast(err.message, 'error')
       }
@@ -336,19 +370,8 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
     try { return typeof raw === 'string' ? JSON.parse(raw) : raw } catch (_) { return [] }
   })()
 
-  // Số lần đã phát hành (độ dài "Lịch sử phát hành") — dùng để xác minh khi response bị rớt.
-  function _publishCount(d) {
-    try {
-      const h = d && d['Lịch sử phát hành']
-      if (!h) return 0
-      const arr = typeof h === 'string' ? JSON.parse(h) : h
-      return Array.isArray(arr) ? arr.length : 0
-    } catch (_) { return 0 }
-  }
-
   async function handlePublishFromDialog(toIds, ccIds) {
     setPublishing(true)
-    const beforeLen = _publishCount(doc)
     const applyResult = (data) => {
       showToast('Đã phát hành thành công', 'success')
       setShowPublishDialog(false)
@@ -361,24 +384,21 @@ export default function DocumentPreview({ doc: initialDoc, lookups, isAdmin, can
       const res = await gasCall('api_publishDocument', token, doc.ID, toIds, ccIds)
       applyResult(res.data)
     } catch (err) {
-      // "Lỗi không xác định" = transport error: phát hành nặng (đọc cả bảng + gửi mail + cross-script)
-      // có thể ĐÃ xong nhưng response rớt. Xác minh qua "Lịch sử phát hành" tăng (tìm hồ sơ bằng
-      // keyword tên/số để chắc chắn thấy đúng hồ sơ, không phụ thuộc phân trang). retryWithVerify
-      // verify TRƯỚC khi gọi lại → không phát hành lại (tránh gửi mail trùng) khi đã thành công.
+      // Publish KHÔNG idempotent (gửi email + ghi lịch sử) → TUYỆT ĐỐI KHÔNG gọi lại publish (mail trùng).
+      // 'Lỗi không xác định' = transport rớt khi server VẪN chạy (gửi mail + lưu) nên gần như ĐÃ phát
+      // hành. Cập nhật LẠC QUAN ngay (giống transition): dựng entry lịch sử ở client từ TO/CC vừa chọn —
+      // KHÔNG đọc-lại (chậm). Poll 60s / F5 sẽ thay bằng bản chuẩn từ server (gồm tên người nhận đầy đủ).
       if (err.message === 'Lỗi không xác định') {
-        const kw = String(doc['Số hồ sơ'] || doc['Tên hồ sơ'] || '')
-        const r = await retryWithVerify({
-          fn: () => gasCall('api_publishDocument', token, doc.ID, toIds, ccIds).then(res => res.data),
-          verify: async () => {
-            try {
-              const result = await gasCall('api_getDocuments', token, kw ? { keyword: kw } : {})
-              const fresh = (result.data || []).find(d => String(d.ID) === String(doc.ID))
-              return fresh && _publishCount(fresh) > beforeLen ? fresh : null
-            } catch (_) { return null }
-          },
-        })
-        if (r.ok) applyResult(r.data)
-        else showToast(r.error || err.message || 'Lỗi phát hành', 'error')
+        const users = lookups.ssoUsers || lookups.users || []
+        const mk = (id) => {
+          const u = users.find(x => String(x.ID) === String(id))
+          return { id, name: u ? (u['Tên nhân viên'] || u['Tên đăng nhập'] || String(id)) : String(id), email: u ? (u['Email'] || '') : '' }
+        }
+        const history = publishHistory.slice()
+        history.push({ lan: history.length + 1, ngay: new Date().toISOString(), nguoiGui: session?.name || session?.username, to: toIds.map(mk), cc: (ccIds || []).map(mk) })
+        const next = { ...doc, 'Lịch sử phát hành': JSON.stringify(history) }
+        if (isYCPhatHanhStatus) next['Tình trạng'] = 'Hoàn thành'
+        applyResult(next)
       } else {
         showToast(err.message || 'Lỗi phát hành', 'error')
       }
