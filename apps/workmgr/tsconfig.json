@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2019",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "lib": ["es2019", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "types": ["google-apps-script", "node", "jest"],
+    "noEmit": true
+  },
+  "include": ["src", "dev-server", "build", "__tests__"]
+}
