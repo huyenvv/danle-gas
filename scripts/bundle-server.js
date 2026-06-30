@@ -31,42 +31,37 @@ const GAS_CORE_FILES = [
   'license.js',
 ];
 
-// ── Chế độ self-contained: bỏ gas-core, nạp theo apps/<app>/server-files.js ────
-let appPkg = {};
-try { appPkg = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8')); } catch (e) {}
-const selfContained = !!(appPkg.gasBundle && appPkg.gasBundle.selfContained);
-
-let orderedAppFiles;
-if (selfContained) {
-  orderedAppFiles = require(path.join(appDir, 'server-files.js')); // relative tới serverDir
-} else {
-  orderedAppFiles = fs.readdirSync(serverDir)
-    .filter(f => f.endsWith('.js') && !f.startsWith('_'))
-    .sort((a, b) => {
-      const order = ['config.js', 'sheets.js', 'auth.js'];
-      const ai = order.indexOf(a), bi = order.indexOf(b);
-      if (a === 'main.js') return 1;
-      if (b === 'main.js') return -1;
-      if (ai !== -1 && bi !== -1) return ai - bi;
-      if (ai !== -1) return -1;
-      if (bi !== -1) return 1;
-      return a.localeCompare(b);
-    });
-}
+// ── App-specific server files (load order matters) ───────────────────────────
+// Auto-detect: all .js files in src/server/ except __tests__
+const appFiles = fs.readdirSync(serverDir)
+  .filter(f => f.endsWith('.js') && !f.startsWith('_'))
+  .sort((a, b) => {
+    // config first, then sheets, auth, other modules, main last
+    const order = ['config.js', 'sheets.js', 'auth.js'];
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
+    if (a === 'main.js') return 1;
+    if (b === 'main.js') return -1;
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
 
 if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
-// ── Concatenate: gas-core first (non-self-contained), then app files ─────────
+// ── Concatenate: gas-core first, then app files ──────────────────────────────
 const parts = [];
-if (!selfContained) {
-  GAS_CORE_FILES.forEach(f => {
-    const filePath = path.join(gasCoreDir, f);
-    if (fs.existsSync(filePath)) {
-      parts.push(`// ---- gas-core/${f} ----\n${fs.readFileSync(filePath, 'utf8')}`);
-    }
-  });
-}
-orderedAppFiles.forEach(f => {
+
+GAS_CORE_FILES.forEach(f => {
+  const filePath = path.join(gasCoreDir, f);
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    parts.push(`// ---- gas-core/${f} ----\n${content}`);
+  }
+});
+
+appFiles.forEach(f => {
   const content = fs.readFileSync(path.join(serverDir, f), 'utf8');
   parts.push(`// ---- ${f} ----\n${content}`);
 });
@@ -99,9 +94,8 @@ Object.entries(replacements).forEach(([placeholder, value]) => {
 });
 
 fs.writeFileSync(outFile, bundle, 'utf8');
-const gasCoreCount = selfContained ? 0 : GAS_CORE_FILES.length;
-const totalFiles = gasCoreCount + orderedAppFiles.length;
-console.log(`  ✓ Bundled ${totalFiles} files (${gasCoreCount} gas-core + ${orderedAppFiles.length} app) → apps/${appName}/dist/gas/Code.js`);
+const totalFiles = GAS_CORE_FILES.length + appFiles.length;
+console.log(`  ✓ Bundled ${totalFiles} files (${GAS_CORE_FILES.length} gas-core + ${appFiles.length} app) → apps/${appName}/dist/gas/Code.js`);
 
 // ── Copy appsscript.json to dist/gas if it exists ────────────────────────────
 const manifestSrc = path.join(appDir, 'appsscript.json');
