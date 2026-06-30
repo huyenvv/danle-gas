@@ -21,7 +21,7 @@
     "deploy:sso": "node scripts/deploy.js --app sso-portal",
     "deploy:docmgr": "node scripts/deploy.js --app docmgr",
     "deploy:license": "node scripts/deploy.js --app license-server",
-    "dev:workmgr": "npm run dev -w apps/workmgr",
+    "dev:workmgr": "npx concurrently -n wclient,wserver -c yellow,magenta \"npm --prefix apps/workmgr run dev\" \"npm --prefix apps/workmgr run dev:server\"",
     "build:workmgr": "npm run build -w apps/workmgr",
     "deploy:workmgr": "node scripts/deploy.js --app workmgr"
   },
